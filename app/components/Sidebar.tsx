@@ -4,11 +4,26 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
   FiHome, FiDollarSign, FiCreditCard, FiTag, FiPieChart, 
-  FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiShield, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat 
+  FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiShield, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
+  FiBriefcase, FiUsers
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
 import { Session } from 'next-auth'
+import {
+  CreditCard,
+  LineChart,
+  ListTodo,
+  Menu,
+  Percent,
+  PieChart,
+  Target,
+  Wallet,
+  Home,
+  Settings,
+  LogOut,
+  Users,
+} from "lucide-react"
 
 export interface SidebarProps {
   session: Session | null
@@ -82,6 +97,8 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
     { path: '/budgets', icon: <FiTarget size={20} />, label: 'Anggaran' },
     { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring Transaction' },
+    { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
+    { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
     { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insight' },
     { path: '/categories/smart', icon: <FiZap size={20} />, label: 'Smart Kategorisasi' },
     { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },

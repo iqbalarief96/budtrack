@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { formatCurrency } from '@/lib/utils';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FiShield, FiPieChart } from 'react-icons/fi';
+import { formatCurrency } from '@/lib/utils';
 
 interface SavingsData {
   totalBalance: number;

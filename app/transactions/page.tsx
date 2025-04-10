@@ -146,6 +146,9 @@ const TransactionsPage = () => {
 
       await fetchTransactions()
       await refreshWallets()
+      
+      // Force refresh halaman untuk memastikan saldo diperbarui
+      window.location.reload()
     } catch (error) {
       console.error('Error deleting transaction:', error)
     }

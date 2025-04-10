@@ -12,6 +12,7 @@ import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js'
 import { Pie, Bar } from 'react-chartjs-2'
 import TransactionModal from '@/app/components/TransactionModal'
+import { useRouter } from 'next/navigation'
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
@@ -48,20 +49,29 @@ interface Props {
 }
 
 const DashboardContent = ({ budgets = [] }: Props) => {
-  // Get the selected wallet from context
-  const { selectedWallet, refreshWallets } = useWallet()
+  const { wallets, selectedWallet, refreshWallets } = useWallet()
+  const [summary, setSummary] = useState({ total: 0, income: 0, expense: 0 })
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([])
+  const [savingsData, setSavingsData] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingSavings, setIsLoadingSavings] = useState(true)
+  const [chartData, setChartData] = useState({ income: 0, expense: 0 })
+  const [recentBudgets, setRecentBudgets] = useState<BudgetWithRelations[]>([])
+  const [showAllTransactions, setShowAllTransactions] = useState(false)
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false)
+  const [transactionType, setTransactionType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
 
   // State for dashboard items
-  const [summary, setSummary] = useState({
-    totalBalance: 0,
-    income: 0,
-    expense: 0,
-  })
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [allBudgets, setAllBudgets] = useState<BudgetWithRelations[]>(budgets)
   const [showTips, setShowTips] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
-  const [transactionHistory, setTransactionHistory] = useState([])
+  const [transactionHistory, setTransactionHistory] = useState<Array<{
+    month: string;
+    year: number;
+    income: number;
+    expense: number;
+  }>>([])
   const [selectedPeriod, setSelectedPeriod] = useState('month')
   const [spendingByCategory, setSpendingByCategory] = useState<{ name: string; amount: number; color: string }[]>([])
   const [financialTips, setFinancialTips] = useState<{ id: number; title: string; description: string }[]>([
@@ -69,22 +79,14 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     { id: 2, title: 'Atur Budget', description: 'Tentukan batas maksimal untuk kategori pengeluaran non-esensial' },
     { id: 3, title: 'Lacak Pengeluaran', description: 'Catat semua pengeluaran untuk identifikasi area yang bisa dihemat' },
   ])
-  const [showAllTransactions, setShowAllTransactions] = useState(false)
-  
-  // State for transaction modal
-  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false)
-  const [transactionType, setTransactionType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
 
   // Filtered transactions and budgets
-  const transactions = selectedWallet 
-    ? allTransactions.filter(tx => tx.walletId === selectedWallet.id)
-    : []
   const filteredBudgets = selectedWallet && allBudgets
     ? allBudgets.filter(budget => budget.walletId === selectedWallet.id)
     : allBudgets || []
 
+  // Fetch transactions
   useEffect(() => {
-    // Fetch transactions
     const fetchTransactions = async () => {
       try {
         const response = await fetch('/api/transactions');
@@ -100,26 +102,68 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     fetchTransactions();
   }, []);
 
-  // Update summary whenever the selected wallet changes
+  // Calculate totals and filter transactions when wallet or transaction data changes
   useEffect(() => {
-    if (selectedWallet) {
-      const walletTransactions = allTransactions.filter(tx => tx.walletId === selectedWallet.id)
+    if (selectedWallet && allTransactions.length > 0) {
+      // Hanya filter transaksi untuk wallet yang dipilih
+      const filteredTx = allTransactions.filter(
+        (tx) => tx.walletId === selectedWallet.id
+      );
+
+      setFilteredTransactions(filteredTx);
+
+      // Calculate income and expenses for the selected wallet
+      let income = 0;
+      let expense = 0;
+
+      filteredTx.forEach((tx) => {
+        if (tx.type === 'INCOME') {
+          income += tx.amount;
+        } else if (tx.type === 'EXPENSE') {
+          // Count ALL expense transactions including savings
+          expense += tx.amount;
+        }
+      });
+
+      // Calculate total balance as income - expense
+      const total = income - expense;
       
-      const income = walletTransactions
-        .filter(tx => tx.type === 'INCOME')
-        .reduce((sum, tx) => sum + tx.amount, 0)
-      
-      const expense = walletTransactions
-        .filter(tx => tx.type === 'EXPENSE')
-        .reduce((sum, tx) => sum + tx.amount, 0)
-      
+      // Set summary values
       setSummary({
-        totalBalance: selectedWallet.balance,
+        total,
         income,
         expense,
-      })
+      });
+
+      console.log('Summary updated:', { total, income, expense });
+
+      // Set chart data
+      setChartData({
+        income,
+        expense,
+      });
     }
-  }, [selectedWallet, allTransactions])
+  }, [selectedWallet, allTransactions]);
+
+  // Fetch savings data
+  useEffect(() => {
+    const fetchSavingsData = async () => {
+      try {
+        const response = await fetch('/api/emergency-fund');
+        if (response.ok) {
+          const data = await response.json();
+          setSavingsData({
+            totalSavings: data.totalSavings || 0,
+            savingsByType: data.savingsByType || {},
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching savings data:', error);
+      }
+    };
+
+    fetchSavingsData();
+  }, [allTransactions]);
 
   // Get transactions grouped by category for pie chart
   useEffect(() => {
@@ -323,6 +367,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   };
 
+  const router = useRouter()
+
   if (!selectedWallet) {
     return <div>Loading...</div>
   }
@@ -337,7 +383,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </div>
           
           <div className="mt-4 md:mt-0">
-            <WalletSelector />
+            <WalletSelector displayBalance={summary.total} />
           </div>
         </div>
         
@@ -347,7 +393,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-blue-100">Total Saldo</h3>
-                <p className="text-2xl font-bold">{formatCurrency(summary.totalBalance)}</p>
+                <p className="text-2xl font-bold">{formatCurrency(summary.total)}</p>
               </div>
               <div className="p-3 bg-white/20 rounded-full">
                 <FiDollarSign size={24} />
@@ -570,9 +616,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
               </div>
               
               <div className="space-y-2">
-                {transactions.length > 0 ? (
+                {filteredTransactions.length > 0 ? (
                   <>
-                    {transactions.slice(0, showAllTransactions ? transactions.length : 5).map((tx) => (
+                    {filteredTransactions.slice(0, showAllTransactions ? filteredTransactions.length : 5).map((tx) => (
                       <div key={tx.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                         <div className="flex items-center">
                           <div className={`p-2 rounded-full ${
@@ -600,7 +646,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                       </div>
                     ))}
                     
-                    {transactions.length > 5 && (
+                    {filteredTransactions.length > 5 && (
                       <button 
                         className="w-full py-2 text-center text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded-lg transition-colors mt-2"
                         onClick={() => setShowAllTransactions(!showAllTransactions)}
@@ -629,14 +675,19 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                   filteredBudgets.map((budget) => (
                     <BudgetProgress 
                       key={budget.id} 
-                      budget={budget}
-                      onUpdate={handleBudgetUpdate}
+                      budget={budget} 
+                      onUpdate={handleBudgetUpdate} 
                     />
                   ))
                 ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-lg">
-                    <p className="text-gray-500 mb-3">Belum ada budget untuk dompet ini</p>
-                    <a href="/budgets" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-block">Buat Budget</a>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <p className="text-gray-500">Belum ada anggaran</p>
+                    <button 
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                      onClick={() => router.push('/budgets')}
+                    >
+                      Buat anggaran baru
+                    </button>
                   </div>
                 )}
               </div>

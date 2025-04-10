@@ -60,31 +60,57 @@ export async function POST(request: Request) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
 
-    // Handle transaction with or without category
-    let category = null;
-    if (categoryId) {
-      // Get category type if categoryId is provided
-      category = await prisma.category.findUnique({
-        where: { id: categoryId }
-      })
+    // Find the wallet to make sure it belongs to this user
+    const wallet = await prisma.wallet.findFirst({
+      where: {
+        id: walletId,
+        userId: session.user.id,
+      },
+    })
 
-      if (!category) {
-        return new NextResponse('Category not found', { status: 404 })
-      }
-
-      console.log('Category found:', category);
+    if (!wallet) {
+      return new NextResponse('Wallet not found', { status: 404 })
     }
 
-    // Create new transaction
+    console.log('Current wallet balance before transaction:', wallet.balance)
+
+    // Find the category if provided
+    let category = null
+    if (categoryId) {
+      category = await prisma.category.findFirst({
+        where: {
+          id: categoryId,
+          userId: session.user.id,
+        },
+      })
+    }
+
+    console.log('Found category:', category)
+
+    // Create the transaction
     const transaction = await prisma.transaction.create({
       data: {
-        categoryId: categoryId || null, // Allow null categoryId
-        walletId,
         amount: parseFloat(amount),
         type,
         date: new Date(date),
-        description: description || undefined,
-        userId: session.user.id,
+        description,
+        category: categoryId
+          ? {
+              connect: {
+                id: categoryId,
+              },
+            }
+          : undefined,
+        wallet: {
+          connect: {
+            id: walletId,
+          },
+        },
+        user: {
+          connect: {
+            id: session.user.id,
+          },
+        },
       },
       include: {
         category: true,
@@ -92,22 +118,23 @@ export async function POST(request: Request) {
       },
     })
 
-    console.log('Transaction created:', transaction);
-
-    // Update wallet balance
-    // For regular transactions (including those without category):
-    // - If type is INCOME, add to balance
-    // - If type is EXPENSE, subtract from balance
-    const isRegularTransaction = !category || category.type !== 'SAVINGS';
-    const shouldIncrement = isRegularTransaction ? type === 'INCOME' : type === 'EXPENSE';
-
-    console.log('Updating wallet balance:', {
-      isRegularTransaction,
-      shouldIncrement,
+    // Determine if we should increase or decrease the wallet balance
+    const shouldIncrement = type === 'INCOME';
+    
+    console.log('Transaction details:', {
+      transactionType: type,
       categoryType: category?.type,
-      transactionType: type
+      shouldIncrement
     });
 
+    console.log('Updating wallet balance:', {
+      shouldIncrement,
+      oldBalance: wallet.balance,
+      change: parseFloat(amount),
+      newBalance: shouldIncrement ? wallet.balance + parseFloat(amount) : wallet.balance - parseFloat(amount)
+    });
+
+    // Update wallet balance - semua transaksi EXPENSE (termasuk savings) mengurangi saldo
     await prisma.wallet.update({
       where: { id: walletId },
       data: {
@@ -116,6 +143,17 @@ export async function POST(request: Request) {
         },
       },
     })
+    
+    // Get updated wallet to verify balance change
+    const updatedWallet = await prisma.wallet.findUnique({
+      where: { id: walletId }
+    });
+    
+    console.log('Wallet balance after transaction:', {
+      oldBalance: wallet.balance,
+      newBalance: updatedWallet?.balance,
+      difference: (updatedWallet?.balance || 0) - wallet.balance
+    });
 
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
@@ -453,7 +491,17 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
+    console.log('Deleting transaction:', {
+      id: transaction.id,
+      type: transaction.type,
+      amount: transaction.amount,
+      walletId: transaction.walletId,
+      currentWalletBalance: transaction.wallet.balance
+    });
+
     // Update wallet balance
+    // For INCOME: when deleted, we DECREASE wallet balance
+    // For EXPENSE: when deleted, we INCREASE wallet balance
     await prisma.wallet.update({
       where: { id: transaction.walletId },
       data: {
@@ -461,7 +509,19 @@ export async function DELETE(request: Request) {
           [transaction.type === 'INCOME' ? 'decrement' : 'increment']: transaction.amount,
         },
       },
-    })
+    });
+    
+    // Verify wallet balance was updated correctly
+    const updatedWallet = await prisma.wallet.findUnique({
+      where: { id: transaction.walletId },
+    });
+    
+    console.log('Updated wallet balance:', {
+      oldBalance: transaction.wallet.balance,
+      newBalance: updatedWallet?.balance,
+      transaction: transaction.type,
+      amount: transaction.amount
+    });
 
     // If the transaction was an expense, update the budget
     if (transaction.type === 'EXPENSE' && transaction.categoryId !== null) {

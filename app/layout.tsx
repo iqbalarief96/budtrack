@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar'
 import { getServerSession } from 'next-auth'
 import { authOptions } from './api/auth/[...nextauth]/route'
 import './sidebar.css'
+import { Toaster } from '@/components/ui/toast'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -32,10 +33,12 @@ export default async function RootLayout({
               <main className="content-area">
                 {children}
               </main>
+              <Toaster />
             </WalletProvider>
           ) : (
             <main className="min-h-screen bg-gray-50">
               {children}
+              <Toaster />
             </main>
           )}
         </AuthProvider>

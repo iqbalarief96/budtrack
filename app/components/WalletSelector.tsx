@@ -1,12 +1,19 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { FiCreditCard, FiChevronDown } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 
-const WalletSelector = () => {
-  const { wallets, selectedWallet, setSelectedWallet } = useWallet()
+// Define props interface to include displayBalance
+interface WalletSelectorProps {
+  displayBalance?: number; // Make it optional, it might not always be passed
+}
+
+const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
+  const { wallets, selectedWallet, setSelectedWalletAndPersist } = useWallet()
   const [isOpen, setIsOpen] = useState(false)
+  
+  // Remove savings data fetching as it's not used for balance display here
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -18,6 +25,17 @@ const WalletSelector = () => {
   }
 
   if (!selectedWallet) return null
+
+  // Function to determine the balance to display
+  const getDisplayBalance = (wallet: typeof selectedWallet) => {
+    // If displayBalance prop is provided and this is the selected wallet,
+    // use the prop value (calculated balance from DashboardContent).
+    if (displayBalance !== undefined && wallet.id === selectedWallet.id) {
+      return displayBalance;
+    }
+    // Otherwise, fall back to the wallet's stored balance.
+    return wallet.balance;
+  }
 
   return (
     <div className="relative mb-6">
@@ -34,7 +52,8 @@ const WalletSelector = () => {
           </div>
           <div>
             <p className="font-medium text-black">{selectedWallet.name}</p>
-            <p className="text-sm font-medium text-black">{formatCurrency(selectedWallet.balance)}</p>
+            {/* Use getDisplayBalance for the main button display */}
+            <p className="text-sm font-medium text-black">{formatCurrency(getDisplayBalance(selectedWallet))}</p>
           </div>
         </div>
         <FiChevronDown className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -47,10 +66,10 @@ const WalletSelector = () => {
               <button
                 key={wallet.id}
                 className={`flex items-center w-full px-4 py-3 text-left hover:bg-gray-50 ${
-                  wallet.id === selectedWallet.id ? 'bg-blue-50' : ''
+                  wallet.id === selectedWallet?.id ? 'bg-blue-50' : ''
                 }`}
                 onClick={() => {
-                  setSelectedWallet(wallet)
+                  setSelectedWalletAndPersist(wallet)
                   setIsOpen(false)
                 }}
               >
@@ -61,10 +80,11 @@ const WalletSelector = () => {
                   <FiCreditCard className="text-white" size={14} />
                 </div>
                 <div>
-                  <p className={`font-medium text-black ${wallet.id === selectedWallet.id ? 'text-blue-600' : ''}`}>
+                  <p className={`font-medium text-black ${wallet.id === selectedWallet?.id ? 'text-blue-600' : ''}`}>
                     {wallet.name}
                   </p>
-                  <p className="text-sm font-medium text-black">{formatCurrency(wallet.balance)}</p>
+                  {/* Use getDisplayBalance for the dropdown items */}
+                  <p className="text-sm font-medium text-black">{formatCurrency(getDisplayBalance(wallet))}</p>
                 </div>
               </button>
             ))}

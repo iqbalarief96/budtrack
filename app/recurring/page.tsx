@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { 
   FiPlus, FiClock, FiBell, FiRepeat, FiPieChart, 
   FiAlertCircle, FiCheckCircle, FiEdit, FiTrash2,
-  FiX, FiCalendar, FiDollarSign, FiTag
+  FiX, FiCalendar, FiDollarSign, FiTag, FiRefreshCw
 } from 'react-icons/fi'
 import { useWallet } from '@/app/providers/WalletProvider'
 
@@ -18,31 +18,92 @@ interface RecurringTransaction {
   frequency: string;
   nextPaymentDate: string;
   isActive: boolean;
+  type: string;
+}
+
+// Interface untuk wallet
+interface Wallet {
+  id: string;
+  name: string;
+  balance: number;
+  currencyCode?: string;
+}
+
+// Tambahkan interface untuk kategori
+interface Category {
+  id: string;
+  name: string;
+  type: string;
+  icon?: string;
+  color?: string;
 }
 
 export default function RecurringPage() {
   const { data: session, status } = useSession()
-  const { selectedWallet } = useWallet()
+  const { selectedWallet, refreshWallets } = useWallet()
   const [activeTab, setActiveTab] = useState('overview')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [wallets, setWallets] = useState<Wallet[]>([])
   const [formData, setFormData] = useState({
     name: '',
     amount: '',
     category: 'Entertainment',
     frequency: 'Monthly',
     startDate: '',
-    description: ''
+    description: '',
+    type: 'expense',
+    walletId: ''
   })
   const [isLoading, setIsLoading] = useState(true)
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [isSynchronizing, setIsSynchronizing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{success: number; skipped: number} | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
+
+  // Fetch wallets when component mounts
+  useEffect(() => {
+    if (session) {
+      fetchWallets()
+    }
+  }, [session])
 
   // Fetch recurring transactions when wallet changes
   useEffect(() => {
     if (selectedWallet && session) {
       fetchRecurringTransactions()
+      
+      // Atur default walletId ke selectedWallet saat buka form
+      setFormData(prev => ({
+        ...prev,
+        walletId: selectedWallet.id
+      }))
     }
   }, [selectedWallet, session])
+
+  // Fetch kategori saat komponen dimount
+  useEffect(() => {
+    if (session) {
+      fetchCategories()
+    }
+  }, [session])
+
+  // Fetch wallets from API
+  const fetchWallets = async () => {
+    try {
+      const response = await fetch('/api/wallets')
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch wallets')
+      }
+      
+      const data = await response.json()
+      setWallets(data)
+    } catch (err) {
+      console.error('Error fetching wallets:', err)
+      setError('Failed to load wallets')
+    }
+  }
 
   // Fetch recurring transactions from API
   const fetchRecurringTransactions = async () => {
@@ -65,6 +126,68 @@ export default function RecurringPage() {
       setError('Failed to load recurring transactions')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Fungsi untuk sinkronisasi transaksi berulang
+  const synchronizeTransactions = async () => {
+    if (!selectedWallet) {
+      setError('No wallet selected')
+      return
+    }
+    
+    try {
+      setIsSynchronizing(true)
+      setSyncResult(null)
+      
+      // Call API to synchronize recurring transactions
+      const response = await fetch('/api/transactions/sync-recurring', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          walletId: selectedWallet.id
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to synchronize transactions')
+      }
+      
+      const result = await response.json()
+      setSyncResult(result)
+      
+      // Refresh recurring transactions after sync
+      await fetchRecurringTransactions()
+
+      // Refresh wallet balances after sync
+      await refreshWallets()
+      
+      // Force a hard refresh to update everything
+      window.location.reload()
+    } catch (err) {
+      console.error('Error synchronizing transactions:', err)
+      setError('Failed to synchronize transactions')
+    } finally {
+      setIsSynchronizing(false)
+    }
+  }
+
+  // Fungsi untuk mengambil kategori dari API
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch categories')
+      }
+      
+      const data = await response.json()
+      setCategories(data)
+    } catch (err) {
+      console.error('Error fetching categories:', err)
+      setError('Failed to load categories')
     }
   }
 
@@ -121,24 +244,42 @@ export default function RecurringPage() {
   // Handle form input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData({
-      ...formData,
-      [name]: value
-    })
+    
+    // Jika type berubah, update category sesuai dengan type
+    if (name === 'type') {
+      setFormData({
+        ...formData,
+        [name]: value,
+        category: value === 'income' ? 'Salary' : 'Entertainment'
+      })
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value
+      })
+    }
   }
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!selectedWallet) {
+    if (!formData.walletId) {
       setError('No wallet selected')
       return
     }
     
     try {
-      // Parse amount from formatted string
-      const amountValue = parseFloat(formData.amount.replace(/[^0-9.-]+/g, ''))
+      // Parse amount from formatted string menggunakan fungsi parseCurrencyToNumber
+      const amountValue = parseCurrencyToNumber(formData.amount)
+      
+      if (isNaN(amountValue) || amountValue <= 0) {
+        setError('Invalid amount value')
+        return
+      }
+      
+      console.log('Submitting amount:', amountValue) // Log untuk debugging
+      console.log('Submitting form data:', formData) // Log untuk debugging seluruh form data
       
       const response = await fetch('/api/recurring', {
         method: 'POST',
@@ -152,7 +293,8 @@ export default function RecurringPage() {
           frequency: formData.frequency,
           startDate: formData.startDate,
           description: formData.description,
-          walletId: selectedWallet.id
+          type: formData.type,
+          walletId: formData.walletId
         })
       })
       
@@ -163,19 +305,43 @@ export default function RecurringPage() {
       // Refresh the transaction list
       await fetchRecurringTransactions()
       
-      // Reset form and close modal
+      // Reset form and close modal with correct default category based on type
       setFormData({
         name: '',
         amount: '',
-        category: 'Entertainment',
+        category: 'expense',
         frequency: 'Monthly',
         startDate: '',
-        description: ''
+        description: '',
+        type: 'expense',
+        walletId: selectedWallet ? selectedWallet.id : ''
       })
       setIsModalOpen(false)
     } catch (err) {
       console.error('Error creating recurring transaction:', err)
       setError('Failed to create recurring transaction')
+    }
+  }
+
+  // Display format for amount in recurring transactions
+  const displayAmount = (amount: number, type: string = 'expense') => {
+    if (!amount || isNaN(amount)) {
+      return type === 'income' ? '+Rp0' : 'Rp0';
+    }
+    
+    try {
+      // Gunakan format yang lebih sederhana dan handal
+      const formatter = new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      });
+      
+      const formatted = `Rp${formatter.format(amount)}`;
+      return type === 'income' ? `+${formatted}` : formatted;
+    } catch (err) {
+      console.error('Error formatting amount:', err, amount);
+      // Fallback formatting
+      return type === 'income' ? `+Rp${amount}` : `Rp${amount}`;
     }
   }
 
@@ -189,14 +355,53 @@ export default function RecurringPage() {
       return ''
     }
     
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(parseInt(numericValue))
-    .replace('IDR', 'Rp')
-    .replace(/\s/g, '')
+    try {
+      // Parse as number
+      const amount = Number(numericValue);
+      
+      // Format using Intl.NumberFormat
+      const formatter = new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      });
+      
+      return `Rp${formatter.format(amount)}`;
+    } catch (err) {
+      console.error('Error formatting currency input:', err, numericValue);
+      // Fallback formatting
+      return `Rp${numericValue}`;
+    }
+  }
+
+  // Parse formatted currency string to number
+  const parseCurrencyToNumber = (formattedValue: string): number => {
+    if (!formattedValue) return 0;
+    
+    try {
+      // Hapus simbol mata uang (Rp) dan spasi
+      let cleaned = formattedValue.replace(/[Rp\s]/g, '');
+      
+      // Untuk format Indonesia, ganti titik (pemisah ribuan) dengan string kosong
+      cleaned = cleaned.replace(/\./g, '');
+      
+      // Ganti koma dengan titik jika ada desimal
+      cleaned = cleaned.replace(/,/g, '.');
+      
+      // Konversi ke number
+      const result = Number(cleaned);
+      
+      // Debug untuk melihat nilai yang diproses
+      console.log('Parsing currency:', { 
+        original: formattedValue, 
+        cleaned, 
+        result 
+      });
+      
+      return result;
+    } catch (err) {
+      console.error('Error parsing currency:', err, formattedValue);
+      return 0;
+    }
   }
 
   // Handle amount input with formatting
@@ -241,17 +446,56 @@ export default function RecurringPage() {
     })
     .sort((a, b) => getDaysUntil(a.nextPaymentDate) - getDaysUntil(b.nextPaymentDate))
 
+  // Mendapatkan kategori sesuai tipe transaksi
+  const getFilteredCategories = () => {
+    if (formData.type === 'income') {
+      return categories.filter(cat => cat.type === 'INCOME' || cat.type === 'BOTH')
+    } else {
+      return categories.filter(cat => cat.type === 'EXPENSE' || cat.type === 'BOTH')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Recurring Transaction</h1>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <FiPlus /> Add New Recurring
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={synchronizeTransactions}
+            disabled={isSynchronizing}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50"
+          >
+            <FiRefreshCw className={isSynchronizing ? "animate-spin" : ""} /> 
+            {isSynchronizing ? "Synchronizing..." : "Sync Transactions"}
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <FiPlus /> Add New Recurring
+          </button>
+        </div>
       </div>
+
+      {/* Display synchronization result if available */}
+      {syncResult && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <FiCheckCircle className="text-green-500" size={20} />
+            <span>
+              Sinkronisasi transaksi berulang selesai. 
+              <strong className="ml-1">{syncResult.success}</strong> transaksi dibuat, 
+              <strong className="ml-1">{syncResult.skipped}</strong> transaksi dilewati (sudah ada).
+            </span>
+          </div>
+          <button 
+            onClick={() => setSyncResult(null)} 
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <FiX />
+          </button>
+        </div>
+      )}
 
       {/* Modal for adding new recurring transaction */}
       {isModalOpen && (
@@ -271,6 +515,36 @@ export default function RecurringPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Transaction Type
+                  </label>
+                  <div className="flex space-x-4">
+                    <label className="inline-flex items-center">
+                      <input
+                        type="radio"
+                        name="type"
+                        value="expense"
+                        checked={formData.type === 'expense'}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 text-blue-600"
+                      />
+                      <span className="ml-2 text-gray-700">Expense</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                      <input
+                        type="radio"
+                        name="type"
+                        value="income"
+                        checked={formData.type === 'income'}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 text-green-600"
+                      />
+                      <span className="ml-2 text-gray-700">Income</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Transaction Name
                   </label>
                   <div className="relative">
@@ -280,7 +554,7 @@ export default function RecurringPage() {
                       value={formData.name}
                       onChange={handleInputChange}
                       className="w-full border border-gray-300 rounded-md py-2 px-4"
-                      placeholder="e.g., Netflix Subscription"
+                      placeholder={formData.type === 'income' ? "e.g., Monthly Salary" : "e.g., Netflix Subscription"}
                       required
                     />
                   </div>
@@ -306,6 +580,31 @@ export default function RecurringPage() {
                   </div>
                 </div>
                 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Wallet
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="walletId"
+                      value={formData.walletId}
+                      onChange={handleInputChange}
+                      className="w-full border border-gray-300 rounded-md py-2 px-4 appearance-none"
+                      required
+                    >
+                      <option value="" disabled>Select a wallet</option>
+                      {wallets.map(wallet => (
+                        <option key={wallet.id} value={wallet.id}>
+                          {wallet.name} ({displayAmount(wallet.balance, 'expense')})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <FiDollarSign className="text-gray-400" />
+                    </div>
+                  </div>
+                </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -319,13 +618,12 @@ export default function RecurringPage() {
                         className="w-full border border-gray-300 rounded-md py-2 px-4 appearance-none"
                         required
                       >
-                        <option value="Entertainment">Entertainment</option>
-                        <option value="Utilities">Utilities</option>
-                        <option value="Subscription">Subscription</option>
-                        <option value="Insurance">Insurance</option>
-                        <option value="Rent">Rent</option>
-                        <option value="Transportation">Transportation</option>
-                        <option value="Other">Other</option>
+                        <option value="" disabled>Select a category</option>
+                        {getFilteredCategories().map(category => (
+                          <option key={category.id} value={category.name}>
+                            {category.name}
+                          </option>
+                        ))}
                       </select>
                       <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                         <FiTag className="text-gray-400" />
@@ -453,36 +751,23 @@ export default function RecurringPage() {
                 <div className="bg-red-50 p-4 rounded-lg">
                   <h3 className="text-lg font-semibold text-red-800 mb-1">Monthly Cost</h3>
                   <p className="text-2xl font-bold">
-                    {new Intl.NumberFormat('id-ID', {
-                      style: 'currency',
-                      currency: 'IDR',
-                      minimumFractionDigits: 0,
-                    }).format(
+                    {displayAmount(
                       recurringTransactions
-                        .filter(t => t.frequency === 'Monthly')
-                        .reduce((sum, t) => sum + t.amount, 0)
-                    )
-                    .replace('IDR', 'Rp')
-                    .replace(/\s/g, '')}
+                        .filter(t => t.frequency === 'Monthly' && t.type === 'expense')
+                        .reduce((sum, t) => sum + t.amount, 0),
+                      'expense'
+                    )}
                   </p>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-semibold text-green-800 mb-1">Yearly Cost</h3>
+                  <h3 className="text-lg font-semibold text-green-800 mb-1">Monthly Income</h3>
                   <p className="text-2xl font-bold">
-                    {new Intl.NumberFormat('id-ID', {
-                      style: 'currency',
-                      currency: 'IDR',
-                      minimumFractionDigits: 0,
-                    }).format(
+                    {displayAmount(
                       recurringTransactions
-                        .filter(t => t.frequency === 'Monthly')
-                        .reduce((sum, t) => sum + t.amount * 12, 0) +
-                      recurringTransactions
-                        .filter(t => t.frequency === 'Yearly')
-                        .reduce((sum, t) => sum + t.amount, 0)
-                    )
-                    .replace('IDR', 'Rp')
-                    .replace(/\s/g, '')}
+                        .filter(t => t.frequency === 'Monthly' && t.type === 'income')
+                        .reduce((sum, t) => sum + t.amount, 0),
+                      'income'
+                    )}
                   </p>
                 </div>
                 <div className="bg-orange-50 p-4 rounded-lg">
@@ -568,13 +853,7 @@ export default function RecurringPage() {
                                 </span>
                               </td>
                               <td className="py-3 px-4">
-                                {new Intl.NumberFormat('id-ID', {
-                                  style: 'currency',
-                                  currency: 'IDR',
-                                  minimumFractionDigits: 0,
-                                }).format(transaction.amount)
-                                .replace('IDR', 'Rp')
-                                .replace(/\s/g, '')}
+                                {displayAmount(transaction.amount, transaction.type)}
                               </td>
                               <td className="py-3 px-4">
                                 <span className="inline-flex items-center gap-1 text-amber-600">
@@ -638,13 +917,7 @@ export default function RecurringPage() {
                             <td className="py-3 px-4">{transaction.category || '-'}</td>
                             <td className="py-3 px-4">{transaction.frequency}</td>
                             <td className="py-3 px-4">
-                              {new Intl.NumberFormat('id-ID', {
-                                style: 'currency',
-                                currency: 'IDR',
-                                minimumFractionDigits: 0,
-                              }).format(transaction.amount)
-                              .replace('IDR', 'Rp')
-                              .replace(/\s/g, '')}
+                              {displayAmount(transaction.amount, transaction.type)}
                             </td>
                             <td className="py-3 px-4">{formatDate(transaction.nextPaymentDate)}</td>
                             <td className="py-3 px-4 flex justify-center gap-2">

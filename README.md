@@ -52,6 +52,24 @@ Untuk membuat backup seluruh project (termasuk kode dan database), jalankan scri
 
 Script ini akan membuat backup project lengkap ke direktori `project-backups` dengan format nama `budtrack_backup_YYYYMMDD_HHMMSS.zip`. Script ini akan mengecualikan direktori yang tidak perlu seperti `node_modules`, `.next`, dan `.git`.
 
+##### Backup All-in-One
+
+Untuk memilih jenis backup yang diinginkan melalui menu interaktif, jalankan script:
+
+```
+.\backup-all.ps1
+```
+
+Script ini akan menampilkan menu untuk memilih:
+1. Backup Database saja
+2. Backup Project lengkap
+3. Backup keduanya secara terpisah
+
+Anda juga dapat menjalankan script dengan parameter berikut:
+- Backup database saja: `.\backup-all.ps1 -DatabaseOnly`
+- Backup project lengkap: `.\backup-all.ps1 -ProjectOnly`
+- Mengatur jumlah maksimum backup: `.\backup-all.ps1 -MaxBackups 20`
+
 #### Restore
 
 Untuk melakukan restore database atau project, jalankan script:
