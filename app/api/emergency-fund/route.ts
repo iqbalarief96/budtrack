@@ -14,18 +14,53 @@ export async function GET() {
 
     console.log('User ID:', session.user.id);
 
-    // Get total balance from all wallets
-    const wallets = await prisma.wallet.findMany({
+    // Get total balance from all transactions
+    const allTransactions = await prisma.transaction.findMany({
       where: {
         userId: session.user.id
       },
-      select: {
-        balance: true
+      include: {
+        wallet: true,
+        category: true
       }
     });
 
-    const totalBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
-    console.log('Total Balance:', totalBalance);
+    // Group transactions by wallet and calculate balance for each wallet
+    const walletBalances = new Map();
+
+    allTransactions.forEach(tx => {
+      const walletId = tx.wallet.id;
+      if (!walletBalances.has(walletId)) {
+        walletBalances.set(walletId, 0);
+      }
+
+      const currentBalance = walletBalances.get(walletId);
+      if (tx.type === 'INCOME') {
+        walletBalances.set(walletId, currentBalance + tx.amount);
+      } else if (tx.type === 'EXPENSE') {
+        walletBalances.set(walletId, currentBalance - tx.amount);
+      }
+
+      console.log(`Processing wallet transaction:
+        Wallet: ${tx.wallet.name}
+        Type: ${tx.type}
+        Amount: ${tx.amount}
+        Category: ${tx.category?.name}
+        Description: ${tx.description}
+        New Balance: ${walletBalances.get(walletId)}`);
+    });
+
+    // Update wallet balances in database
+    for (const [walletId, balance] of walletBalances) {
+      await prisma.wallet.update({
+        where: { id: walletId },
+        data: { balance }
+      });
+    }
+
+    // Calculate total balance from updated wallet balances
+    const totalBalance = Array.from(walletBalances.values()).reduce((sum, balance) => sum + balance, 0);
+    console.log('Total Balance from wallets:', totalBalance);
 
     // Get savings transactions grouped by description
     const savingsTransactions = await prisma.transaction.findMany({
@@ -104,8 +139,12 @@ export async function GET() {
     const totalSavings = Object.values(filteredSavingsByType).reduce((sum, amount) => sum + amount, 0);
     console.log('Total savings:', totalSavings);
 
+    // Calculate the accurate total balance that includes all wallet balances and savings
+    const actualTotalBalance = totalBalance + totalSavings;
+    console.log('Actual total balance (including savings):', actualTotalBalance);
+
     const response = {
-      totalBalance,
+      totalBalance: totalBalance,
       emergencyFund: totalBalance,
       totalSavings,
       savingsByType: filteredSavingsByType

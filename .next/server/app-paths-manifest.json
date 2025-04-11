@@ -1,3 +1,19 @@
 {
-  "/_not-found/page": "app/_not-found/page.js"
+  "/groups/page": "app/groups/page.js",
+  "/api/groups/route": "app/api/groups/route.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/wallets/route": "app/api/wallets/route.js",
+  "/groups/[groupId]/page": "app/groups/[groupId]/page.js",
+  "/api/groups/[groupId]/invites/route": "app/api/groups/[groupId]/invites/route.js",
+  "/api/groups/[groupId]/wallets/route": "app/api/groups/[groupId]/wallets/route.js",
+  "/groups/[groupId]/wallets/[walletId]/page": "app/groups/[groupId]/wallets/[walletId]/page.js",
+  "/api/groups/[groupId]/wallets/[walletId]/transactions/route": "app/api/groups/[groupId]/wallets/[walletId]/transactions/route.js",
+  "/api/groups/[groupId]/wallets/[walletId]/route": "app/api/groups/[groupId]/wallets/[walletId]/route.js",
+  "/api/groups/[groupId]/categories/route": "app/api/groups/[groupId]/categories/route.js",
+  "/api/groups/[groupId]/members/route": "app/api/groups/[groupId]/members/route.js",
+  "/api/groups/[groupId]/wallets/[walletId]/transactions/[transactionId]/route": "app/api/groups/[groupId]/wallets/[walletId]/transactions/[transactionId]/route.js",
+  "/api/groups/[groupId]/wallets/[walletId]/transactions/[transactionId]/splits/route": "app/api/groups/[groupId]/wallets/[walletId]/transactions/[transactionId]/splits/route.js",
+  "/transactions/page": "app/transactions/page.js",
+  "/api/categories/route": "app/api/categories/route.js",
+  "/api/transactions/route": "app/api/transactions/route.js"
 }

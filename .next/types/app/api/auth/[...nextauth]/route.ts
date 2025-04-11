@@ -1,4 +1,4 @@
-// File: C:\Users\qbf\Documents\TES\Budtrack\app\api\auth\[...nextauth]\route.ts
+// File: D:\DATA\Documents\code\Tes\budtrack\app\api\auth\[...nextauth]\route.ts
 import * as entry from '../../../../../../app/api/auth/[...nextauth]/route.js'
 import type { NextRequest } from 'next/server.js'
 
