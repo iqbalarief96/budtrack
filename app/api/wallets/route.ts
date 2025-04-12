@@ -14,6 +14,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Fetch wallets first
     const wallets = await prisma.wallet.findMany({
       where: {
         userId: session.user.id
@@ -22,8 +23,42 @@ export async function GET(request: Request) {
         name: 'asc'
       }
     })
+    
+    // Fetch all transactions for this user
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId: session.user.id
+      },
+      select: {
+        walletId: true,
+        type: true,
+        amount: true
+      }
+    })
+    
+    // Calculate correct balance for each wallet based on transactions
+    const walletsWithCorrectBalance = wallets.map(wallet => {
+      // Filter transactions for this wallet
+      const walletTransactions = transactions.filter(tx => tx.walletId === wallet.id)
+      
+      // Calculate balance from transactions
+      let calculatedBalance = 0
+      walletTransactions.forEach(tx => {
+        if (tx.type === 'INCOME') {
+          calculatedBalance += tx.amount
+        } else if (tx.type === 'EXPENSE') {
+          calculatedBalance -= tx.amount
+        }
+      })
+      
+      // Return wallet with correct balance
+      return {
+        ...wallet,
+        balance: calculatedBalance
+      }
+    })
 
-    return NextResponse.json(wallets)
+    return NextResponse.json(walletsWithCorrectBalance)
   } catch (error) {
     console.error('Error fetching wallets:', error)
     return NextResponse.json(

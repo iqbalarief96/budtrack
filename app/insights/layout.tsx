@@ -1,30 +1,47 @@
+'use client';
+
 import Link from 'next/link';
+import { ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 
 export default function InsightsLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  const pathname = usePathname();
+  
   return (
-    <div className="flex flex-col">
-      <div className="p-4 border-b">
-        <h1 className="text-2xl font-bold">Insights</h1>
-        <div className="flex space-x-4 mt-4">
+    <div className="space-y-6">
+      <div className="border-b">
+        <div className="container flex gap-6 py-4">
           <Link
             href="/insights"
-            className="px-4 py-2 rounded-lg hover:bg-gray-100"
+            className={pathname === '/insights' 
+              ? "text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-4" 
+              : "text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors pb-4"}
           >
             Basic Insights
           </Link>
           <Link
             href="/insights/advanced"
-            className="px-4 py-2 rounded-lg hover:bg-gray-100"
+            className={pathname === '/insights/advanced' 
+              ? "text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-4" 
+              : "text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors pb-4"}
           >
             Advanced Analytics
           </Link>
+          <Link
+            href="/insights/financial-advice"
+            className={pathname === '/insights/financial-advice' 
+              ? "text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-4" 
+              : "text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors pb-4"}
+          >
+            Financial Advice
+          </Link>
         </div>
       </div>
-      <div className="p-4">{children}</div>
+      <div>{children}</div>
     </div>
   );
 } 

@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { name, type, color } = await request.json()
+    const { name, type, color, parentId } = await request.json()
 
     if (!name || !type || !color) {
       return NextResponse.json(
@@ -52,11 +52,34 @@ export async function POST(request: Request) {
       )
     }
 
+    // Verify parent category if provided
+    if (parentId) {
+      const parentCategory = await prisma.category.findUnique({
+        where: { id: parentId }
+      });
+      
+      if (!parentCategory) {
+        return NextResponse.json(
+          { error: 'Parent category not found' },
+          { status: 404 }
+        )
+      }
+      
+      // Ensure parent category belongs to user
+      if (parentCategory.userId !== session.user.id && !parentCategory.isDefault) {
+        return NextResponse.json(
+          { error: 'Unauthorized to use this parent category' },
+          { status: 401 }
+        )
+      }
+    }
+
     // Check if category with same name exists
     const existingCategory = await prisma.category.findFirst({
       where: {
         name,
-        userId: session.user.id
+        userId: session.user.id,
+        parentId: parentId || null
       }
     })
 
@@ -72,7 +95,8 @@ export async function POST(request: Request) {
         name,
         type,
         color,
-        userId: session.user.id
+        userId: session.user.id,
+        parentId: parentId || null
       }
     })
 
@@ -95,7 +119,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, name, type, color } = await request.json()
+    const { id, name, type, color, parentId } = await request.json()
 
     if (!id || !name || !type || !color) {
       return NextResponse.json(
@@ -123,11 +147,42 @@ export async function PUT(request: Request) {
       )
     }
 
+    // Verify parent category if provided
+    if (parentId) {
+      const parentCategory = await prisma.category.findUnique({
+        where: { id: parentId }
+      });
+      
+      if (!parentCategory) {
+        return NextResponse.json(
+          { error: 'Parent category not found' },
+          { status: 404 }
+        )
+      }
+      
+      // Ensure parent category belongs to user
+      if (parentCategory.userId !== session.user.id && !parentCategory.isDefault) {
+        return NextResponse.json(
+          { error: 'Unauthorized to use this parent category' },
+          { status: 401 }
+        )
+      }
+      
+      // Prevent circular references
+      if (id === parentId) {
+        return NextResponse.json(
+          { error: 'A category cannot be its own parent' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Check if category with same name exists
     const existingCategory = await prisma.category.findFirst({
       where: {
         name,
         userId: session.user.id,
+        parentId: parentId || null,
         NOT: {
           id
         }
@@ -146,7 +201,8 @@ export async function PUT(request: Request) {
       data: {
         name,
         type,
-        color
+        color,
+        parentId: parentId || null
       }
     })
 

@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma'
 import type { Budget } from '@/app/types/budget'
 import type { Category } from '@/app/types/category'
 import type { Wallet } from '@/app/types/wallet'
+import { autoTrackTransactionToGoals } from './auto-track-goals'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -28,8 +29,15 @@ type TransactionWithRelations = {
     id: string
     name: string
   }
+  goal?: {
+    id: string
+    name: string
+    target: number
+    current: number
+  } | null
   categoryId: string | null
   walletId: string
+  goalId?: string | null
 }
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +52,15 @@ export async function POST(request: Request) {
 
   try {
     const data = await request.json()
-    const { categoryId, walletId, amount, type, date, description } = data
+    const {
+      categoryId,
+      walletId,
+      amount,
+      type,
+      date,
+      description,
+      goalId
+    } = data
 
     console.log('Creating transaction:', {
       categoryId,
@@ -52,7 +68,8 @@ export async function POST(request: Request) {
       amount,
       type,
       date,
-      description
+      description,
+      goalId
     });
 
     // Validate required fields
@@ -87,31 +104,29 @@ export async function POST(request: Request) {
 
     console.log('Found category:', category)
 
+    // Prepare transaction data
+    const transactionData: any = {
+      amount: parseFloat(amount),
+      type,
+      date: new Date(date),
+      description,
+      userId: session.user.id,
+      walletId,
+    };
+    
+    // Only add categoryId if it exists
+    if (categoryId) {
+      transactionData.categoryId = categoryId;
+    }
+    
+    // Only add goalId if it exists
+    if (goalId) {
+      transactionData.goalId = goalId;
+    }
+
     // Create the transaction
     const transaction = await prisma.transaction.create({
-      data: {
-        amount: parseFloat(amount),
-        type,
-        date: new Date(date),
-        description,
-        category: categoryId
-          ? {
-              connect: {
-                id: categoryId,
-              },
-            }
-          : undefined,
-        wallet: {
-          connect: {
-            id: walletId,
-          },
-        },
-        user: {
-          connect: {
-            id: session.user.id,
-          },
-        },
-      },
+      data: transactionData,
       include: {
         category: true,
         wallet: true,
@@ -154,6 +169,19 @@ export async function POST(request: Request) {
       newBalance: updatedWallet?.balance,
       difference: (updatedWallet?.balance || 0) - wallet.balance
     });
+
+    // Auto-track transaction to relevant goals based on category
+    if (categoryId) {
+      await autoTrackTransactionToGoals(
+        transaction.id,
+        categoryId,
+        session.user.id,
+        parseFloat(amount),
+        type,
+        description,
+        new Date(date)
+      );
+    }
 
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
@@ -288,7 +316,16 @@ export async function PUT(request: Request) {
 
   try {
     const data = await request.json()
-    const { id, categoryId, walletId, amount, type, date, description } = data
+    const {
+      id,
+      categoryId,
+      walletId,
+      amount,
+      type,
+      date,
+      description,
+      goalId
+    } = data
 
     // Validate required fields
     if (!id || !walletId || !amount || !type || !date) {
@@ -296,7 +333,7 @@ export async function PUT(request: Request) {
     }
 
     // Get the old transaction
-    const oldTransaction = await prisma.transaction.findUnique({
+    const existingTransaction = await prisma.transaction.findUnique({
       where: { id },
       include: {
         category: true,
@@ -304,32 +341,32 @@ export async function PUT(request: Request) {
       },
     })
 
-    if (!oldTransaction || oldTransaction.userId !== session.user.id) {
+    if (!existingTransaction || existingTransaction.userId !== session.user.id) {
       return new NextResponse('Transaction not found', { status: 404 })
     }
 
     // Revert the old wallet balance
     await prisma.wallet.update({
-      where: { id: oldTransaction.walletId },
+      where: { id: existingTransaction.walletId },
       data: {
         balance: {
-          [oldTransaction.type === 'INCOME' ? 'decrement' : 'increment']: oldTransaction.amount,
+          [existingTransaction.type === 'INCOME' ? 'decrement' : 'increment']: existingTransaction.amount,
         },
       },
     })
 
     // If the transaction was an expense, update the old budget
-    if (oldTransaction.type === 'EXPENSE') {
+    if (existingTransaction.type === 'EXPENSE') {
       const oldBudget = await prisma.budget.findFirst({
         where: {
           userId: session.user.id,
-          categoryId: oldTransaction.categoryId,
-          walletId: oldTransaction.walletId,
+          categoryId: existingTransaction.categoryId,
+          walletId: existingTransaction.walletId,
           startDate: {
-            lte: oldTransaction.date,
+            lte: existingTransaction.date,
           },
           endDate: {
-            gte: oldTransaction.date,
+            gte: existingTransaction.date,
           },
         },
         include: {
@@ -368,17 +405,29 @@ export async function PUT(request: Request) {
       }
     }
 
+    // Prepare transaction update data
+    const transactionData: any = {
+      amount: parseFloat(amount),
+      type,
+      date: new Date(date),
+      description,
+      walletId,
+    };
+    
+    // Only add categoryId if it exists
+    if (categoryId) {
+      transactionData.categoryId = categoryId;
+    }
+    
+    // Only add goalId if it exists
+    if (goalId) {
+      transactionData.goalId = goalId;
+    }
+
     // Update transaction
-    const transaction = await prisma.transaction.update({
+    const updatedTransaction = await prisma.transaction.update({
       where: { id },
-      data: {
-        categoryId,
-        walletId,
-        amount: parseFloat(amount),
-        type,
-        date: new Date(date),
-        description,
-      },
+      data: transactionData,
       include: {
         category: true,
         wallet: true,
@@ -394,6 +443,19 @@ export async function PUT(request: Request) {
         },
       },
     })
+
+    // Auto-track transaction to relevant goals based on category if categoryId changed
+    if (categoryId && categoryId !== existingTransaction.categoryId && !goalId && !existingTransaction.goalId) {
+      await autoTrackTransactionToGoals(
+        updatedTransaction.id,
+        categoryId,
+        session.user.id,
+        parseFloat(amount),
+        type,
+        description,
+        new Date(date)
+      );
+    }
 
     // If the new transaction is an expense, update the new budget
     if (type === 'EXPENSE') {
@@ -444,7 +506,7 @@ export async function PUT(request: Request) {
         })
 
         return NextResponse.json({
-          transaction,
+          transaction: updatedTransaction,
           budget: {
             ...newBudget,
             spent: newSpent,
@@ -454,7 +516,7 @@ export async function PUT(request: Request) {
       }
     }
 
-    return NextResponse.json({ transaction })
+    return NextResponse.json({ transaction: updatedTransaction })
   } catch (error) {
     console.error('Error updating transaction:', error)
     return new NextResponse('Internal Server Error', { status: 500 })

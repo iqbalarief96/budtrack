@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiCreditCard } from 'react-icons/fi'
+import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiCreditCard, FiTarget } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency, parseCurrency } from '../lib/utils'
 
@@ -25,6 +25,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
+  const [goals, setGoals] = useState<any[]>([])
   const [formData, setFormData] = useState({
     type: 'EXPENSE',
     amount: '',
@@ -32,6 +33,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     date: new Date().toISOString().split('T')[0],
     categoryId: '',
     walletId: selectedWallet?.id || '',
+    goalId: '',
+    updateGoalProgress: true,
   })
 
   useEffect(() => {
@@ -45,6 +48,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           date: new Date(initialData.date).toISOString().split('T')[0],
           categoryId: initialData.category?.id || '',
           walletId: initialData.wallet?.id || '',
+          goalId: initialData.goal?.id || '',
+          updateGoalProgress: initialData.updateGoalProgress || true,
         });
       } else if (initialData.type) {
         // Only type provided, for new transaction with predetermined type
@@ -52,12 +57,16 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           ...prev,
           type: initialData.type,
           walletId: selectedWallet?.id || '',
+          goalId: initialData.goal?.id || '',
+          updateGoalProgress: initialData.updateGoalProgress || true,
         }));
       }
     } else {
       setFormData(prev => ({
         ...prev,
         walletId: selectedWallet?.id || '',
+        goalId: initialData?.goal?.id || '',
+        updateGoalProgress: initialData?.updateGoalProgress || true,
       }));
     }
   }, [initialData, selectedWallet]);
@@ -77,6 +86,23 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
     fetchCategories()
   }, [formData.type])
+  
+  // Fetch available goals
+  useEffect(() => {
+    const fetchGoals = async () => {
+      try {
+        const response = await fetch('/api/goals')
+        if (!response.ok) throw new Error('Failed to fetch goals')
+        const data = await response.json()
+        setGoals(data.filter((goal: any) => goal.status === 'ONGOING'))
+      } catch (error) {
+        console.error('Error fetching goals:', error)
+        setGoals([])
+      }
+    }
+
+    fetchGoals()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,7 +115,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         throw new Error('Jumlah harus lebih besar dari 0')
       }
 
-      const response = await fetch('/api/transactions' + (initialData?.id ? `?id=${initialData.id}` : ''), {
+      // Submit the transaction first
+      const response = await fetch('/api/transactions', {
         method: initialData?.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,7 +124,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         body: JSON.stringify({
           ...formData,
           amount,
-          id: initialData?.id
+          id: initialData?.id // ID included directly in the body for PUT
         }),
       })
 
@@ -107,6 +134,33 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
       }
 
       const savedTransaction = await response.json()
+      
+      // If a goal was selected and should update progress, create a goal activity
+      if (formData.goalId && formData.updateGoalProgress) {
+        try {
+          // Only update goal if the transaction type is appropriate
+          // For EXPENSE, we should only update savings goals with negative amounts
+          // For INCOME, we update positive amounts
+          const activityAmount = formData.type === 'INCOME' ? amount : -amount
+          
+          await fetch('/api/goals/activities', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              goalId: formData.goalId,
+              amount: activityAmount,
+              description: `Automatically tracked from ${formData.type.toLowerCase()}: ${formData.description || 'Transaction'}`,
+              date: formData.date,
+            }),
+          })
+        } catch (goalError) {
+          console.error('Error updating goal progress:', goalError)
+          // Still continue with the flow even if goal update fails
+        }
+      }
+      
       onSave(savedTransaction)
       onClose()
     } catch (err) {
@@ -222,6 +276,44 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
                 ))}
             </select>
           </div>
+
+          {/* Goal Selection */}
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FiTarget className="text-gray-400" />
+            </div>
+            <select
+              value={formData.goalId}
+              onChange={(e) => setFormData({ ...formData, goalId: e.target.value })}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+            >
+              <option value="">Track untuk Tujuan Keuangan (Opsional)</option>
+              {Array.isArray(goals) && goals
+                .map(goal => (
+                  <option key={goal.id} value={goal.id}>
+                    {goal.name} - {formatCurrency(goal.current)} dari {formatCurrency(goal.target)}
+                  </option>
+                ))}
+            </select>
+          </div>
+          
+          {/* Goal Progress Option - Only show if a goal is selected */}
+          {formData.goalId && (
+            <div className="flex items-center mb-4">
+              <input
+                id="updateGoalProgress"
+                type="checkbox"
+                checked={formData.updateGoalProgress}
+                onChange={(e) => setFormData({ ...formData, updateGoalProgress: e.target.checked })}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="updateGoalProgress" className="ml-2 text-sm text-gray-600">
+                {formData.type === 'INCOME' 
+                  ? 'Tambahkan jumlah ini ke progres tujuan'
+                  : 'Kurangi jumlah ini dari progres tujuan'}
+              </label>
+            </div>
+          )}
 
           {/* Wallet Selection */}
           <div className="relative">

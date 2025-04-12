@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface GoalFormProps {
   onSubmit: (data: any) => void;
@@ -13,6 +14,7 @@ interface GoalFormProps {
     type: string;
     description?: string;
     targetDate: Date;
+    trackedCategories?: any[];
   };
   isEditing?: boolean;
 }
@@ -34,7 +36,30 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
     type: initialData?.type || 'EMERGENCY_FUND',
     description: initialData?.description || '',
     targetDate: initialData?.targetDate ? new Date(initialData.targetDate).toISOString().split('T')[0] : '',
+    trackedCategoryIds: initialData?.trackedCategories?.map((tc: any) => tc.categoryId) || []
   });
+  
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/categories');
+        if (!response.ok) throw new Error('Failed to fetch categories');
+        const data = await response.json();
+        setCategories(data);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchCategories();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +83,23 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
       ...prev,
       type: value,
     }));
+  };
+  
+  const handleCategoryToggle = (categoryId: string) => {
+    setFormData(prev => {
+      // Check if category is already selected
+      const isSelected = prev.trackedCategoryIds.includes(categoryId);
+      
+      // If selected, remove it; otherwise, add it
+      const newTrackedCategoryIds = isSelected
+        ? prev.trackedCategoryIds.filter(id => id !== categoryId)
+        : [...prev.trackedCategoryIds, categoryId];
+      
+      return {
+        ...prev,
+        trackedCategoryIds: newTrackedCategoryIds
+      };
+    });
   };
 
   return (
@@ -133,6 +175,43 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
           onChange={handleChange}
           placeholder="Add some details about your goal"
         />
+      </div>
+      
+      <div className="space-y-3">
+        <Label className="block mb-2">Auto-Track Categories</Label>
+        <p className="text-sm text-gray-500 mb-3">
+          Transactions with these categories will automatically update this goal's progress.
+        </p>
+        
+        {loading ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border rounded-md">
+            {categories.length === 0 ? (
+              <p className="text-sm text-gray-500 col-span-2 text-center py-2">
+                No categories found
+              </p>
+            ) : (
+              categories.map(category => (
+                <div key={category.id} className="flex items-center space-x-2">
+                  <Checkbox 
+                    id={`category-${category.id}`}
+                    checked={formData.trackedCategoryIds.includes(category.id)}
+                    onCheckedChange={() => handleCategoryToggle(category.id)}
+                  />
+                  <label
+                    htmlFor={`category-${category.id}`}
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    {category.name}
+                  </label>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <Button type="submit" className="w-full">

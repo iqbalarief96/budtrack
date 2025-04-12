@@ -51,6 +51,8 @@ model User {
   settings             UserSettings?
   wallets              Wallet[]
   goals                Goal[]
+  goalActivities       GoalActivity[]         // NEW: relationship to goal activities
+  financialAdvice      FinancialAdvice[]      // NEW: relationship to saved financial advice
   categoryRules        CategoryRule[]
   RecurringTransaction RecurringTransaction[]
   investments          Investment[]
@@ -60,6 +62,7 @@ model User {
   groupMemberships     UserGroup[]
   groupTransactions    GroupTransaction[]
   expenseSplits        ExpenseSplit[]
+  groupSettings        UserGroupSettings[]   // NEW: relation to group settings
 }
 
 model Account {
@@ -133,6 +136,9 @@ model Category {
   // Group budget feature relations
   groupBudgets       GroupBudget[]
   groupTransactions  GroupTransaction[]
+  
+  // Goals yang track kategori ini
+  trackedGoals       GoalCategory[]
 
   @@unique([name, userId])
 }
@@ -148,9 +154,11 @@ model Transaction {
   userId      String
   walletId    String
   categoryId  String?
+  goalId      String?   // NEW: untuk track transaksi yang terkait dengan goal
   category    Category? @relation(fields: [categoryId], references: [id])
   wallet      Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal        Goal?     @relation(fields: [goalId], references: [id])
 }
 
 model Budget {
@@ -208,6 +216,75 @@ model Goal {
   updatedAt   DateTime @updatedAt
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Track progress activities for this goal
+  activities  GoalActivity[]
+  
+  // Connect to advice (if this goal was created from advice)
+  adviceLinks  FinancialAdviceGoal[]
+  
+  // Related transactions
+  transactions Transaction[]
+  
+  // Categories yang otomatis ditrack untuk goal ini
+  trackedCategories GoalCategory[]
+}
+
+// Model for goal activity tracking
+model GoalActivity {
+  id          String   @id @default(cuid())
+  goalId      String
+  amount      Float    // Amount added or subtracted
+  date        DateTime @default(now())
+  description String?
+  userId      String
+  
+  // Relationships
+  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([goalId])
+  @@index([userId])
+}
+
+// Table for financial advice saved by users
+model FinancialAdvice {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  type         String   // 'saving', 'budgeting', 'investment', 'general'
+  priority     String   // 'high', 'medium', 'low'
+  estimatedImpact Float?
+  walletId     String?
+  timeframe    String   // 'month', 'quarter', 'year', 'all'
+  
+  createdAt    DateTime @default(now())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Connection to goals created from this advice
+  goals        FinancialAdviceGoal[]
+  
+  @@index([userId])
+}
+
+// Join table between FinancialAdvice and Goal
+model FinancialAdviceGoal {
+  id           String   @id @default(cuid())
+  adviceId     String
+  goalId       String
+  createdAt    DateTime @default(now())
+  
+  // Relationships
+  advice       FinancialAdvice @relation(fields: [adviceId], references: [id], onDelete: Cascade)
+  goal         Goal       @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  
+  @@unique([adviceId, goalId])
+  @@index([adviceId])
+  @@index([goalId])
 }
 
 model CategoryRule {
@@ -255,23 +332,47 @@ model Group {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   ownerId     String
+
+  // Relationships
   owner       User         @relation("OwnedGroups", fields: [ownerId], references: [id])
   members     UserGroup[]
   wallets     GroupWallet[]
   budgets     GroupBudget[]
   invites     GroupInvite[]
+  userSettings UserGroupSettings[] // Relation to user group settings
+  
+  // Optional: for privacy settings - public/private
+  isPrivate   Boolean      @default(false)
 }
 
-// Group membership model
+// Intermediate table for User-Group relationship (many-to-many)
 model UserGroup {
-  id          String    @id @default(cuid())
-  userId      String
-  groupId     String
-  role        String    @default("MEMBER") // Values: "OWNER", "ADMIN", "MEMBER"
-  permissions String?   // Flexible permissions (stored as JSON)
-  joinedAt    DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id])
-  group       Group     @relation(fields: [groupId], references: [id])
+  id        String   @id @default(cuid())
+  userId    String
+  groupId   String
+  role      String   @default("MEMBER") // OWNER, ADMIN, MEMBER
+  permissions String? // JSON string for custom permissions
+  joinedAt  DateTime @default(now())
+  
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, groupId])
+}
+
+// NEW: User group settings model for storing preferences
+model UserGroupSettings {
+  id                 String   @id @default(cuid())
+  userId             String
+  groupId            String
+  notificationMethod String   @default("email") // email, push, none
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  // Relationships
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   
   @@unique([userId, groupId])
 }
@@ -358,3 +459,19 @@ model GroupInvite {
 }
 
 // ====== END GROUP BUDGET MODELS ======
+
+// Join table untuk Goal dan Category
+model GoalCategory {
+  id         String   @id @default(cuid())
+  goalId     String
+  categoryId String
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  goal     Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  @@unique([goalId, categoryId])
+  @@index([goalId])
+  @@index([categoryId])
+}

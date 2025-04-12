@@ -5,10 +5,10 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
-import { ArrowLeft, Plus, CreditCard, MoreHorizontal, Edit, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, CreditCard, MoreHorizontal, Edit, Trash2, Users, Info, Settings } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu"
+import { Badge } from '@/components/ui/badge'
 
 // Function untuk format currency
 const formatCurrency = (amount: number, currencyCode = 'IDR') => {
@@ -112,6 +113,29 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
   const [enableSplit, setEnableSplit] = useState(false)
   const [splits, setSplits] = useState<Array<{userId: string, amount: string, isPaid: boolean}>>([])
   
+  // Get active tab from URL or use default
+  const [activeTab, setActiveTab] = useState('transactions');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get('tab');
+      if (tabParam && ['transactions', 'members', 'settings'].includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
+
+  // Update URL when tab changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', value);
+      window.history.pushState({}, '', url);
+    }
+  };
+
   useEffect(() => {
     if (session) {
       fetchWalletData()
@@ -574,11 +598,11 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
         </Card>
       </div>
       
-      <Tabs defaultValue="transactions" className="w-full">
+      <Tabs defaultValue="transactions" className="w-full" value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-4">
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="transactions" id="transactions-tab">Transactions</TabsTrigger>
+          <TabsTrigger value="members" id="members-tab">Members</TabsTrigger>
+          <TabsTrigger value="settings" id="settings-tab">Settings</TabsTrigger>
         </TabsList>
         
         <TabsContent value="transactions">
@@ -684,16 +708,155 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
         </TabsContent>
         
         <TabsContent value="members">
-          <div className="text-center py-12 bg-gray-50 rounded-lg">
-            <h3 className="text-lg font-medium mb-2">Member Management</h3>
-            <p className="text-gray-500 mb-4">Coming soon! Member management will be available in a future update.</p>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Wallet Members</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {groupMembers.length > 0 ? (
+                groupMembers.map(member => (
+                  <Card key={member.id}>
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          {member.image ? (
+                            <img 
+                              src={member.image} 
+                              alt={member.name || 'User'} 
+                              className="h-8 w-8 rounded-full"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                              {(member.name || member.email || 'U').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <CardTitle className="text-base">{member.name || 'Unnamed User'}</CardTitle>
+                            <CardDescription className="text-xs">{member.email}</CardDescription>
+                          </div>
+                        </div>
+                        <Badge variant={member.role === 'OWNER' ? "default" : (member.role === 'ADMIN' ? "secondary" : "outline")}>
+                          {member.role}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                ))
+              ) : (
+                <div className="text-center py-10 bg-muted rounded-lg col-span-2">
+                  <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Members Yet</h3>
+                  <p className="text-muted-foreground mb-4">This wallet has no members</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+              <div className="flex gap-3">
+                <Info className="h-5 w-5 text-blue-500" />
+                <div>
+                  <h3 className="font-medium text-blue-700 mb-1">Member Management</h3>
+                  <p className="text-sm text-blue-600">
+                    To manage group members, please go to the group page. There you can add, remove, 
+                    or change roles of members.
+                  </p>
+                  <div className="flex space-x-2 mt-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="bg-white" 
+                      asChild
+                    >
+                      <Link href={`/groups/${params.groupId}`}>
+                        <Users className="h-4 w-4 mr-2" />
+                        Go to Group Page
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="bg-white"
+                      onClick={() => handleTabChange('settings')}
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      Go to Settings Tab
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </TabsContent>
         
         <TabsContent value="settings">
-          <div className="text-center py-12 bg-gray-50 rounded-lg">
-            <h3 className="text-lg font-medium mb-2">Wallet Settings</h3>
-            <p className="text-gray-500 mb-4">Coming soon! Wallet settings will be available in a future update.</p>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Wallet Settings</CardTitle>
+                <CardDescription>Manage wallet preferences and information</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-medium mb-2">Wallet Info</h3>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="font-medium">Name:</div>
+                      <div>{wallet.name}</div>
+                      
+                      <div className="font-medium">Currency:</div>
+                      <div>{wallet.currencyCode}</div>
+                      
+                      <div className="font-medium">Current Balance:</div>
+                      <div className="font-semibold">{formatCurrency(wallet.balance, wallet.currencyCode)}</div>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h3 className="text-lg font-medium mb-2">Wallet Access</h3>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      All group members have access to this wallet. You can manage group members from the group page.
+                    </p>
+                    <div className="flex space-x-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        asChild
+                      >
+                        <Link href={`/groups/${params.groupId}`}>
+                          <Users className="h-4 w-4 mr-2" />
+                          Manage Group Members
+                        </Link>
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleTabChange('members')}
+                      >
+                        <Users className="h-4 w-4 mr-2" />
+                        Go to Members Tab
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-4">
+                    <h3 className="text-lg font-medium mb-2">Advanced Settings</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Additional wallet settings will be available in future updates.
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      id="settings-go-to-members"
+                      onClick={() => handleTabChange('members')}
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Go to Members Tab
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>

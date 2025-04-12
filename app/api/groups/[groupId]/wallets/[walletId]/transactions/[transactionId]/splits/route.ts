@@ -90,41 +90,85 @@ export async function PATCH(
       },
     })
 
-    // If being marked as paid, add a personal transaction record
-    if (isPaid && !split.isPaid) {
-      // Get user's default wallet
-      const userWallet = await prisma.wallet.findFirst({
-        where: { 
-          userId: split.userId,
-          isDefault: true
-        }
-      })
+    // Get user's default wallet
+    const userWallet = await prisma.wallet.findFirst({
+      where: { 
+        userId: split.userId,
+        isDefault: true
+      }
+    })
+    
+    if (userWallet) {
+      const walletName = split.transaction.groupWallet.name || 'Group Wallet'
+      const transactionDescription = `${split.transaction.description} (Group: ${walletName})`
       
-      if (userWallet) {
-        const walletName = split.transaction.groupWallet.name || 'Group Wallet'
-        
-        // Create personal expense transaction
-        await prisma.transaction.create({
-          data: {
-            amount: split.amount,
-            description: `${split.transaction.description} (Group: ${walletName})`,
-            date: new Date(),
-            type: 'EXPENSE',
+      // If being marked as paid, add a personal transaction record (if it doesn't exist yet)
+      if (isPaid && !split.isPaid) {
+        // Cek apakah transaksi sudah ada untuk mencegah duplikasi
+        const existingTransaction = await prisma.transaction.findFirst({
+          where: {
             userId: split.userId,
+            description: transactionDescription,
             walletId: userWallet.id,
-            categoryId: split.transaction.categoryId,
+            type: 'EXPENSE'
           }
         })
         
-        // Update user wallet balance
-        await prisma.wallet.update({
-          where: { id: userWallet.id },
-          data: {
-            balance: {
-              decrement: split.amount
+        // Hanya buat transaksi baru jika belum ada
+        if (!existingTransaction) {
+          // Create personal expense transaction
+          await prisma.transaction.create({
+            data: {
+              amount: split.amount,
+              description: transactionDescription,
+              date: new Date(),
+              type: 'EXPENSE',
+              userId: split.userId,
+              walletId: userWallet.id,
+              categoryId: split.transaction.categoryId,
             }
+          })
+          
+          // Update user wallet balance
+          await prisma.wallet.update({
+            where: { id: userWallet.id },
+            data: {
+              balance: {
+                decrement: split.amount
+              }
+            }
+          })
+        }
+      }
+      // If being marked as unpaid, remove the personal transaction record
+      else if (!isPaid && split.isPaid) {
+        // Cari transaksi yang perlu dihapus
+        const existingTransaction = await prisma.transaction.findFirst({
+          where: {
+            userId: split.userId,
+            description: transactionDescription,
+            walletId: userWallet.id,
+            type: 'EXPENSE'
           }
         })
+        
+        // Hapus transaksi jika ada
+        if (existingTransaction) {
+          // Kembalikan balance wallet user
+          await prisma.wallet.update({
+            where: { id: userWallet.id },
+            data: {
+              balance: {
+                increment: split.amount
+              }
+            }
+          })
+          
+          // Hapus transaksi
+          await prisma.transaction.delete({
+            where: { id: existingTransaction.id }
+          })
+        }
       }
     }
 

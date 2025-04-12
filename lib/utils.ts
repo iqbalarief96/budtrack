@@ -14,3 +14,14 @@ export const formatCurrency = (amount: number | null | undefined) => {
     minimumFractionDigits: 0,
   }).format(amount)
 }
+
+// Format date function
+export const formatDate = (dateString: string | Date) => {
+  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+  
+  return date.toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}

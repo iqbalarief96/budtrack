@@ -201,99 +201,90 @@ const InsightsPage = () => {
             </div>
           </div>
 
-          {/* Monthly Trend */}
-          {chartData.monthlyData && Object.keys(chartData.monthlyData).length > 0 && (
-            <div className="col-span-2 rounded-lg bg-white p-6 shadow-md">
-              <h3 className="mb-4 text-lg font-semibold">Monthly Trend</h3>
-              <Line
-                data={{
-                  labels: Object.keys(chartData.monthlyData),
-                  datasets: [
-                    {
-                      label: 'Income',
-                      data: Object.values(chartData.monthlyData).map(d => d.income),
-                      borderColor: 'rgb(75, 192, 192)',
-                      tension: 0.1,
-                    },
-                    {
-                      label: 'Expenses',
-                      data: Object.values(chartData.monthlyData).map(d => d.expense),
-                      borderColor: 'rgb(255, 99, 132)',
-                      tension: 0.1,
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  plugins: {
-                    legend: {
-                      position: 'top' as const,
-                    },
-                    title: {
-                      display: false,
-                    },
-                  },
-                }}
-              />
+          {/* Monthly Trend Card */}
+          <div className="rounded-lg bg-white p-6 shadow-md col-span-2">
+            <h3 className="mb-4 text-lg font-semibold">Monthly Trend</h3>
+            <div className="h-64">
+              {chartData.monthlyData && (
+                <Line
+                  data={{
+                    labels: Object.keys(chartData.monthlyData),
+                    datasets: [
+                      {
+                        label: 'Income',
+                        data: Object.values(chartData.monthlyData).map(d => d.income),
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                      },
+                      {
+                        label: 'Expense',
+                        data: Object.values(chartData.monthlyData).map(d => d.expense),
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      },
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                  }}
+                />
+              )}
             </div>
-          )}
+          </div>
 
-          {/* Expenses by Category */}
-          {chartData.expensesByCategory && Object.keys(chartData.expensesByCategory).length > 0 && (
-            <div className="rounded-lg bg-white p-6 shadow-md">
-              <h3 className="mb-4 text-lg font-semibold">Expenses by Category</h3>
-              <Pie
-                data={{
-                  labels: Object.keys(chartData.expensesByCategory),
-                  datasets: [
-                    {
-                      data: Object.values(chartData.expensesByCategory),
-                      backgroundColor: [
-                        '#FF6384',
-                        '#36A2EB',
-                        '#FFCE56',
-                        '#4BC0C0',
-                        '#9966FF',
-                        '#FF9F40',
-                      ],
-                    },
-                  ],
-                }}
-                options={{
-                  plugins: {
-                    legend: {
-                      position: 'bottom' as const,
-                    },
-                  },
-                }}
-              />
+          {/* Category Breakdown */}
+          <div className="rounded-lg bg-white p-6 shadow-md">
+            <h3 className="mb-4 text-lg font-semibold">Expense by Category</h3>
+            <div className="h-64">
+              {chartData.expensesByCategory && (
+                <Doughnut
+                  data={{
+                    labels: Object.keys(chartData.expensesByCategory),
+                    datasets: [
+                      {
+                        data: Object.values(chartData.expensesByCategory),
+                        backgroundColor: [
+                          'rgba(59, 130, 246, 0.8)',
+                          'rgba(16, 185, 129, 0.8)',
+                          'rgba(249, 115, 22, 0.8)',
+                          'rgba(217, 70, 239, 0.8)',
+                          'rgba(239, 68, 68, 0.8)',
+                          'rgba(245, 158, 11, 0.8)',
+                        ],
+                        borderWidth: 1,
+                      },
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                  }}
+                />
+              )}
             </div>
-          )}
+          </div>
 
-          {/* AI Analysis */}
-          <div className="col-span-2 rounded-lg bg-white p-6 shadow-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <FiTrendingUp className="text-blue-500" />
-                Smart Insights
-              </h3>
-              <button
-                onClick={generateAnalysis}
-                disabled={isGenerating}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <FiRefreshCw className="w-4 h-4" />
-                    Generate
-                  </>
-                )}
-              </button>
+          {/* Advanced Analytics Card */}
+          <div className="rounded-lg bg-white p-6 shadow-md lg:col-span-2">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Smart Financial Analysis</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={generateAnalysis}
+                  disabled={isGenerating}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm flex items-center gap-1 hover:bg-blue-700 disabled:bg-blue-300"
+                >
+                  {isGenerating ? (
+                    <>
+                      <FiRefreshCw className="animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate Analysis'
+                  )}
+                </button>
+              </div>
             </div>
 
             {generationError && (

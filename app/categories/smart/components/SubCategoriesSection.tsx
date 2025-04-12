@@ -81,10 +81,25 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
     setError('');
 
     try {
-      // Simulate API call to create subcategory
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Kirim request API sebenarnya untuk membuat sub-kategori
+      const response = await fetch('/api/categories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newSubCategory.name,
+          type: newSubCategory.type,
+          color: newSubCategory.color,
+          parentId: newSubCategory.parentId
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create sub-category');
+      }
       
-      // In a real app, this would be a fetch call to create the category in the database
       setSuccess(`Sub-category "${newSubCategory.name}" created successfully`);
       
       // Reset form and refresh data
@@ -100,7 +115,7 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
         onRefresh();
       }, 2000);
     } catch (error) {
-      setError('Failed to create sub-category');
+      setError(error instanceof Error ? error.message : 'Failed to create sub-category');
     }
   };
 
@@ -113,10 +128,26 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
     setError('');
 
     try {
-      // Simulate API call to update category
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Send actual API request
+      const response = await fetch('/api/categories', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingCategory.id,
+          name: editingCategory.name,
+          type: editingCategory.type,
+          color: editingCategory.color,
+          parentId: editingCategory.parentId || null
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update category');
+      }
       
-      // In a real app, this would be a fetch call to update the category in the database
       setSuccess(`Category "${editingCategory.name}" updated successfully`);
       
       // Reset form and refresh data
@@ -126,7 +157,7 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
         onRefresh();
       }, 2000);
     } catch (error) {
-      setError('Failed to update category');
+      setError(error instanceof Error ? error.message : 'Failed to update category');
     }
   };
 
@@ -136,10 +167,16 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
     }
 
     try {
-      // Simulate API call to delete category
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Send actual API request to delete category
+      const response = await fetch(`/api/categories?id=${categoryId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete category');
+      }
       
-      // In a real app, this would be a fetch call to delete the category
       setSuccess('Category deleted successfully');
       
       // Refresh data
@@ -148,7 +185,7 @@ export default function SubCategoriesSection({ categories, onRefresh }: SubCateg
         onRefresh();
       }, 2000);
     } catch (error) {
-      setError('Failed to delete category');
+      setError(error instanceof Error ? error.message : 'Failed to delete category');
     }
   };
 

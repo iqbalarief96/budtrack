@@ -1,4 +1,4 @@
-// File: D:\DATA\Documents\code\Tes\budtrack\app\transactions\page.tsx
+// File: C:\Users\qbf\Documents\TES\budtrack\app\transactions\page.tsx
 import * as entry from '../../../../app/transactions/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
