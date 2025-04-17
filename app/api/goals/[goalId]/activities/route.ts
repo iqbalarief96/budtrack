@@ -104,7 +104,6 @@ export async function POST(
         amount,
         description,
         date: new Date(date),
-        userId: session.user.id,
       },
     })
 

@@ -1,4 +1,4 @@
-// File: C:\Users\qbf\Documents\TES\budtrack\app\recurring\page.tsx
+// File: D:\DATA\Documents\code\Tes\budtrack\app\recurring\page.tsx
 import * as entry from '../../../../app/recurring/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

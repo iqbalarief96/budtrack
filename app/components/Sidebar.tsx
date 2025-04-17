@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { 
   FiHome, FiDollarSign, FiCreditCard, FiTag, FiPieChart, 
   FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiShield, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
-  FiBriefcase, FiUsers
+  FiBriefcase, FiUsers, FiGrid, FiMessageSquare, FiHeart
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
@@ -24,6 +24,8 @@ import {
   LogOut,
   Users,
 } from "lucide-react"
+import AlertCenter from './AlertCenter'
+import { Bot } from 'lucide-react'
 
 export interface SidebarProps {
   session: Session | null
@@ -96,15 +98,16 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
     { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
     { path: '/budgets', icon: <FiTarget size={20} />, label: 'Anggaran' },
-    { path: '/goals', icon: <Target size={20} />, label: 'Tujuan Keuangan' },
     { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring Transaction' },
     { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
     { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
+    { path: '/chatbot', icon: <Bot size={20} />, label: 'Finance Assistant' },
     { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insight' },
     { path: '/alerts', icon: <FiBell size={20} />, label: 'Alerts' },
     { path: '/categories/smart', icon: <FiZap size={20} />, label: 'Smart Kategorisasi' },
     { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },
     { path: '/settings', icon: <FiSettings size={20} />, label: 'Pengaturan' },
+    { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
   ]
 
   if (!session) {
@@ -126,9 +129,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
           <h1 className="text-xl font-bold text-blue-600">BudTrack</h1>
           
           <div className="flex items-center space-x-4">
-            <button className="p-2 rounded-full text-gray-600 hover:bg-gray-100">
-              <FiBell size={20} />
-            </button>
+            {/* AlertCenter removed - now in main layout */}
           </div>
         </div>
       </div>
@@ -161,6 +162,31 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
             )}
           </div>
 
+          {/* User Profile Section - Moved to top */}
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between">
+              {!isCollapsed || isMobile ? (
+                <div className="flex items-center space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
+                    {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-700 truncate">{session?.user?.name}</p>
+                    <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center w-full">
+                  <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
+                    {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
+                  </div>
+                </div>
+              )}
+              
+              {!isCollapsed && <div className="flex-shrink-0"><AlertCenter /></div>}
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto py-4">
             <nav className="px-2 space-y-1">
               {menuItems.map((item) => (
@@ -181,35 +207,14 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
           </div>
 
           <div className="p-4 border-t">
-            {!isCollapsed && session?.user?.name ? (
-              <Link
-                href="/profile"
-                className="flex items-center space-x-3 mb-4 px-4 py-2 rounded-md hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
-                  {session.user.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-700 truncate">{session.user.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{session.user.email}</p>
-                </div>
-              </Link>
-            ) : isCollapsed && (
-              <Link
-                href="/profile"
-                className="flex justify-center mb-4 w-full"
-              >
-                <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
-                  {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
-                </div>
-              </Link>
-            )}
             <button
               onClick={handleLogout}
-              className={`flex items-center px-4 py-3 rounded-md text-red-500 hover:bg-red-50 w-full`}
+              className={`flex items-center w-full px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors ${
+                !isCollapsed ? 'justify-start' : 'justify-center'
+              }`}
             >
-              <FiLogOut size={20} />
-              {(!isCollapsed || isMobile) && <span className="ml-3">Keluar</span>}
+              <FiLogOut size={20} className="text-gray-500" />
+              {!isCollapsed && <span className="ml-3">Keluar</span>}
             </button>
           </div>
         </div>

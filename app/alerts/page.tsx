@@ -74,6 +74,23 @@ export default function AlertsPage() {
       
       const data = await response.json()
       setAnomalies(data.anomalies)
+      
+      // If anomalies are found, create notifications
+      if (data.anomalies && data.anomalies.length > 0) {
+        try {
+          // Create notifications from the anomalies
+          await fetch('/api/alerts/anomalies/create-notification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ anomalies: data.anomalies }),
+          });
+        } catch (notifError) {
+          console.error('Failed to create alert notifications:', notifError);
+          // Don't throw error here, we still want to show anomalies even if notification creation fails
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
       console.error('Error fetching anomalies:', err)

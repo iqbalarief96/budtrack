@@ -1,4 +1,4 @@
-// File: C:\Users\qbf\Documents\TES\budtrack\app\api\wallets\route.ts
+// File: D:\DATA\Documents\code\Tes\budtrack\app\api\wallets\route.ts
 import * as entry from '../../../../../app/api/wallets/route.js'
 import type { NextRequest } from 'next/server.js'
 

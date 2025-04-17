@@ -7,30 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Define Investment Model
 model Investment {
-  id                 String    @id @default(cuid())
-  name               String    // Nama aset investasi (misal: Saham Bank BCA, Bitcoin)
-  type               String    // Jenis investasi: STOCK, CRYPTO, MUTUAL_FUND, PROPERTY, OTHER
-  tickerSymbol       String?   // Simbol ticker (misal: BBCA, BTC-USD)
-  quantity           Float     // Jumlah unit/lembar yang dimiliki
-  averagePurchasePrice Float     // Harga beli rata-rata per unit
-  purchaseDate       DateTime  // Tanggal pembelian awal atau rata-rata
-  notes              String?   // Catatan tambahan
-  
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  // Relasi ke User
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId             String
-  
-  // Relasi ke Wallet (NEW)
-  wallet             Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  walletId           String
+  id                   String   @id @default(cuid())
+  name                 String
+  type                 String
+  tickerSymbol         String?
+  quantity             Float
+  averagePurchasePrice Float
+  purchaseDate         DateTime
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  userId               String
+  walletId             String
+  wallet               Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([walletId]) // NEW INDEX
+  @@index([walletId])
 }
 
 model User {
@@ -40,29 +34,31 @@ model User {
   emailVerified        DateTime?
   image                String?
   password             String?
-  riskProfile          String?                // Profil risiko investasi: Konservatif, Moderat, Agresif
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
+  riskProfile          String?
   accounts             Account[]
   budgets              Budget[]
   categories           Category[]
+  categoryRules        CategoryRule[]
+  expenseSplits        ExpenseSplit[]
+  financialAdvice      FinancialAdvice[]
+  ownedGroups          Group[]                @relation("OwnedGroups")
+  groupTransactions    GroupTransaction[]
+  investments          Investment[]
+  RecurringTransaction RecurringTransaction[]
   sessions             Session[]
   transactions         Transaction[]
+  groupMemberships     UserGroup[]
+  groupSettings        UserGroupSettings[]
   settings             UserSettings?
   wallets              Wallet[]
+  chatMessages         ChatMessage[]
+  alerts               Alert[]
+  emergencyFund        EmergencyFund?
+  dashboardViews       DashboardView[]
+  weddings             Wedding[]
   goals                Goal[]
-  goalActivities       GoalActivity[]         // NEW: relationship to goal activities
-  financialAdvice      FinancialAdvice[]      // NEW: relationship to saved financial advice
-  categoryRules        CategoryRule[]
-  RecurringTransaction RecurringTransaction[]
-  investments          Investment[]
-  
-  // Group budget feature relations
-  ownedGroups          Group[]               @relation("OwnedGroups")
-  groupMemberships     UserGroup[]
-  groupTransactions    GroupTransaction[]
-  expenseSplits        ExpenseSplit[]
-  groupSettings        UserGroupSettings[]   // NEW: relation to group settings
 }
 
 model Account {
@@ -100,45 +96,40 @@ model VerificationToken {
 }
 
 model Wallet {
-  id                    String                  @id @default(cuid())
+  id                    String                 @id @default(cuid())
   name                  String
-  balance               Float                   @default(0)
-  currencyCode          String                  @default("IDR")
+  balance               Float                  @default(0)
+  currencyCode          String                 @default("IDR")
   icon                  String?
   color                 String?
-  isDefault             Boolean                 @default(false)
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
+  isDefault             Boolean                @default(false)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
   userId                String
   budgets               Budget[]
-  transactions          Transaction[]
-  recurringTransactions RecurringTransaction[]
-  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   investments           Investment[]
+  recurringTransactions RecurringTransaction[]
+  transactions          Transaction[]
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Category {
-  id            String         @id @default(cuid())
-  name          String
-  type          String
-  icon          String?
-  color         String?
-  isDefault     Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  userId        String
-  budgets       Budget[]
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions  Transaction[]
-  parentId      String? // For sub-categories
-  categoryRules CategoryRule[]
-  
-  // Group budget feature relations
-  groupBudgets       GroupBudget[]
-  groupTransactions  GroupTransaction[]
-  
-  // Goals yang track kategori ini
-  trackedGoals       GoalCategory[]
+  id                String             @id @default(cuid())
+  name              String
+  type              String
+  icon              String?
+  color             String?
+  isDefault         Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userId            String
+  parentId          String?
+  budgets           Budget[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryRules     CategoryRule[]
+  groupBudgets      GroupBudget[]
+  groupTransactions GroupTransaction[]
+  transactions      Transaction[]
 
   @@unique([name, userId])
 }
@@ -154,11 +145,10 @@ model Transaction {
   userId      String
   walletId    String
   categoryId  String?
-  goalId      String?   // NEW: untuk track transaksi yang terkait dengan goal
-  category    Category? @relation(fields: [categoryId], references: [id])
-  wallet      Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  goalId      String?
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goal        Goal?     @relation(fields: [goalId], references: [id])
+  wallet      Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [categoryId], references: [id])
 }
 
 model Budget {
@@ -178,12 +168,17 @@ model Budget {
 }
 
 model EmergencyFund {
-  id        String   @id @default(cuid())
-  target    Float
-  current   Float    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    String   @unique
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetAmount        Float
+  currentAmount       Float
+  monthlyContribution Float
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model UserSettings {
@@ -200,91 +195,20 @@ model UserSettings {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model Goal {
-  id          String   @id @default(cuid())
-  name        String
-  target      Float
-  current     Float    @default(0)
-  startDate   DateTime @default(now())
-  targetDate  DateTime
-  type        String // e.g., "EMERGENCY_FUND", "HOME_DOWN_PAYMENT", "EDUCATION", etc.
-  description String?
-  icon        String?
-  color       String?
-  status      String   @default("ONGOING") // "ONGOING", "COMPLETED", "CANCELLED"
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Track progress activities for this goal
-  activities  GoalActivity[]
-  
-  // Connect to advice (if this goal was created from advice)
-  adviceLinks  FinancialAdviceGoal[]
-  
-  // Related transactions
-  transactions Transaction[]
-  
-  // Categories yang otomatis ditrack untuk goal ini
-  trackedCategories GoalCategory[]
-}
-
-// Model for goal activity tracking
-model GoalActivity {
-  id          String   @id @default(cuid())
-  goalId      String
-  amount      Float    // Amount added or subtracted
-  date        DateTime @default(now())
-  description String?
-  userId      String
-  
-  // Relationships
-  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@index([goalId])
-  @@index([userId])
-}
-
-// Table for financial advice saved by users
 model FinancialAdvice {
-  id           String   @id @default(cuid())
-  title        String
-  description  String
-  type         String   // 'saving', 'budgeting', 'investment', 'general'
-  priority     String   // 'high', 'medium', 'low'
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  type            String
+  priority        String
   estimatedImpact Float?
-  walletId     String?
-  timeframe    String   // 'month', 'quarter', 'year', 'all'
-  
-  createdAt    DateTime @default(now())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Connection to goals created from this advice
-  goals        FinancialAdviceGoal[]
-  
-  @@index([userId])
-}
+  walletId        String?
+  timeframe       String
+  createdAt       DateTime @default(now())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-// Join table between FinancialAdvice and Goal
-model FinancialAdviceGoal {
-  id           String   @id @default(cuid())
-  adviceId     String
-  goalId       String
-  createdAt    DateTime @default(now())
-  
-  // Relationships
-  advice       FinancialAdvice @relation(fields: [adviceId], references: [id], onDelete: Cascade)
-  goal         Goal       @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  
-  @@unique([adviceId, goalId])
-  @@index([adviceId])
-  @@index([goalId])
+  @@index([userId])
 }
 
 model CategoryRule {
@@ -297,8 +221,8 @@ model CategoryRule {
   categoryId String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RecurringTransaction {
@@ -306,78 +230,64 @@ model RecurringTransaction {
   name            String
   amount          Float
   category        String?
-  frequency       String // "Daily", "Weekly", "Monthly", "Yearly" 
+  frequency       String
   startDate       DateTime
   nextPaymentDate DateTime
   description     String?
   isActive        Boolean  @default(true)
-  type            String   @default("expense") // "income" or "expense"
+  type            String   @default("expense")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   walletId        String
   userId          String
-  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
 }
 
-// ====== GROUP BUDGET FEATURE MODELS ======
-
-// Main group model
 model Group {
-  id          String       @id @default(cuid())
-  name        String
-  description String?
-  icon        String?
-  color       String?      @default("#6366f1") // Default color: Indigo
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  ownerId     String
-
-  // Relationships
-  owner       User         @relation("OwnedGroups", fields: [ownerId], references: [id])
-  members     UserGroup[]
-  wallets     GroupWallet[]
-  budgets     GroupBudget[]
-  invites     GroupInvite[]
-  userSettings UserGroupSettings[] // Relation to user group settings
-  
-  // Optional: for privacy settings - public/private
-  isPrivate   Boolean      @default(false)
+  id           String              @id @default(cuid())
+  name         String
+  description  String?
+  icon         String?
+  color        String?             @default("#6366f1")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  ownerId      String
+  isPrivate    Boolean             @default(false)
+  owner        User                @relation("OwnedGroups", fields: [ownerId], references: [id])
+  budgets      GroupBudget[]
+  invites      GroupInvite[]
+  wallets      GroupWallet[]
+  members      UserGroup[]
+  userSettings UserGroupSettings[]
 }
 
-// Intermediate table for User-Group relationship (many-to-many)
 model UserGroup {
-  id        String   @id @default(cuid())
-  userId    String
-  groupId   String
-  role      String   @default("MEMBER") // OWNER, ADMIN, MEMBER
-  permissions String? // JSON string for custom permissions
-  joinedAt  DateTime @default(now())
-  
-  // Relationships
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String
+  role        String   @default("MEMBER")
+  permissions String?
+  joinedAt    DateTime @default(now())
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([userId, groupId])
 }
 
-// NEW: User group settings model for storing preferences
 model UserGroupSettings {
   id                 String   @id @default(cuid())
   userId             String
   groupId            String
-  notificationMethod String   @default("email") // email, push, none
+  notificationMethod String   @default("email")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  
-  // Relationships
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([userId, groupId])
 }
 
-// Group wallet model
 model GroupWallet {
   id           String             @id @default(cuid())
   groupId      String
@@ -388,66 +298,61 @@ model GroupWallet {
   color        String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
-  group        Group              @relation(fields: [groupId], references: [id])
   transactions GroupTransaction[]
+  group        Group              @relation(fields: [groupId], references: [id])
 }
 
-// Group transaction model
 model GroupTransaction {
-  id             String           @id @default(cuid())
-  groupWalletId  String
-  amount         Float
-  type           String           // INCOME, EXPENSE, TRANSFER
-  date           DateTime
-  description    String?
-  notes          String?
-  createdById    String
-  createdBy      User             @relation(fields: [createdById], references: [id])
-  categoryId     String?
-  category       Category?        @relation(fields: [categoryId], references: [id])
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  groupWallet    GroupWallet      @relation(fields: [groupWalletId], references: [id])
-  splits         ExpenseSplit[]
+  id            String         @id @default(cuid())
+  groupWalletId String
+  amount        Float
+  type          String
+  date          DateTime
+  description   String?
+  notes         String?
+  createdById   String
+  categoryId    String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  splits        ExpenseSplit[]
+  groupWallet   GroupWallet    @relation(fields: [groupWalletId], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  createdBy     User           @relation(fields: [createdById], references: [id])
 }
 
-// Expense split model - for tracking how expenses are split among users
 model ExpenseSplit {
   id                 String           @id @default(cuid())
   groupTransactionId String
-  transaction        GroupTransaction @relation(fields: [groupTransactionId], references: [id], onDelete: Cascade)
   userId             String
-  user               User             @relation(fields: [userId], references: [id])
-  amount             Float            // Amount this user is responsible for
+  amount             Float
   isPaid             Boolean          @default(false)
   paidDate           DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+  user               User             @relation(fields: [userId], references: [id])
+  transaction        GroupTransaction @relation(fields: [groupTransactionId], references: [id], onDelete: Cascade)
 
   @@unique([groupTransactionId, userId])
 }
 
-// Group budget model
 model GroupBudget {
-  id          String    @id @default(cuid())
-  groupId     String
-  name        String
-  amount      Float
-  spent       Float     @default(0)
-  startDate   DateTime
-  endDate     DateTime
-  categoryId  String?
-  category    Category? @relation(fields: [categoryId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  group       Group     @relation(fields: [groupId], references: [id])
+  id         String    @id @default(cuid())
+  groupId    String
+  name       String
+  amount     Float
+  spent      Float     @default(0)
+  startDate  DateTime
+  endDate    DateTime
+  categoryId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  group      Group     @relation(fields: [groupId], references: [id])
+  category   Category? @relation(fields: [categoryId], references: [id])
 }
 
-// Group invite model
 model GroupInvite {
   id        String    @id @default(cuid())
   groupId   String
-  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   email     String?
   code      String    @unique
   expiresAt DateTime
@@ -456,22 +361,279 @@ model GroupInvite {
   isUsed    Boolean   @default(false)
   usedAt    DateTime?
   usedById  String?
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
 }
 
-// ====== END GROUP BUDGET MODELS ======
+// Chat messages for the AI assistant
+model ChatMessage {
+  id               String   @id @default(cuid())
+  userId           String
+  userMessage      String
+  assistantMessage String
+  createdAt        DateTime @default(now())
 
-// Join table untuk Goal dan Category
-model GoalCategory {
-  id         String   @id @default(cuid())
-  goalId     String
-  categoryId String
-  createdAt  DateTime @default(now())
-  
-  // Relations
-  goal     Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  
-  @@unique([goalId, categoryId])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Alerts for unusual spending and other notifications
+model Alert {
+  id             String   @id @default(cuid())
+  userId         String
+  type           String // UNUSUAL_SPENDING, BUDGET_LIMIT, GOAL_ACHIEVED, etc.
+  title          String
+  message        String
+  additionalData String? // JSON data for specific alert types
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Financial goal models
+model Goal {
+  id          String         @id @default(cuid())
+  userId      String
+  name        String
+  target      Float
+  current     Float          @default(0)
+  deadline    DateTime?
+  category    String?
+  description String?
+  icon        String?
+  color       String?
+  status      String         @default("ONGOING")
+  isArchived  Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  activities  GoalActivity[]
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model GoalActivity {
+  id          String   @id @default(cuid())
+  goalId      String
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  createdAt   DateTime @default(now())
+  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
   @@index([goalId])
-  @@index([categoryId])
+}
+
+// Dashboard customization models
+model DashboardView {
+  id        String   @id @default(cuid())
+  name      String
+  isDefault Boolean  @default(false)
+  timeframe String?
+  widgets   String? // Stored as JSON string array of widget objects
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Wedding planner models
+model Wedding {
+  id             String   @id @default(cuid())
+  userId         String
+  title          String
+  date           DateTime
+  location       String?
+  budget         Float    @default(0)
+  spentBudget    Float    @default(0)
+  expectedGuests Int      @default(0)
+  status         String   @default("PLANNING") // PLANNING, CONFIRMED, COMPLETED
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  venues         Venue[]
+  vendors        Vendor[]
+  documents      Document[]
+  rundownItems   Rundown[]
+  souvenirs      Souvenir[]
+  playlists      Playlist[]
+  moodboardItems Moodboard[]
+  gifts          Gift[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Venue {
+  id            String    @id @default(cuid())
+  weddingId     String
+  name          String
+  address       String
+  capacity      Int?
+  priceRange    String?
+  contactPerson String?
+  phone         String?
+  email         String?
+  website       String?
+  notes         String?
+  isBooked      Boolean   @default(false)
+  bookingDate   DateTime?
+  depositAmount Float?
+  imageUrl      String?
+  features      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Vendor {
+  id              String   @id @default(cuid())
+  weddingId       String
+  name            String
+  category        String // PHOTOGRAPHY, CATERING, DECOR, etc.
+  description     String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  website         String?
+  address         String?
+  priceRange      String?
+  status          String   @default("pending") // pending, contacted, booked, completed
+  rating          Float?
+  imageUrl        String?
+  instagramHandle String?
+  notes           String?
+  features        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Document {
+  id            String    @id @default(cuid())
+  weddingId     String
+  name          String
+  description   String?
+  deadline      DateTime?
+  location      String?
+  status        String    @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED
+  isMandatory   Boolean   @default(false)
+  notes         String?
+  attachmentUrl String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Rundown {
+  id          String   @id @default(cuid())
+  weddingId   String
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  description String?
+  location    String?
+  responsible String?
+  category    String? // CEREMONY, RECEPTION, PREPARATION, etc.
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Souvenir {
+  id                String    @id @default(cuid())
+  weddingId         String
+  name              String
+  type              String?
+  quantity          Int
+  pricePerUnit      Float
+  totalBudget       Float
+  actualCostPerUnit Float     @default(0)
+  totalActualCost   Float     @default(0)
+  vendor            String?
+  description       String?
+  imageUrl          String?
+  status            String    @default("PLANNING") // PLANNING, ORDERED, RECEIVED
+  orderDate         DateTime?
+  deliveryDate      DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Playlist {
+  id         String   @id @default(cuid())
+  weddingId  String
+  title      String
+  artist     String
+  duration   String?
+  category   String? // CEREMONY, FIRST_DANCE, RECEPTION, etc.
+  url        String?
+  notes      String?
+  order      Int?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Moodboard {
+  id            String   @id @default(cuid())
+  weddingId     String
+  title         String
+  description   String?
+  imageUrl      String
+  category      String? // COLORS, DECOR, DRESS, FLOWERS, etc.
+  isInspiration Boolean  @default(true)
+  isApproved    Boolean  @default(false)
+  source        String?
+  tags          String? // Comma-separated tags
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Gift {
+  id            String   @id @default(cuid())
+  weddingId     String
+  name          String
+  quantity      Int      @default(1)
+  estimatedCost Float    @default(0)
+  actualCost    Float    @default(0)
+  status        String   @default("not-started") // not-started, pending, completed
+  responsible   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
 }

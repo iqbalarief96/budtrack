@@ -3,11 +3,39 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import BudgetDashboard from "@/components/budget/BudgetDashboard";
-import type { Budget } from "@/app/types/budget";
-import type { Category } from "@/app/types/category";
-import type { Wallet } from "@/app/types/wallet";
 
-type BudgetWithRelations = Budget & {
+// Define proper types if not imported
+interface Budget {
+  id: string;
+  amount: number;
+  startDate: Date;
+  endDate: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+  walletId: string;
+  categoryId: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  type: "INCOME" | "EXPENSE" | "BOTH";
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+}
+
+interface Wallet {
+  id: string;
+  name: string;
+  balance: number;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+}
+
+interface BudgetWithRelations extends Budget {
   category: Category;
   wallet: Wallet;
   spent: number;
@@ -33,7 +61,7 @@ async function getBudgets(userId: string) {
 
   // Calculate spending for each budget
   const budgetsWithSpending = await Promise.all(
-    budgets.map(async (budget: Budget & { category: Category; wallet: Wallet }) => {
+    budgets.map(async (budget) => {
       const spending = await prisma.transaction.aggregate({
         where: {
           userId: userId,
@@ -57,7 +85,7 @@ async function getBudgets(userId: string) {
         ...budget,
         spent,
         percentage
-      } as BudgetWithRelations;
+      } as unknown as BudgetWithRelations;
     })
   );
 
@@ -68,7 +96,7 @@ export default async function BudgetPage() {
   const session = await getServerSession(authOptions);
   
   if (!session?.user) {
-    redirect("/login");
+    redirect("/api/auth/signin");
   }
 
   // Fetch budgets with spending calculations
@@ -83,18 +111,21 @@ export default async function BudgetPage() {
         { type: "BOTH" }
       ]
     }
-  });
+  }) as unknown as Category[];
 
   // Fetch wallets for budget creation
   const wallets = await prisma.wallet.findMany({
     where: {
       userId: session.user.id
     }
-  });
+  }) as unknown as Wallet[];
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Budget Planning</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Budget Planning</h1>
+      </div>
+
       <BudgetDashboard 
         initialBudgets={budgets}
         categories={categories}

@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { randomBytes } from 'crypto'
 
 // Feature flag to control whether group budgeting is enabled
-export const GROUP_FEATURE_ENABLED = true;
+const GROUP_FEATURE_ENABLED = true;
 
 // Validation schema for creating a group
 const createGroupSchema = z.object({

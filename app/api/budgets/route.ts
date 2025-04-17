@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
@@ -14,199 +14,228 @@ type BudgetWithRelations = Budget & {
 }
 
 // GET /api/budgets - Get all budgets for the current user
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get all active budgets for the user
+    const { searchParams } = new URL(request.url);
+    const walletId = searchParams.get('walletId');
+    const userId = searchParams.get('userId') || session.user.id;
+
+    const where: any = { userId };
+    if (walletId) {
+      where.walletId = walletId;
+    }
+
     const budgets = await prisma.budget.findMany({
-      where: {
-        userId: session.user.id,
-        endDate: {
-          gte: new Date()
-        }
+      where,
+      orderBy: {
+        createdAt: 'desc',
       },
       include: {
         category: true,
-        wallet: true,
-      }
+      },
     });
 
-    // For each budget, calculate the current spending
-    const budgetsWithSpending = await Promise.all(
-      budgets.map(async (budget: Budget & { category: Category; wallet: Wallet }) => {
-        // Get total spending for this budget's category in this wallet
-        const spending = await prisma.transaction.aggregate({
-          where: {
-            userId: session.user.id,
-            categoryId: budget.categoryId,
-            walletId: budget.walletId,
-            type: 'EXPENSE',
-            date: {
-              gte: budget.startDate,
-              lte: budget.endDate
-            }
-          },
-          _sum: {
-            amount: true
-          }
-        });
-
-        const spent = spending._sum.amount || 0;
-        const percentage = (spent / budget.amount) * 100;
-
-        return {
-          ...budget,
-          spent,
-          percentage
-        } as BudgetWithRelations;
-      })
-    );
-
-    return NextResponse.json(budgetsWithSpending);
+    return NextResponse.json(budgets);
   } catch (error) {
     console.error('Error fetching budgets:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to fetch budgets' },
+      { status: 500 }
+    );
   }
 }
 
 // POST /api/budgets - Create a new budget
-export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
+export async function POST(request: NextRequest) {
   try {
-    const data = await request.json();
-    const { categoryId, walletId, amount, startDate, endDate } = data;
-
-    // Validate required fields
-    if (!categoryId || !walletId || !amount || !startDate || !endDate) {
-      return new NextResponse('Missing required fields', { status: 400 });
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Create new budget
+    const data = await request.json();
+    
+    // Check if categoryId is valid or use a default
+    let categoryId = data.categoryId;
+    if (!categoryId || categoryId === 'uncategorized') {
+      // Find or create an 'Uncategorized' category
+      const uncategorizedCategory = await prisma.category.findFirst({
+        where: {
+          name: 'Uncategorized',
+          userId: session.user.id,
+        },
+      });
+      
+      if (uncategorizedCategory) {
+        categoryId = uncategorizedCategory.id;
+      } else {
+        const newCategory = await prisma.category.create({
+          data: {
+            name: 'Uncategorized',
+            type: 'EXPENSE',
+            color: '#808080',
+            icon: 'help-circle',
+            userId: session.user.id,
+          },
+        });
+        categoryId = newCategory.id;
+      }
+    }
+
+    // Get default wallet if none provided
+    let walletId = data.walletId;
+    if (!walletId) {
+      // Find the default wallet or any wallet if default not found
+      const wallet = await prisma.wallet.findFirst({
+        where: {
+          userId: session.user.id,
+          isDefault: true
+        }
+      });
+
+      if (wallet) {
+        walletId = wallet.id;
+      } else {
+        // If no default wallet, get any wallet
+        const anyWallet = await prisma.wallet.findFirst({
+          where: {
+            userId: session.user.id
+          }
+        });
+        
+        if (anyWallet) {
+          walletId = anyWallet.id;
+        } else {
+          // Create a new wallet if user has none
+          const newWallet = await prisma.wallet.create({
+            data: {
+              name: 'Default Wallet',
+              balance: 0,
+              isDefault: true,
+              userId: session.user.id,
+            }
+          });
+          walletId = newWallet.id;
+        }
+      }
+    }
+
+    // Calculate date ranges based on timeframe
+    const startDate = new Date();
+    const endDate = new Date();
+    
+    switch (data.timeframe) {
+      case 'month':
+        endDate.setMonth(endDate.getMonth() + 1);
+        break;
+      case 'quarter':
+        endDate.setMonth(endDate.getMonth() + 3);
+        break;
+      case 'year':
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        break;
+      default:
+        endDate.setMonth(endDate.getMonth() + 1); // Default to month
+    }
+
     const budget = await prisma.budget.create({
       data: {
-        categoryId,
+        amount: parseFloat(data.amount.toString()),
+        startDate,
+        endDate,
         walletId,
-        amount: parseFloat(amount),
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        userId: session.user.id
-      },
-      include: {
-        category: true,
-        wallet: true,
-      },
-    });
-
-    // Calculate spending for the new budget
-    const spending = await prisma.transaction.aggregate({
-      where: {
+        categoryId,
         userId: session.user.id,
-        categoryId: budget.categoryId,
-        walletId: budget.walletId,
-        type: 'EXPENSE',
-        date: {
-          gte: budget.startDate,
-          lte: budget.endDate
-        }
+        spent: 0,
       },
-      _sum: {
-        amount: true
-      }
     });
 
-    const spent = spending._sum.amount || 0;
-    const percentage = (spent / budget.amount) * 100;
-
-    return NextResponse.json({
-      ...budget,
-      spent,
-      percentage
-    } as BudgetWithRelations);
+    return NextResponse.json(budget);
   } catch (error) {
     console.error('Error creating budget:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to create budget' },
+      { status: 500 }
+    );
   }
 }
 
 // PUT /api/budgets - Update a budget
-export async function PUT(request: Request) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
-
+export async function PUT(request: NextRequest) {
   try {
-    const data = await request.json();
-    const { id, categoryId, walletId, amount, startDate, endDate } = data;
-
-    // Validate required fields
-    if (!id || !categoryId || !walletId || !amount || !startDate || !endDate) {
-      return new NextResponse('Missing required fields', { status: 400 });
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Verify budget ownership
-    const existingBudget = await prisma.budget.findUnique({
-      where: { id },
+    const data = await request.json();
+    const { id, ...updateData } = data;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Budget ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if the budget exists and belongs to the user
+    const existingBudget = await prisma.budget.findFirst({
+      where: {
+        id,
+        userId: session.user.id,
+      },
     });
 
-    if (!existingBudget || existingBudget.userId !== session.user.id) {
-      return new NextResponse('Budget not found', { status: 404 });
+    if (!existingBudget) {
+      return NextResponse.json(
+        { error: 'Budget not found or not authorized' },
+        { status: 404 }
+      );
     }
 
-    // Update budget
-    const budget = await prisma.budget.update({
+    // Calculate new dates if timeframe is being updated
+    let startDate = existingBudget.startDate;
+    let endDate = existingBudget.endDate;
+    
+    if (updateData.timeframe) {
+      startDate = new Date();
+      endDate = new Date();
+      
+      switch (updateData.timeframe) {
+        case 'month':
+          endDate.setMonth(endDate.getMonth() + 1);
+          break;
+        case 'quarter':
+          endDate.setMonth(endDate.getMonth() + 3);
+          break;
+        case 'year':
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          break;
+      }
+    }
+
+    const updatedBudget = await prisma.budget.update({
       where: { id },
       data: {
-        categoryId,
-        walletId,
-        amount: parseFloat(amount),
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      },
-      include: {
-        category: true,
-        wallet: true,
+        amount: updateData.amount ? parseFloat(updateData.amount.toString()) : existingBudget.amount,
+        startDate: updateData.timeframe ? startDate : existingBudget.startDate,
+        endDate: updateData.timeframe ? endDate : existingBudget.endDate,
+        categoryId: updateData.categoryId || existingBudget.categoryId,
+        walletId: updateData.walletId || existingBudget.walletId,
       },
     });
 
-    // Calculate spending for the updated budget
-    const spending = await prisma.transaction.aggregate({
-      where: {
-        userId: session.user.id,
-        categoryId: budget.categoryId,
-        walletId: budget.walletId,
-        type: 'EXPENSE',
-        date: {
-          gte: budget.startDate,
-          lte: budget.endDate
-        }
-      },
-      _sum: {
-        amount: true
-      }
-    });
-
-    const spent = spending._sum.amount || 0;
-    const percentage = (spent / budget.amount) * 100;
-
-    return NextResponse.json({
-      ...budget,
-      spent,
-      percentage
-    } as BudgetWithRelations);
+    return NextResponse.json(updatedBudget);
   } catch (error) {
     console.error('Error updating budget:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to update budget' },
+      { status: 500 }
+    );
   }
 } 

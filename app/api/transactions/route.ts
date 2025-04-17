@@ -230,12 +230,42 @@ export async function POST(request: Request) {
             ...budget,
             spent,
             percentage
-          } as BudgetWithRelations
+          } as BudgetWithRelations,
+          triggerRefresh: true
         })
       }
     }
 
-    return NextResponse.json({ transaction })
+    // Check if this is a large transaction (EXPENSE higher than 1,000,000)
+    if (type === 'EXPENSE' && parseFloat(amount) >= 1000000) {
+      try {
+        // Format the amount with commas
+        const formattedAmount = parseFloat(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        
+        // Create an alert for this large transaction using raw SQL
+        const alertId = crypto.randomUUID();
+        const alertDate = new Date().toISOString();
+        
+        await prisma.$executeRaw`
+          INSERT INTO Alert (id, userId, type, title, message, additionalData, isRead, createdAt)
+          VALUES (
+            ${alertId},
+            ${session.user.id},
+            'TRANSACTION_LARGE',
+            'Transaksi besar terdeteksi',
+            ${'Transaksi besar Rp ' + formattedAmount + ' telah dicatat.'},
+            '{"recommendation":"Pastikan transaksi ini benar dan sesuai dengan budget Anda."}',
+            0,
+            ${alertDate}
+          )
+        `;
+      } catch (alertError) {
+        // Log but don't interrupt transaction creation
+        console.error('Failed to create alert for large transaction:', alertError);
+      }
+    }
+
+    return NextResponse.json({ transaction, triggerRefresh: true })
   } catch (error) {
     console.error('Error creating transaction:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
@@ -511,12 +541,13 @@ export async function PUT(request: Request) {
             ...newBudget,
             spent: newSpent,
             percentage: newPercentage
-          } as BudgetWithRelations
+          } as BudgetWithRelations,
+          triggerRefresh: true
         })
       }
     }
 
-    return NextResponse.json({ transaction: updatedTransaction })
+    return NextResponse.json({ transaction: updatedTransaction, triggerRefresh: true })
   } catch (error) {
     console.error('Error updating transaction:', error)
     return new NextResponse('Internal Server Error', { status: 500 })

@@ -46,7 +46,6 @@ export async function POST(request: Request) {
         amount: parseFloat(amount),
         description: body.description || (amount > 0 ? 'Contribution' : 'Withdrawal'),
         date: body.date ? new Date(body.date) : new Date(),
-        userId: session.user.id
       }
     })
     

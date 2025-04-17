@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
 // GET /api/groups/[groupId]/wallets/[walletId]/transactions/[transactionId]
@@ -220,7 +220,7 @@ export async function PUT(
       }
 
       // Fetch updated transaction with new splits
-      updatedTransaction = await prisma.groupTransaction.findUnique({
+      const refreshedTransaction = await prisma.groupTransaction.findUnique({
         where: {
           id: params.transactionId,
         },
@@ -247,7 +247,11 @@ export async function PUT(
             },
           },
         },
-      })
+      });
+      
+      if (refreshedTransaction) {
+        updatedTransaction = refreshedTransaction;
+      }
     }
 
     return NextResponse.json(updatedTransaction)

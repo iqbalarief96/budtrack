@@ -5,9 +5,10 @@ import { AuthProvider } from './providers/AuthProvider'
 import { WalletProvider } from './providers/WalletProvider'
 import Sidebar from './components/Sidebar'
 import { getServerSession } from 'next-auth'
-import { authOptions } from './api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import './sidebar.css'
 import { Toaster } from '@/components/ui/toast'
+import ChatbotButton from './components/ChatbotButton'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -34,6 +35,7 @@ export default async function RootLayout({
                 {children}
               </main>
               <Toaster />
+              <ChatbotButton />
             </WalletProvider>
           ) : (
             <main className="min-h-screen bg-gray-50">

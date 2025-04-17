@@ -5,8 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
 
-// Import feature flag
-import { GROUP_FEATURE_ENABLED } from '../../route'
+// Feature flag to control whether group budgeting is enabled
+const GROUP_FEATURE_ENABLED = true;
 
 // Validation schema for creating an invite
 const createInviteSchema = z.object({

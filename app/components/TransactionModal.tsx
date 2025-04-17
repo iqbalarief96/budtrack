@@ -91,10 +91,12 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
   useEffect(() => {
     const fetchGoals = async () => {
       try {
-        const response = await fetch('/api/goals')
-        if (!response.ok) throw new Error('Failed to fetch goals')
-        const data = await response.json()
-        setGoals(data.filter((goal: any) => goal.status === 'ONGOING'))
+        // Goals API endpoint no longer exists - using empty array instead
+        // const response = await fetch('/api/goals')
+        // if (!response.ok) throw new Error('Failed to fetch goals')
+        // const data = await response.json()
+        // setGoals(data.filter((goal: any) => goal.status === 'ONGOING'))
+        setGoals([])
       } catch (error) {
         console.error('Error fetching goals:', error)
         setGoals([])
@@ -135,7 +137,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
       const savedTransaction = await response.json()
       
-      // If a goal was selected and should update progress, create a goal activity
+      // If a goal was selected and should update goal progress, create a goal activity
       if (formData.goalId && formData.updateGoalProgress) {
         try {
           // Only update goal if the transaction type is appropriate
@@ -159,6 +161,14 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           console.error('Error updating goal progress:', goalError)
           // Still continue with the flow even if goal update fails
         }
+      }
+      
+      // Dispatch event to notify budget component to refresh
+      if (savedTransaction.triggerRefresh) {
+        const refreshEvent = new CustomEvent('transaction:change', {
+          detail: { transactionId: savedTransaction.transaction?.id }
+        });
+        window.dispatchEvent(refreshEvent);
       }
       
       onSave(savedTransaction)

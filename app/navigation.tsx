@@ -11,7 +11,8 @@ import {
   FiUsers,
   FiCalendar,
   FiBriefcase,
-  FiAlertTriangle
+  FiAlertTriangle,
+  FiHeart
 } from 'react-icons/fi'
 
 const MainNav = () => {
@@ -24,6 +25,7 @@ const MainNav = () => {
     { href: '/wallets', label: 'Wallets', icon: FiCreditCard },
     { href: '/budgets', label: 'Budgets', icon: FiTarget },
     { href: '/recurring', label: 'Recurring', icon: FiCalendar },
+    { href: '/wedding-planner', label: 'Wedding Planner', icon: FiHeart },
     { href: '/insights', label: 'Insights', icon: FiPieChart },
     { href: '/groups', label: 'Groups', icon: FiUsers },
     { href: '/investments', label: 'Investments', icon: FiBriefcase },

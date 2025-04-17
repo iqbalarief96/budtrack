@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import DashboardContent from './DashboardContent'
 import './styles.css'
 import prisma from '@/lib/prisma'
@@ -49,13 +49,24 @@ export default async function DashboardPage() {
       const spent = spending._sum.amount || 0;
       const percentage = (spent / budget.amount) * 100;
 
+      // Cast category type to match the expected type
+      const safeCategory = {
+        ...budget.category,
+        type: budget.category.type as 'INCOME' | 'EXPENSE' | 'BOTH'
+      };
+
       return {
         ...budget,
+        category: safeCategory,
         spent,
         percentage
       };
     })
   );
 
-  return <DashboardContent budgets={budgetsWithSpending} />
+  return (
+    <div className="space-y-8">
+      <DashboardContent budgets={budgetsWithSpending} />
+    </div>
+  )
 } 

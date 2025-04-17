@@ -17,6 +17,7 @@ interface GoalFormProps {
     trackedCategories?: any[];
   };
   isEditing?: boolean;
+  formType?: 'goal' | 'budget';
 }
 
 const GOAL_TYPES = [
@@ -29,7 +30,7 @@ const GOAL_TYPES = [
   { id: 'OTHER', name: 'Other' },
 ];
 
-export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormProps) {
+export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 'goal' }: GoalFormProps) {
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
     target: initialData?.target || 0,
@@ -105,25 +106,29 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="name">Goal Name</Label>
+        <Label htmlFor="name">
+          {formType === 'budget' ? 'Budget Name' : 'Goal Name'}
+        </Label>
         <Input
           id="name"
           name="name"
           value={formData.name}
           onChange={handleChange}
-          placeholder="e.g., Emergency Fund"
+          placeholder={formType === 'budget' ? "e.g., Monthly Expenses" : "e.g., Emergency Fund"}
           required
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="type">Goal Type</Label>
+        <Label htmlFor="type">
+          {formType === 'budget' ? 'Budget Type' : 'Goal Type'}
+        </Label>
         <Select
           value={formData.type}
           onValueChange={handleTypeChange}
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select goal type" />
+            <SelectValue placeholder={formType === 'budget' ? "Select budget type" : "Select goal type"} />
           </SelectTrigger>
           <SelectContent>
             {GOAL_TYPES.map(type => (
@@ -136,7 +141,9 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="target">Target Amount</Label>
+        <Label htmlFor="target">
+          {formType === 'budget' ? 'Budget Amount' : 'Target Amount'}
+        </Label>
         <Input
           id="target"
           name="target"
@@ -155,7 +162,9 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="targetDate">Target Date</Label>
+        <Label htmlFor="targetDate">
+          {formType === 'budget' ? 'End Date' : 'Target Date'}
+        </Label>
         <Input
           id="targetDate"
           name="targetDate"
@@ -173,14 +182,18 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
           name="description"
           value={formData.description}
           onChange={handleChange}
-          placeholder="Add some details about your goal"
+          placeholder={formType === 'budget' ? "Add some details about your budget" : "Add some details about your goal"}
         />
       </div>
       
       <div className="space-y-3">
-        <Label className="block mb-2">Auto-Track Categories</Label>
+        <Label className="block mb-2">
+          {formType === 'budget' ? 'Tracked Categories' : 'Auto-Track Categories'}
+        </Label>
         <p className="text-sm text-gray-500 mb-3">
-          Transactions with these categories will automatically update this goal's progress.
+          {formType === 'budget' 
+            ? "This budget will track spending in these categories."
+            : "Transactions with these categories will automatically update this goal's progress."}
         </p>
         
         {loading ? (
@@ -215,7 +228,10 @@ export function GoalForm({ onSubmit, initialData, isEditing = false }: GoalFormP
       </div>
 
       <Button type="submit" className="w-full">
-        {isEditing ? 'Update Goal' : 'Create Goal'}
+        {isEditing 
+          ? (formType === 'budget' ? 'Update Budget' : 'Update Goal')
+          : (formType === 'budget' ? 'Create Budget' : 'Create Goal')
+        }
       </Button>
     </form>
   );

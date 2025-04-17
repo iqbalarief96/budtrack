@@ -4,8 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { z } from 'zod'
 
-// Import feature flag
-import { GROUP_FEATURE_ENABLED } from '../../route'
+// Feature flag to control whether group budgeting is enabled
+const GROUP_FEATURE_ENABLED = true;
 
 // Validation schema for creating a wallet
 const createWalletSchema = z.object({

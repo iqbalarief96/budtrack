@@ -62,7 +62,6 @@ export async function POST(
         amount: difference,
         description: `Manual reset: ${adjustmentDescription}`,
         date: new Date(),
-        userId: session.user.id,
       },
     })
 
