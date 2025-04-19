@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardWidget } from './WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle } from 'react-icons/fi';
@@ -11,10 +11,160 @@ import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard';
 import BudgetOverview from '@/components/budget/BudgetOverview';
 import ExpenseChart from '@/components/charts/ExpenseChart';
 import IncomeExpenseChart from '@/components/charts/IncomeExpenseChart';
-import TransactionList from '@/components/dashboard/TransactionList';
+import TransactionList from '@/app/components/dashboard/TransactionList';
 import { formatCurrency } from '@/lib/utils';
 import SavingsGoalCard from '@/components/dashboard/SavingsGoalCard';
 import InvestmentPerformance from '@/components/dashboard/InvestmentPerformance';
+import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
+
+// New SummaryStatsWidget component
+function SummaryStatsWidget({ walletId }: { walletId?: string }) {
+  const { selectedWallet } = useWallet();
+  const [summary, setSummary] = useState({
+    savingsRate: 0,
+    expenseRatio: 0,
+    topCategory: null as { name: string; amount: number } | null
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAndCalculate = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/transactions');
+        if (response.ok) {
+          const data = await response.json();
+          const currentWalletId = walletId || (selectedWallet?.id || '');
+          const filteredTx = data.filter((tx: any) => tx.walletId === currentWalletId);
+          
+          // Calculate income and expenses
+          let income = 0;
+          let expense = 0;
+          
+          filteredTx.forEach((tx: any) => {
+            if (tx.type === 'INCOME') {
+              income += tx.amount;
+            } else if (tx.type === 'EXPENSE') {
+              expense += tx.amount;
+            }
+          });
+          
+          // Calculate ratios
+          const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
+          const expenseRatio = income > 0 ? (expense / income) * 100 : 0;
+          
+          // Get top spending category
+          const walletTxs = filteredTx.filter((tx: any) => 
+            tx.type === 'EXPENSE' && tx.category !== null
+          );
+          
+          const categorySpending: Record<string, {
+            name: string;
+            amount: number;
+          }> = {};
+          
+          walletTxs.forEach((tx: any) => {
+            const categoryName = tx.category.name;
+            if (!categorySpending[categoryName]) {
+              categorySpending[categoryName] = {
+                name: categoryName,
+                amount: 0
+              };
+            }
+            categorySpending[categoryName].amount += tx.amount;
+          });
+          
+          const categories = Object.values(categorySpending)
+            .sort((a, b) => b.amount - a.amount);
+          
+          const topCategory = categories.length > 0 ? categories[0] : null;
+          
+          setSummary({
+            savingsRate,
+            expenseRatio,
+            topCategory
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching transaction data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchAndCalculate();
+  }, [walletId, selectedWallet]);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full h-32">
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 animate-pulse"></div>
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 animate-pulse"></div>
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 animate-pulse"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+        <div className="flex items-center mb-2">
+          <div className="mr-2 text-blue-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+              <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+          </div>
+          <h3 className="font-medium">Tingkat Tabungan</h3>
+        </div>
+        <p className="text-2xl font-bold text-blue-600">{summary.savingsRate.toFixed(1)}%</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {summary.savingsRate >= 20 ? 'Sangat baik!' : 'Coba tingkatkan ke 20%'}
+        </p>
+      </div>
+      
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+        <div className="flex items-center mb-2">
+          <div className="mr-2 text-purple-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
+              <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
+            </svg>
+          </div>
+          <h3 className="font-medium">Rasio Pengeluaran</h3>
+        </div>
+        <p className="text-2xl font-bold text-purple-600">{summary.expenseRatio.toFixed(1)}%</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {summary.expenseRatio <= 70 ? 'Terkendali' : 'Coba kurangi pengeluaran'}
+        </p>
+      </div>
+      
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+        <div className="flex items-center mb-2">
+          <div className="mr-2 text-orange-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="20" x2="12" y2="10"></line>
+              <line x1="18" y1="20" x2="18" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="16"></line>
+            </svg>
+          </div>
+          <h3 className="font-medium">Kategori Terbesar</h3>
+        </div>
+        {summary.topCategory ? (
+          <>
+            <p className="text-2xl font-bold text-orange-600">{summary.topCategory.name}</p>
+            <p className="text-sm text-gray-500 mt-1">{formatCurrency(summary.topCategory.amount)}</p>
+          </>
+        ) : (
+          <p className="text-gray-500">Belum ada data</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface WidgetRendererProps {
   widget: DashboardWidget;
@@ -27,21 +177,57 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
   const walletId = selectedWalletId || (selectedWallet?.id || '');
   const router = useRouter();
   
-  // For demo purposes, placeholder data
-  const [isLoading, setIsLoading] = React.useState(false);
+  // Data state for widgets
+  const [isLoading, setIsLoading] = React.useState(true);
   const [data, setData] = React.useState({
-    balance: 5000000,
-    income: 7500000,
-    expense: 2500000,
+    balance: 0,
+    income: 0,
+    expense: 0,
   });
   
-  // Fetch data for widget if needed
+  // Fetch data for widgets
   React.useEffect(() => {
     if (!walletId) return;
     
-    // Here you would fetch data specific to this widget type
-    // For now using placeholder data
-  }, [walletId, widget.type]);
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Update balance data from selectedWallet
+        if (selectedWallet) {
+          // Get transactions for the selected wallet
+          const response = await fetch(`/api/transactions?walletId=${walletId}`);
+          if (response.ok) {
+            const transactions = await response.json();
+            
+            // Calculate total income and expense
+            let totalIncome = 0;
+            let totalExpense = 0;
+            
+            transactions.forEach((tx: any) => {
+              if (tx.type === 'INCOME') {
+                totalIncome += tx.amount;
+              } else if (tx.type === 'EXPENSE') {
+                totalExpense += tx.amount;
+              }
+            });
+            
+            // Update data state
+            setData({
+              balance: selectedWallet.balance || 0,
+              income: totalIncome,
+              expense: totalExpense
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching widget data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [walletId, selectedWallet]);
   
   // If selectedWalletId is provided and different from current selectedWallet,
   // we update the context (this will cascade to child components)
@@ -68,36 +254,63 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     case 'balance':
       return (
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-2xl font-bold">{formatCurrency(data.balance)}</p>
-          </div>
-          <div className="p-3 bg-blue-100 rounded-full">
-            <FiDollarSign size={24} className="text-blue-600" />
-          </div>
+          {isLoading ? (
+            <div className="animate-pulse flex w-full justify-between">
+              <div className="h-8 w-32 bg-gray-200 rounded"></div>
+              <div className="h-10 w-10 rounded-full bg-gray-200"></div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-2xl font-bold">{formatCurrency(data.balance)}</p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-full">
+                <FiDollarSign size={24} className="text-blue-600" />
+              </div>
+            </>
+          )}
         </div>
       );
       
     case 'income':
       return (
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-2xl font-bold text-green-600">{formatCurrency(data.income)}</p>
-          </div>
-          <div className="p-3 bg-green-100 rounded-full">
-            <FiArrowDownLeft size={24} className="text-green-600" />
-          </div>
+          {isLoading ? (
+            <div className="animate-pulse flex w-full justify-between">
+              <div className="h-8 w-32 bg-gray-200 rounded"></div>
+              <div className="h-10 w-10 rounded-full bg-gray-200"></div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(data.income)}</p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-full">
+                <FiArrowDownLeft size={24} className="text-green-600" />
+              </div>
+            </>
+          )}
         </div>
       );
       
     case 'expense':
       return (
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-2xl font-bold text-red-600">{formatCurrency(data.expense)}</p>
-          </div>
-          <div className="p-3 bg-red-100 rounded-full">
-            <FiArrowUpRight size={24} className="text-red-600" />
-          </div>
+          {isLoading ? (
+            <div className="animate-pulse flex w-full justify-between">
+              <div className="h-8 w-32 bg-gray-200 rounded"></div>
+              <div className="h-10 w-10 rounded-full bg-gray-200"></div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(data.expense)}</p>
+              </div>
+              <div className="p-3 bg-red-100 rounded-full">
+                <FiArrowUpRight size={24} className="text-red-600" />
+              </div>
+            </>
+          )}
         </div>
       );
       
@@ -144,73 +357,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return <InvestmentPerformance />;
     
     case 'summary-stats':
-      // Generate stats similar to the original dashboard
-      const savingsRate = 29.6; // Example data
-      const expenseRatio = 70.4; // Example data
-      const topCategory = {
-        name: 'Savings',
-        amount: 16827165
-      };
-      
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-            <div className="flex items-center mb-2">
-              <div className="mr-2 text-blue-500">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-                  <polyline points="17 6 23 6 23 12"></polyline>
-                </svg>
-              </div>
-              <h3 className="font-medium">Tingkat Tabungan</h3>
-            </div>
-            <p className="text-2xl font-bold text-blue-600">{savingsRate.toFixed(1)}%</p>
-            <p className="text-sm text-gray-500 mt-1">
-              {savingsRate >= 20 ? 'Sangat baik!' : 'Coba tingkatkan ke 20%'}
-            </p>
-          </div>
-          
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-            <div className="flex items-center mb-2">
-              <div className="mr-2 text-purple-500">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
-                  <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
-                </svg>
-              </div>
-              <h3 className="font-medium">Rasio Pengeluaran</h3>
-            </div>
-            <p className="text-2xl font-bold text-purple-600">{expenseRatio.toFixed(1)}%</p>
-            <p className="text-sm text-gray-500 mt-1">
-              {expenseRatio <= 70 ? 'Terkendali' : 'Coba kurangi pengeluaran'}
-            </p>
-          </div>
-          
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-            <div className="flex items-center mb-2">
-              <div className="mr-2 text-orange-500">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="20" x2="12" y2="10"></line>
-                  <line x1="18" y1="20" x2="18" y2="4"></line>
-                  <line x1="6" y1="20" x2="6" y2="16"></line>
-                </svg>
-              </div>
-              <h3 className="font-medium">Kategori Terbesar</h3>
-            </div>
-            {topCategory ? (
-              <>
-                <p className="text-2xl font-bold text-orange-600">{topCategory.name}</p>
-                <p className="text-sm text-gray-500 mt-1">{formatCurrency(topCategory.amount)}</p>
-              </>
-            ) : (
-              <p className="text-gray-500">Belum ada data</p>
-            )}
-          </div>
-        </div>
-      );
+      return <SummaryStatsWidget walletId={selectedWalletId} />;
       
     case 'quick-actions':
       return (
@@ -282,6 +429,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           </div>
         </div>
       );
+      
+    case 'top-spending':
+      return <TopSpendingWidget walletId={walletId} />;
       
     default:
       return (

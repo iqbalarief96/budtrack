@@ -96,6 +96,7 @@ export async function autoTrackTransactionToGoals(
             amount: activityAmount,
             description: `Auto-tracked transaction: ${description || type}`,
             date,
+            transactionId: transactionId,
             userId
           }
         });

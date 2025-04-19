@@ -358,28 +358,66 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   
   const pieChartOptions = {
     responsive: true,
+    maintainAspectRatio: true,
+    aspectRatio: 1.2,
     plugins: {
       legend: {
         position: 'bottom' as const,
         labels: {
-          boxWidth: 12,
-          padding: 15,
+          boxWidth: 10,
+          padding: 10,
+          font: {
+            size: 11,
+          },
         },
       },
+      tooltip: {
+        callbacks: {
+          label: function(context: any) {
+            const value = context.raw;
+            const dataset = context.dataset;
+            const total = dataset.data.reduce((sum: number, val: number) => sum + val, 0);
+            const percentage = ((value / total) * 100).toFixed(1);
+            return `${context.label}: ${formatCurrency(value)} (${percentage}%)`;
+          }
+        }
+      }
     },
   }
   
   const barChartOptions = {
     responsive: true,
+    maintainAspectRatio: true,
+    aspectRatio: 1.5,
     plugins: {
       legend: {
         position: 'top' as const,
+        labels: {
+          boxWidth: 10,
+          padding: 5,
+          font: {
+            size: 11,
+          },
+        },
       },
       title: {
         display: true,
         text: 'Pemasukan dan Pengeluaran 6 Bulan Terakhir',
+        font: {
+          size: 12,
+        },
       },
     },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: function(value: any) {
+            return formatCurrency(value);
+          }
+        }
+      }
+    }
   }
   
   // Handle transaction save
@@ -672,28 +710,28 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         {/* ANALYSIS TAB */}
         {activeTab === 'analytics' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="font-medium text-gray-700 mb-4">Distribusi Pengeluaran</h3>
+                <h3 className="font-medium text-gray-700 mb-3">Distribusi Pengeluaran</h3>
                 {spendingByCategory.length > 0 ? (
-                  <div className="h-64">
+                  <div className="h-80">
                     <Pie data={pieChartData} options={pieChartOptions} />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-64 text-gray-400">
+                  <div className="flex items-center justify-center h-80 text-gray-400">
                     Belum ada data pengeluaran
                   </div>
                 )}
               </div>
               
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="font-medium text-gray-700 mb-4">Tren Pemasukan/Pengeluaran</h3>
+                <h3 className="font-medium text-gray-700 mb-3">Tren Pemasukan/Pengeluaran</h3>
                 {transactionHistory.length > 0 ? (
-                  <div className="h-64">
+                  <div className="h-80">
                     <Bar data={barChartData} options={barChartOptions} />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-64 text-gray-400">
+                  <div className="flex items-center justify-center h-80 text-gray-400">
                     Data tidak cukup untuk menampilkan tren
                   </div>
                 )}
@@ -701,7 +739,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
             </div>
             
             <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h3 className="font-medium text-gray-700 mb-4">Kategori Pengeluaran Terbesar</h3>
+              <h3 className="font-medium text-gray-700 mb-3">Kategori Pengeluaran Terbesar</h3>
               
               {spendingByCategory.length > 0 ? (
                 <div className="space-y-3">

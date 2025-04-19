@@ -43,21 +43,28 @@ export async function POST(request: Request) {
     const activity = await prisma.goalActivity.create({
       data: {
         goalId,
-        amount: parseFloat(amount),
+        // For savings goals, use absolute value to ensure positive contribution
+        amount: parseFloat(amount) < 0 && (goal.category === 'SAVINGS' || !goal.category) 
+          ? Math.abs(parseFloat(amount)) 
+          : parseFloat(amount),
         description: body.description || (amount > 0 ? 'Contribution' : 'Withdrawal'),
         date: body.date ? new Date(body.date) : new Date(),
       }
     })
     
-    // Update goal progress
+    // Update goal progress with the same logic
+    const activityAmount = parseFloat(amount) < 0 && (goal.category === 'SAVINGS' || !goal.category)
+      ? Math.abs(parseFloat(amount))
+      : parseFloat(amount);
+      
     const updatedGoal = await prisma.goal.update({
       where: { id: goalId },
       data: {
         current: {
-          increment: parseFloat(amount)
+          increment: activityAmount
         },
         // Update status if goal is achieved
-        ...(goal.current + parseFloat(amount) >= goal.target 
+        ...(goal.current + activityAmount >= goal.target 
           ? { status: 'COMPLETED' } 
           : {})
       }

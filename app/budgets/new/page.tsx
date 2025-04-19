@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import BudgetForm from '@/components/budget/BudgetForm';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 
 // Fetch categories and wallets for the user
 async function getUserData() {
@@ -69,6 +71,13 @@ export default async function NewBudgetPage() {
   
   return (
     <div className="container max-w-2xl mx-auto py-8">
+      <div className="mb-4">
+        <Link href="/budgets" className="flex items-center text-blue-600 hover:text-blue-800">
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          <span>Kembali ke Anggaran</span>
+        </Link>
+      </div>
+    
       <h1 className="text-3xl font-bold mb-6">Create New Budget</h1>
       
       <Card>

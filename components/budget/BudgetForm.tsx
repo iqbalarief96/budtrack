@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, addDays, addWeeks, addMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 interface BudgetFormProps {
@@ -41,7 +41,7 @@ export default function BudgetForm({
   categories, 
   wallets, 
   initialData,
-  isEditing = false 
+  isEditing = false
 }: BudgetFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -56,6 +56,7 @@ export default function BudgetForm({
     walletId: initialData?.walletId || (wallets.find(w => w.isDefault)?.id || wallets[0]?.id || ''),
     startDate: defaultStartDate,
     endDate: defaultEndDate,
+    period: 'monthly'
   });
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,6 +85,13 @@ export default function BudgetForm({
         : '/api/budgets';
         
       const method = isEditing ? 'PUT' : 'POST';
+
+      console.log('Submitting budget with dates:', {
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        startDateFormatted: format(formData.startDate, "yyyy-MM-dd"),
+        endDateFormatted: format(formData.endDate, "yyyy-MM-dd"),
+      });
       
       const response = await fetch(url, {
         method,
@@ -103,9 +111,18 @@ export default function BudgetForm({
       }
       
       const result = await response.json();
+      console.log('Budget created/updated successfully:', result);
       
       toast.success(isEditing ? 'Budget updated!' : 'Budget created!');
-      router.push(`/budgets/${result.id}`);
+      
+      // Redirect setelah berhasil update/create
+      if (isEditing && initialData?.id) {
+        // Jika sedang edit, kembali ke halaman detail budget
+        router.push(`/budgets/${initialData.id}`);
+      } else {
+        // Jika sedang create, kembali ke daftar budget
+        router.push('/budgets');
+      }
       router.refresh();
     } catch (error) {
       console.error('Error saving budget:', error);
@@ -113,6 +130,35 @@ export default function BudgetForm({
     } finally {
       setIsSubmitting(false);
     }
+  };
+  
+  const handlePeriodChange = (period: string) => {
+    const currentStartDate = formData.startDate;
+    let newEndDate = new Date(currentStartDate);
+    
+    switch (period) {
+      case 'daily':
+        newEndDate = addDays(currentStartDate, 1);
+        break;
+      case 'weekly':
+        newEndDate = addWeeks(currentStartDate, 1);
+        break;
+      case 'monthly':
+        // Set to last day of the current month
+        const year = currentStartDate.getFullYear();
+        const month = currentStartDate.getMonth();
+        // Create date for the first day of next month, then subtract 1 day
+        newEndDate = new Date(year, month + 1, 0);
+        break;
+      default:
+        newEndDate = addMonths(currentStartDate, 1);
+    }
+    
+    setFormData({
+      ...formData,
+      period,
+      endDate: newEndDate
+    });
   };
   
   return (
@@ -165,6 +211,23 @@ export default function BudgetForm({
                 {wallet.name} ({parseFloat(wallet.balance.toString()).toFixed(2)})
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="space-y-2">
+        <Label htmlFor="period">Period</Label>
+        <Select 
+          value={formData.period} 
+          onValueChange={handlePeriodChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select a period" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="daily">Daily</SelectItem>
+            <SelectItem value="weekly">Weekly</SelectItem>
+            <SelectItem value="monthly">Monthly</SelectItem>
           </SelectContent>
         </Select>
       </div>

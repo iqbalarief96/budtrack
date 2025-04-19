@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { name, type, color, parentId } = await request.json()
+    const { name, type, color, parentId, icon } = await request.json()
 
     if (!name || !type || !color) {
       return NextResponse.json(
@@ -95,6 +95,7 @@ export async function POST(request: Request) {
         name,
         type,
         color,
+        icon,
         userId: session.user.id,
         parentId: parentId || null
       }
@@ -119,7 +120,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, name, type, color, parentId } = await request.json()
+    const { id, name, type, color, parentId, icon } = await request.json()
 
     if (!id || !name || !type || !color) {
       return NextResponse.json(
@@ -202,6 +203,7 @@ export async function PUT(request: Request) {
         name,
         type,
         color,
+        icon,
         parentId: parentId || null
       }
     })

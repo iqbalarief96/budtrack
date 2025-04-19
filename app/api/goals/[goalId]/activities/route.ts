@@ -95,7 +95,14 @@ export async function POST(
       )
     }
     
-    const { amount, description, date } = result.data
+    let { amount, description, date } = result.data
+    
+    // For savings goals, we always want positive amounts to contribute to the goal
+    // If this comes from a transaction that's an EXPENSE with negative amount, make it positive
+    if (amount < 0 && (goal.category === 'SAVINGS' || !goal.category)) {
+      console.log(`Converting negative amount ${amount} to positive for goal ${goalId}`);
+      amount = Math.abs(amount);
+    }
 
     // Create new activity
     const activity = await prisma.goalActivity.create({
@@ -104,6 +111,7 @@ export async function POST(
         amount,
         description,
         date: new Date(date),
+        userId: session.user.id,
       },
     })
 

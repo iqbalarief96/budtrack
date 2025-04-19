@@ -64,11 +64,45 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({
-      ...formData,
+    
+    // Prepare data for API - omit targetDate and use deadline instead
+    const { targetDate, ...rest } = formData;
+    
+    // Ensure we have a valid date to work with
+    let deadlineValue = null;
+    
+    if (targetDate && targetDate.trim() !== '') {
+      try {
+        // Convert to a proper Date object
+        const dateObj = new Date(targetDate);
+        
+        // Check if valid date
+        if (!isNaN(dateObj.getTime())) {
+          deadlineValue = dateObj;
+          console.log("Valid date prepared:", deadlineValue.toISOString());
+        } else {
+          console.warn("Invalid date format:", targetDate);
+        }
+      } catch (error) {
+        console.error("Error parsing date:", error);
+      }
+    }
+    
+    const submissionData = {
+      ...rest,
       target: Number(formData.target),
-      targetDate: new Date(formData.targetDate),
+      // Use the correct field name for the API (deadline)
+      deadline: deadlineValue,
+    };
+    
+    console.log("Form submission data:", {
+      original: formData,
+      submitted: submissionData,
+      rawTargetDate: targetDate,
+      parsedDate: deadlineValue
     });
+    
+    onSubmit(submissionData);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

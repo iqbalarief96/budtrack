@@ -589,8 +589,99 @@ export async function DELETE(request: Request) {
       type: transaction.type,
       amount: transaction.amount,
       walletId: transaction.walletId,
+      goalId: transaction.goalId,
       currentWalletBalance: transaction.wallet.balance
     });
+
+    // If the transaction is linked to a goal, handle goal activity cleanup
+    if (transaction.goalId) {
+      try {
+        // Since transactionId might not be properly linked in goalActivity
+        // We'll find activities matching both the goalId and a description that includes the transaction info
+        const goalActivities = await prisma.goalActivity.findMany({
+          where: {
+            goalId: transaction.goalId,
+            OR: [
+              {
+                description: {
+                  contains: `Auto-tracked transaction:`
+                }
+              },
+              {
+                // Also look for any activity created around the same time as the transaction
+                date: {
+                  gte: new Date(transaction.date.getTime() - 24 * 60 * 60 * 1000), // 1 day before
+                  lte: new Date(transaction.date.getTime() + 24 * 60 * 60 * 1000)  // 1 day after
+                }
+              }
+            ]
+          }
+        });
+
+        console.log('Found goal activities to delete:', goalActivities.length);
+
+        // Delete found activities
+        if (goalActivities.length > 0) {
+          for (const activity of goalActivities) {
+            await prisma.goalActivity.delete({
+              where: {
+                id: activity.id
+              }
+            });
+            console.log(`Deleted goal activity: ${activity.id}`);
+          }
+        }
+
+        // Update goal current amount
+        const goal = await prisma.goal.findUnique({
+          where: { id: transaction.goalId }
+        });
+
+        if (goal) {
+          // Fetch the deleted goal activity to get its exact amount
+          // This is more accurate than trying to recalculate
+          if (goalActivities.length > 0) {
+            // Use the sum of deleted activities to properly adjust goal amount
+            const totalActivityAmount = goalActivities.reduce((sum, activity) => sum + activity.amount, 0);
+            
+            console.log('Adjusting goal amount based on activities:', {
+              goalId: goal.id,
+              goalCurrent: goal.current,
+              totalActivityAmount,
+              newAmount: goal.current - totalActivityAmount
+            });
+
+            await prisma.goal.update({
+              where: { id: transaction.goalId },
+              data: {
+                current: goal.current - totalActivityAmount
+              }
+            });
+          } else {
+            // Fallback to transaction-based logic if no activities found
+            const amountAdjustment = transaction.type === 'EXPENSE' 
+              ? transaction.amount
+              : -transaction.amount;
+            
+            console.log('Fallback: Adjusting goal amount based on transaction:', {
+              goalId: goal.id, 
+              goalCurrent: goal.current,
+              adjustment: amountAdjustment,
+              newAmount: goal.current + amountAdjustment
+            });
+
+            await prisma.goal.update({
+              where: { id: transaction.goalId },
+              data: {
+                current: goal.current + amountAdjustment
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error handling goal activity:", error);
+      }
+    }
 
     // Update wallet balance
     // For INCOME: when deleted, we DECREASE wallet balance

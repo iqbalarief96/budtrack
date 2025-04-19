@@ -87,24 +87,28 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     fetchCategories()
   }, [formData.type])
   
-  // Fetch available goals
+  // Fetch goals for dropdown when modal opens
   useEffect(() => {
-    const fetchGoals = async () => {
-      try {
-        // Goals API endpoint no longer exists - using empty array instead
-        // const response = await fetch('/api/goals')
-        // if (!response.ok) throw new Error('Failed to fetch goals')
-        // const data = await response.json()
-        // setGoals(data.filter((goal: any) => goal.status === 'ONGOING'))
-        setGoals([])
-      } catch (error) {
-        console.error('Error fetching goals:', error)
-        setGoals([])
+    if (isOpen) {
+      const fetchGoals = async () => {
+        try {
+          // Goals API endpoint no longer exists - using empty array instead
+          const response = await fetch('/api/goals')
+          if (!response.ok) throw new Error('Failed to fetch goals')
+          const data = await response.json()
+          setGoals(data.filter((goal: any) => 
+            goal.status === 'ONGOING' && 
+            !goal.isArchived // Don't show archived goals
+          ))
+        } catch (error) {
+          console.error('Error fetching goals:', error)
+          setGoals([])
+        }
       }
+      
+      fetchGoals()
     }
-
-    fetchGoals()
-  }, [])
+  }, [isOpen])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -143,20 +147,21 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           // Only update goal if the transaction type is appropriate
           // For EXPENSE, we should only update savings goals with negative amounts
           // For INCOME, we update positive amounts
-          const activityAmount = formData.type === 'INCOME' ? amount : -amount
+          const activityAmount = formData.type === 'INCOME' ? amount : -amount;
+          const transactionId = savedTransaction.transaction?.id || savedTransaction.id;
           
-          await fetch('/api/goals/activities', {
+          await fetch(`/api/goals/${formData.goalId}/activities`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              goalId: formData.goalId,
               amount: activityAmount,
-              description: `Automatically tracked from ${formData.type.toLowerCase()}: ${formData.description || 'Transaction'}`,
+              description: `Manually tracked from ${formData.type.toLowerCase()}: ${formData.description || 'Transaction'}`,
               date: formData.date,
+              transactionId: transactionId,
             }),
-          })
+          });
         } catch (goalError) {
           console.error('Error updating goal progress:', goalError)
           // Still continue with the flow even if goal update fails
@@ -297,7 +302,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
               onChange={(e) => setFormData({ ...formData, goalId: e.target.value })}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
             >
-              <option value="">Track untuk Tujuan Keuangan (Opsional)</option>
+              <option value="">Track untuk Goals (Opsional)</option>
               {Array.isArray(goals) && goals
                 .map(goal => (
                   <option key={goal.id} value={goal.id}>

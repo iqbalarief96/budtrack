@@ -4,16 +4,21 @@ import React, { useEffect, useState } from 'react';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast';
 
 // Define budget type
 type Budget = {
   id: string;
-  category: string;
+  category: {
+    id: string;
+    name: string;
+    color?: string;
+  };
   amount: number;
   spent: number;
-  startDate: string;
-  endDate: string;
-  color: string;
+  startDate: Date;
+  endDate: Date;
+  percentage: number;
 };
 
 export default function BudgetOverview() {
@@ -22,75 +27,48 @@ export default function BudgetOverview() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [totalBudget, setTotalBudget] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
+  const [period, setPeriod] = useState('');
 
   // Fetch budgets
   useEffect(() => {
     const fetchBudgets = async () => {
       setIsLoading(true);
       try {
-        // Placeholder data - in real app, fetch from API
-        const dummyData: Budget[] = [
-          {
-            id: 'b1',
-            category: 'Makanan',
-            amount: 1500000,
-            spent: 950000,
-            startDate: '2024-07-01',
-            endDate: '2024-07-31',
-            color: '#4ade80' // green
-          },
-          {
-            id: 'b2',
-            category: 'Transportasi',
-            amount: 800000,
-            spent: 650000,
-            startDate: '2024-07-01',
-            endDate: '2024-07-31',
-            color: '#60a5fa' // blue
-          },
-          {
-            id: 'b3',
-            category: 'Hiburan',
-            amount: 500000,
-            spent: 475000,
-            startDate: '2024-07-01',
-            endDate: '2024-07-31',
-            color: '#f97316' // orange
-          },
-          {
-            id: 'b4',
-            category: 'Tagihan',
-            amount: 1200000,
-            spent: 1200000,
-            startDate: '2024-07-01',
-            endDate: '2024-07-31',
-            color: '#8b5cf6' // purple
-          },
-          {
-            id: 'b5',
-            category: 'Belanja',
-            amount: 1000000,
-            spent: 850000,
-            startDate: '2024-07-01',
-            endDate: '2024-07-31',
-            color: '#ec4899' // pink
-          }
-        ];
-
-        // Calculate totals
-        const total = dummyData.reduce((sum, budget) => sum + budget.amount, 0);
-        const spent = dummyData.reduce((sum, budget) => sum + budget.spent, 0);
-
-        // Simulate API delay
-        setTimeout(() => {
-          setBudgets(dummyData);
-          setTotalBudget(total);
-          setTotalSpent(spent);
-          setIsLoading(false);
-        }, 500);
+        // Fetch real data from API
+        const response = await fetch('/api/budgets/with-spending');
         
+        if (!response.ok) {
+          throw new Error('Failed to fetch budgets');
+        }
+        
+        const data = await response.json();
+        
+        // Filter budgets for selected wallet if needed
+        const filteredBudgets = selectedWallet 
+          ? data.filter((budget: any) => budget.walletId === selectedWallet.id)
+          : data;
+        
+        // Calculate totals
+        const total = filteredBudgets.reduce((sum: number, budget: any) => sum + budget.amount, 0);
+        const spent = filteredBudgets.reduce((sum: number, budget: any) => sum + budget.spent, 0);
+        
+        // Get period from first budget if available
+        let periodText = '';
+        if (filteredBudgets.length > 0) {
+          const firstBudget = filteredBudgets[0];
+          const startDate = new Date(firstBudget.startDate);
+          const endDate = new Date(firstBudget.endDate);
+          periodText = `${startDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
+        }
+        
+        setBudgets(filteredBudgets);
+        setTotalBudget(total);
+        setTotalSpent(spent);
+        setPeriod(periodText);
+        setIsLoading(false);
       } catch (error) {
         console.error('Error fetching budgets:', error);
+        toast.error('Gagal memuat data budget');
         setIsLoading(false);
       }
     };
@@ -99,6 +77,7 @@ export default function BudgetOverview() {
   }, [selectedWallet]);
 
   const getPercentage = (spent: number, total: number) => {
+    if (total <= 0) return 0;
     return Math.min(Math.round((spent / total) * 100), 100);
   };
 
@@ -140,7 +119,7 @@ export default function BudgetOverview() {
       {/* Summary header */}
       <div className="mb-5 pb-3 border-b">
         <div className="flex justify-between items-center">
-          <h3 className="text-base font-medium">Periode Juli 2024</h3>
+          <h3 className="text-base font-medium">{period || "Periode Aktif"}</h3>
           <span className={`font-medium ${getTotalStatusColor()}`}>
             {formatCurrency(totalSpent)} / {formatCurrency(totalBudget)}
             <span className="text-gray-500 text-sm ml-1">
@@ -153,11 +132,12 @@ export default function BudgetOverview() {
       {/* Budget list */}
       <div className="space-y-4 overflow-y-auto flex-1">
         {budgets.map((budget) => {
-          const percentage = getPercentage(budget.spent, budget.amount);
+          const percentage = budget.percentage || getPercentage(budget.spent, budget.amount);
+          const color = budget.category?.color || '#4ade80';
           return (
             <div key={budget.id} className="space-y-1">
               <div className="flex justify-between text-sm">
-                <span className="font-medium">{budget.category}</span>
+                <span className="font-medium">{budget.category?.name}</span>
                 <span>
                   {formatCurrency(budget.spent)} / {formatCurrency(budget.amount)}
                 </span>
@@ -167,7 +147,7 @@ export default function BudgetOverview() {
                   className="h-2.5 rounded-full"
                   style={{ 
                     width: `${percentage}%`, 
-                    backgroundColor: budget.color 
+                    backgroundColor: color
                   }}
                 ></div>
               </div>

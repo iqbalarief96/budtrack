@@ -66,6 +66,21 @@ export function GoalsContent() {
     }
   };
 
+  const handleDeleteGoal = async (id: string) => {
+    try {
+      const response = await fetch(`/api/goals?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete goal');
+      
+      // Refresh goals list
+      fetchGoals();
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -131,6 +146,7 @@ export function GoalsContent() {
               key={goal.id}
               goal={goal}
               onUpdate={handleUpdateGoal}
+              onDelete={handleDeleteGoal}
             />
           ))}
         </div>

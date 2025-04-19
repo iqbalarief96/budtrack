@@ -4,6 +4,7 @@ import type { Budget } from '@/app/types/budget';
 import type { Category } from '@/app/types/category';
 import type { Wallet } from '@/app/types/wallet';
 import { formatDate } from '@/lib/utils';
+import Link from 'next/link';
 
 type BudgetWithRelations = Budget & {
   category: Category;
@@ -16,9 +17,10 @@ interface Props {
   budgets: BudgetWithRelations[];
   onUpdate: (budget: BudgetWithRelations) => void;
   onDelete: (budgetId: string) => void;
+  onEdit?: (budget: BudgetWithRelations) => void;
 }
 
-export default function BudgetList({ budgets, onUpdate, onDelete }: Props) {
+export default function BudgetList({ budgets, onUpdate, onDelete, onEdit }: Props) {
   const handleDelete = async (budgetId: string) => {
     if (!confirm('Are you sure you want to delete this budget?')) {
       return;
@@ -58,7 +60,14 @@ export default function BudgetList({ budgets, onUpdate, onDelete }: Props) {
         <tbody>
           {budgets.map((budget) => (
             <tr key={budget.id} className="border-t">
-              <td className="py-2 px-4">{budget.category.name}</td>
+              <td className="py-2 px-4">
+                <Link 
+                  href={`/budgets/${budget.id}`}
+                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {budget.category.name}
+                </Link>
+              </td>
               <td className="py-2 px-4">{budget.wallet.name}</td>
               <td className="py-2 px-4 text-right">
                 Rp {budget.amount.toLocaleString()}
@@ -90,12 +99,29 @@ export default function BudgetList({ budgets, onUpdate, onDelete }: Props) {
                 {formatDate(budget.startDate)} - {formatDate(budget.endDate)}
               </td>
               <td className="py-2 px-4 text-center">
-                <button
-                  onClick={() => handleDelete(budget.id)}
-                  className="text-red-500 hover:text-red-700"
-                >
-                  Delete
-                </button>
+                <div className="flex items-center justify-center space-x-2">
+                  {onEdit ? (
+                    <button
+                      onClick={() => onEdit(budget)}
+                      className="text-blue-500 hover:text-blue-700"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/budgets/${budget.id}/edit`}
+                      className="text-blue-500 hover:text-blue-700"
+                    >
+                      Edit
+                    </Link>
+                  )}
+                  <button
+                    onClick={() => handleDelete(budget.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

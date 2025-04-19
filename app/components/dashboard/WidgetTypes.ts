@@ -17,7 +17,8 @@ export type WidgetType =
   | 'savings-goals'
   | 'investment-performance'
   | 'summary-stats'
-  | 'quick-actions';
+  | 'quick-actions'
+  | 'top-spending';
 
 export interface DashboardWidget {
   id: string;
@@ -98,6 +99,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'large',
     title: 'Ringkasan Budget',
     position: 7
+  },
+  {
+    id: 'top-spending-widget',
+    type: 'top-spending',
+    size: 'medium',
+    title: 'Top Spending',
+    position: 8
   },
 ];
 

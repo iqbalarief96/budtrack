@@ -142,6 +142,8 @@ function getWidgetDescription(type: string): string {
       return 'Status dan progres dana darurat';
     case 'budget-overview':
       return 'Ringkasan status semua budget';
+    case 'top-spending':
+      return 'Kategori pengeluaran terbesar dengan chart dan detail';
     case 'financial-tips':
       return 'Tips pengelolaan keuangan';
     case 'savings-goals':

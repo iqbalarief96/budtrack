@@ -125,22 +125,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate date ranges based on timeframe
-    const startDate = new Date();
-    const endDate = new Date();
+    // Gunakan tanggal dari formData jika tersedia
+    let startDate = data.startDate ? new Date(data.startDate) : new Date();
+    let endDate = data.endDate ? new Date(data.endDate) : new Date();
     
-    switch (data.timeframe) {
-      case 'month':
-        endDate.setMonth(endDate.getMonth() + 1);
-        break;
-      case 'quarter':
-        endDate.setMonth(endDate.getMonth() + 3);
-        break;
-      case 'year':
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        break;
-      default:
-        endDate.setMonth(endDate.getMonth() + 1); // Default to month
+    // Hanya gunakan timeframe jika startDate dan endDate tidak ada
+    if (!data.startDate || !data.endDate) {
+      // Calculate date ranges based on timeframe
+      startDate = new Date();
+      endDate = new Date();
+      
+      switch (data.timeframe) {
+        case 'month':
+          endDate.setMonth(endDate.getMonth() + 1);
+          break;
+        case 'quarter':
+          endDate.setMonth(endDate.getMonth() + 3);
+          break;
+        case 'year':
+          endDate.setFullYear(endDate.getFullYear() + 1);
+          break;
+        default:
+          endDate.setMonth(endDate.getMonth() + 1); // Default to month
+      }
     }
 
     const budget = await prisma.budget.create({
@@ -198,11 +205,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Calculate new dates if timeframe is being updated
-    let startDate = existingBudget.startDate;
-    let endDate = existingBudget.endDate;
+    // Gunakan tanggal dari formData jika tersedia
+    let startDate = updateData.startDate ? new Date(updateData.startDate) : existingBudget.startDate;
+    let endDate = updateData.endDate ? new Date(updateData.endDate) : existingBudget.endDate;
     
-    if (updateData.timeframe) {
+    // Hanya gunakan timeframe jika startDate dan endDate tidak ada di update data
+    if (updateData.timeframe && (!updateData.startDate && !updateData.endDate)) {
       startDate = new Date();
       endDate = new Date();
       
@@ -219,12 +227,21 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    console.log('Updating budget with dates:', {
+      startDate,
+      endDate,
+      providedStartDate: updateData.startDate,
+      providedEndDate: updateData.endDate,
+      existingStartDate: existingBudget.startDate,
+      existingEndDate: existingBudget.endDate
+    });
+
     const updatedBudget = await prisma.budget.update({
       where: { id },
       data: {
-        amount: updateData.amount ? parseFloat(updateData.amount.toString()) : existingBudget.amount,
-        startDate: updateData.timeframe ? startDate : existingBudget.startDate,
-        endDate: updateData.timeframe ? endDate : existingBudget.endDate,
+        amount: updateData.amount !== undefined ? parseFloat(updateData.amount.toString()) : existingBudget.amount,
+        startDate,
+        endDate,
         categoryId: updateData.categoryId || existingBudget.categoryId,
         walletId: updateData.walletId || existingBudget.walletId,
       },

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { 
   FiHome, FiDollarSign, FiCreditCard, FiTag, FiPieChart, 
   FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiShield, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
-  FiBriefcase, FiUsers, FiGrid, FiMessageSquare, FiHeart
+  FiBriefcase, FiUsers, FiGrid, FiMessageSquare, FiHeart, FiFlag
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
@@ -85,7 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   }
 
   const handleLogout = async () => {
-    await signOut({ callbackUrl: '/login' })
+    await signOut({ callbackUrl: '/auth/signin' })
   }
 
   const isActive = (path: string) => {
@@ -98,6 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
     { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
     { path: '/budgets', icon: <FiTarget size={20} />, label: 'Anggaran' },
+    { path: '/goals', icon: <FiFlag size={20} />, label: 'Goals' },
     { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring Transaction' },
     { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
     { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },

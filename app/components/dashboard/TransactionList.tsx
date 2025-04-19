@@ -106,7 +106,7 @@ export default function TransactionList({ limit = 5 }: TransactionListProps) {
       </CardHeader>
       <CardContent className="px-0 pt-0">
         <div className="divide-y">
-          {transactions.map((transaction) => (
+          {transactions.slice(0, 5).map((transaction) => (
             <div 
               key={transaction.id} 
               className="flex items-center justify-between py-3 px-6 hover:bg-gray-50 transition-colors"
@@ -142,6 +142,14 @@ export default function TransactionList({ limit = 5 }: TransactionListProps) {
               </p>
             </div>
           ))}
+        </div>
+        <div className="mt-4 text-center">
+          <a 
+            href="/transactions" 
+            className="inline-block w-full py-3 text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-colors rounded-md font-medium"
+          >
+            Tampilkan Semua
+          </a>
         </div>
       </CardContent>
     </Card>

@@ -134,9 +134,9 @@ export default function SavingsGoalCard() {
       </div>
       
       <div className="mt-4 pt-3 border-t text-center">
-        <button className="text-blue-600 text-sm hover:underline">
+        <a href="/wedding-planner/savings" className="text-blue-600 text-sm hover:underline">
           Lihat Semua Target
-        </button>
+        </a>
       </div>
     </div>
   );

@@ -1,7 +1,11 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { FiPlusCircle, FiTag, FiTrash, FiEdit, FiArrowDown, FiArrowUp, FiZap } from 'react-icons/fi'
+import { FiPlusCircle, FiTag, FiTrash, FiEdit, FiArrowDown, FiArrowUp, FiZap, 
+  FiShoppingBag, FiCoffee, FiHome, FiDollarSign, FiCreditCard, FiGift, FiHeart, FiSmile, 
+  FiTruck, FiBookmark, FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiAperture, 
+  FiAward, FiBriefcase, FiCloud, FiCompass, FiEdit3, FiFilm, FiBook, FiAirplay,
+  FiBell, FiCalendar, FiCamera, FiClipboard, FiClock } from 'react-icons/fi'
 import CategoryModal from '../components/CategoryModal'
 import Link from 'next/link'
 
@@ -11,6 +15,15 @@ type Category = {
   name: string
   type: 'INCOME' | 'EXPENSE'
   color: string
+  icon?: string
+}
+
+// Icon mapping - keep in sync with CategoryModal
+const ICON_COMPONENTS: Record<string, React.ComponentType> = {
+  FiShoppingBag, FiCoffee, FiHome, FiDollarSign, FiCreditCard, FiGift, FiHeart, 
+  FiSmile, FiTruck, FiBookmark, FiShoppingCart, FiMusic, FiMonitor, FiActivity,
+  FiAperture, FiAward, FiBriefcase, FiCloud, FiCompass, FiEdit3, FiFilm, FiBook,
+  FiAirplay, FiBell, FiCalendar, FiCamera, FiClipboard, FiClock, FiTag
 }
 
 const CategoriesPage = () => {
@@ -75,6 +88,12 @@ const CategoriesPage = () => {
     }
   }
 
+  // Get icon component by name, or default to FiTag
+  const getIconComponent = (iconName: string | undefined) => {
+    if (!iconName || !ICON_COMPONENTS[iconName]) return FiTag;
+    return ICON_COMPONENTS[iconName];
+  }
+
   return (
     <div className="container mx-auto p-4 space-y-6">
       <div className="flex justify-between items-center">
@@ -137,35 +156,38 @@ const CategoriesPage = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCategories.map((category) => (
-            <div key={category.id} className="bg-white rounded-lg shadow p-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center">
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3" 
-                    style={{ backgroundColor: category.color || '#1976D2' }}
-                  >
-                    <FiTag className="text-white text-xl" />
+          {filteredCategories.map((category) => {
+            const IconComponent = getIconComponent(category.icon);
+            return (
+              <div key={category.id} className="bg-white rounded-lg shadow p-4">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center">
+                    <div 
+                      className="w-10 h-10 rounded-full flex items-center justify-center mr-3" 
+                      style={{ backgroundColor: category.color || '#1976D2' }}
+                    >
+                      <IconComponent className="text-white text-xl" />
+                    </div>
+                    <h3 className="font-medium">{category.name}</h3>
                   </div>
-                  <h3 className="font-medium">{category.name}</h3>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
-                    onClick={() => handleEdit(category)}
-                  >
-                    <FiEdit size={16} />
-                  </button>
-                  <button 
-                    className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
-                    onClick={() => handleDelete(category.id)}
-                  >
-                    <FiTrash size={16} />
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                      onClick={() => handleEdit(category)}
+                    >
+                      <FiEdit size={16} />
+                    </button>
+                    <button 
+                      className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
+                      onClick={() => handleDelete(category.id)}
+                    >
+                      <FiTrash size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -1,9 +1,11 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
-import { FiClock, FiTrendingUp, FiTarget, FiArrowRight } from 'react-icons/fi';
+import { FiClock, FiTrendingUp, FiTarget, FiArrowRight, FiTrash2 } from 'react-icons/fi';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { useToast } from '@/components/ui/use-toast';
 
 interface GoalCardProps {
   goal: {
@@ -13,18 +15,46 @@ interface GoalCardProps {
     current: number;
     type: string;
     description?: string;
-    targetDate: Date;
+    targetDate?: Date | string;
+    deadline?: Date | string;
     estimatedMonths?: number | null;
     averageMonthly?: number;
     status: string;
   };
   onUpdate?: (id: string, data: any) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function GoalCard({ goal, onUpdate }: GoalCardProps) {
+export function GoalCard({ goal, onUpdate, onDelete }: GoalCardProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { toast } = useToast();
   const progress = (goal.current / goal.target) * 100;
   const remaining = goal.target - goal.current;
-  const targetDate = new Date(goal.targetDate);
+  
+  // Parse and validate the target date
+  let targetDate: Date | null = null;
+  try {
+    // Try both targetDate and deadline fields
+    const dateValue = goal.targetDate || goal.deadline || null;
+    console.log('Debug date value:', {
+      targetDate: goal.targetDate,
+      deadline: goal.deadline, 
+      dateValue,
+      goalData: goal
+    });
+    
+    targetDate = dateValue ? new Date(dateValue) : null;
+    console.log('Parsed date:', targetDate);
+    
+    // Check if date is valid
+    if (targetDate && isNaN(targetDate.getTime())) {
+      console.log('Invalid date detected!');
+      targetDate = null;
+    }
+  } catch (error) {
+    console.error('Error parsing target date:', error);
+    targetDate = null;
+  }
   
   // Get color based on progress
   const getProgressColor = () => {
@@ -32,6 +62,41 @@ export function GoalCard({ goal, onUpdate }: GoalCardProps) {
     if (progress >= 50) return "bg-gradient-to-r from-blue-600 to-blue-400";
     if (progress >= 25) return "bg-gradient-to-r from-yellow-500 to-yellow-400";
     return "bg-gradient-to-r from-red-500 to-red-400";
+  };
+  
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent the Link from being triggered
+    e.stopPropagation();
+    
+    if (!confirm('Are you sure you want to delete this goal?')) {
+      return;
+    }
+    
+    setIsDeleting(true);
+    
+    try {
+      // Call parent's onDelete if provided
+      if (onDelete) {
+        onDelete(goal.id);
+        
+        toast({
+          title: 'Success',
+          description: 'Goal deleted successfully!'
+        });
+      } else {
+        // Reload the page if no onDelete handler is provided
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete goal. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
   
   return (
@@ -89,7 +154,7 @@ export function GoalCard({ goal, onUpdate }: GoalCardProps) {
                 <p className="text-sm text-gray-500 flex items-center justify-between">
                   <span>{remaining > 0 ? `${formatCurrency(remaining)} remaining` : 'Goal achieved!'}</span>
                   <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full">
-                    Target: {targetDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    Target: {targetDate ? targetDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Invalid Date'}
                   </span>
                 </p>
               </div>
@@ -118,13 +183,19 @@ export function GoalCard({ goal, onUpdate }: GoalCardProps) {
               </div>
             )}
             
-            <Button variant="outline" className="w-full" onClick={(e) => {
-              e.preventDefault(); // Prevent the Link from being triggered
-              window.location.href = `/goals/${goal.id}`;
-            }}>
-              <FiArrowRight className="h-4 w-4 mr-2" />
-              View Details
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={(e) => {
+                e.preventDefault(); // Prevent the Link from being triggered
+                window.location.href = `/goals/${goal.id}`;
+              }}>
+                <FiArrowRight className="h-4 w-4 mr-2" />
+                View Details
+              </Button>
+              
+              <Button variant="destructive" className="w-auto" onClick={handleDelete} disabled={isDeleting}>
+                <FiTrash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

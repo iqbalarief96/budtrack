@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { FiPlus, FiFilter, FiEdit2, FiTrash2 } from 'react-icons/fi'
+import { FiPlus, FiFilter, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import TransactionModal from '../components/TransactionModal'
 import FilterModal from '../components/FilterModal'
@@ -25,6 +25,7 @@ type Transaction = {
     name: string
     currencyCode: string
   }
+  [key: string]: any // Allow indexing with string
 }
 
 type FilterValues = {
@@ -32,6 +33,11 @@ type FilterValues = {
   categoryId?: string
   dateRange?: { start?: string; end?: string }
   amountRange?: { min?: number; max?: number }
+}
+
+type SortConfig = {
+  key: string
+  direction: 'asc' | 'desc'
 }
 
 const TransactionsPage = () => {
@@ -48,6 +54,7 @@ const TransactionsPage = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [activeFilters, setActiveFilters] = useState<FilterValues>({})
   const [initialType, setInitialType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' })
 
   // Check for type parameter in URL and open transaction modal automatically
   useEffect(() => {
@@ -91,9 +98,69 @@ const TransactionsPage = () => {
     fetchTransactions(activeFilters)
   }, [selectedWallet, activeFilters])
   
+  // Sort handler
+  const handleSort = (key: string) => {
+    setSortConfig((prevConfig) => {
+      if (prevConfig.key === key) {
+        return {
+          key,
+          direction: prevConfig.direction === 'asc' ? 'desc' : 'asc'
+        }
+      }
+      return { key, direction: 'asc' }
+    })
+  }
+
+  // Get sorted transactions
+  const getSortedTransactions = (transactions: Transaction[], sortConfig: SortConfig) => {
+    const sortableItems = [...transactions]
+    
+    sortableItems.sort((a, b) => {
+      let aValue, bValue;
+      
+      // Extract the correct values based on the sort key
+      switch (sortConfig.key) {
+        case 'date':
+          aValue = new Date(a.date).getTime()
+          bValue = new Date(b.date).getTime()
+          break
+        case 'description':
+          aValue = a.description?.toLowerCase() || ''
+          bValue = b.description?.toLowerCase() || ''
+          break
+        case 'category':
+          aValue = a.category?.name?.toLowerCase() || ''
+          bValue = b.category?.name?.toLowerCase() || ''
+          break
+        case 'wallet':
+          aValue = a.wallet?.name?.toLowerCase() || ''
+          bValue = b.wallet?.name?.toLowerCase() || ''
+          break
+        case 'amount':
+          aValue = a.amount
+          bValue = b.amount
+          break
+        default:
+          aValue = a[sortConfig.key] || ''
+          bValue = b[sortConfig.key] || ''
+      }
+      
+      // Perform the actual comparison
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1
+      }
+      return 0
+    })
+    
+    return sortableItems
+  }
+  
   // Filter transactions based on selected wallet and filters
-  const filteredTransactions = transactions
-    .filter(tx => {
+  const filteredTransactions = getSortedTransactions(
+    transactions.filter(tx => {
       if (!activeFilters) return true
       
       // Filter by type
@@ -116,8 +183,9 @@ const TransactionsPage = () => {
       }
       
       return true
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    }),
+    sortConfig
+  )
 
   // Handle transaction save
   const handleSaveTransaction = async (transactionData: any) => {
@@ -157,6 +225,12 @@ const TransactionsPage = () => {
   const handleFilter = (filters: FilterValues) => {
     setActiveFilters(filters)
     setIsFilterModalOpen(false)
+  }
+
+  // Sort indicator component
+  const SortIndicator = ({ columnKey }: { columnKey: string }) => {
+    if (sortConfig.key !== columnKey) return null;
+    return sortConfig.direction === 'asc' ? <FiChevronUp className="inline ml-1" /> : <FiChevronDown className="inline ml-1" />;
   }
 
   if (!selectedWallet) {
@@ -225,20 +299,40 @@ const TransactionsPage = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Tanggal
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('date')}
+              >
+                Tanggal <SortIndicator columnKey="date" />
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Deskripsi
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('description')}
+              >
+                Deskripsi <SortIndicator columnKey="description" />
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Kategori
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('category')}
+              >
+                Kategori <SortIndicator columnKey="category" />
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Dompet
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('wallet')}
+              >
+                Dompet <SortIndicator columnKey="wallet" />
               </th>
-              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Jumlah
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('amount')}
+              >
+                Jumlah <SortIndicator columnKey="amount" />
               </th>
               <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Aksi
@@ -248,11 +342,17 @@ const TransactionsPage = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
-            ) : filteredTransactions.length > 0 ? (
+            ) : filteredTransactions.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
+                  Tidak ada transaksi
+                </td>
+              </tr>
+            ) : (
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -262,41 +362,32 @@ const TransactionsPage = () => {
                     {transaction.description || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.category?.name || '-'}
+                    {transaction.category?.name || 'Tanpa Kategori'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {transaction.wallet?.name || '-'}
                   </td>
                   <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
-                    transaction.type === 'INCOME' ? 'text-green-600' : 'text-red-600'
+                    transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
                   }`}>
-                    {transaction.type === 'INCOME' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                    {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
-                      onClick={() => {
-                        setEditingTransaction(transaction);
-                        setIsModalOpen(true);
-                      }}
-                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      onClick={() => setEditingTransaction(transaction)}
+                      className="text-blue-600 hover:text-blue-900 mx-1"
                     >
-                      <FiEdit2 />
+                      <FiEdit2 className="inline" />
                     </button>
                     <button
                       onClick={() => handleDeleteTransaction(transaction.id)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-900 mx-1"
                     >
-                      <FiTrash2 />
+                      <FiTrash2 className="inline" />
                     </button>
                   </td>
                 </tr>
               ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                  Tidak ada transaksi untuk dompet ini
-                </td>
-              </tr>
             )}
           </tbody>
         </table>

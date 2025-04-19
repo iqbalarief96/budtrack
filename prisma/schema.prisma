@@ -135,20 +135,21 @@ model Category {
 }
 
 model Transaction {
-  id          String    @id @default(cuid())
-  amount      Float
-  description String?
-  date        DateTime
-  type        String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  userId      String
-  walletId    String
-  categoryId  String?
-  goalId      String?
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet      Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  category    Category? @relation(fields: [categoryId], references: [id])
+  id            String         @id @default(cuid())
+  amount        Float
+  description   String?
+  date          DateTime
+  type          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  userId        String
+  walletId      String
+  categoryId    String?
+  goalId        String?
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet        Wallet         @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  goalActivities GoalActivity[]
 }
 
 model Budget {
@@ -412,15 +413,20 @@ model Goal {
 }
 
 model GoalActivity {
-  id          String   @id @default(cuid())
-  goalId      String
-  amount      Float
-  date        DateTime @default(now())
-  description String?
-  createdAt   DateTime @default(now())
-  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  goalId        String
+  amount        Float
+  date          DateTime     @default(now())
+  description   String?
+  createdAt     DateTime     @default(now())
+  goal          Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  userId        String
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([goalId])
+  @@index([transactionId])
+  @@index([userId])
 }
 
 // Dashboard customization models

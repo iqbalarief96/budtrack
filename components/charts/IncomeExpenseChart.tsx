@@ -13,6 +13,7 @@ import {
 } from 'chart.js';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { formatCurrency } from '@/lib/utils';
+import { toast } from 'react-hot-toast';
 
 // Register ChartJS components
 ChartJS.register(
@@ -47,43 +48,94 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Placeholder data - in real app, fetch from API
-        let dummyData: ChartDataType;
+        // Fetch transactions from API
+        const response = await fetch('/api/transactions');
+        if (!response.ok) {
+          throw new Error('Failed to fetch transactions');
+        }
         
+        const transactions = await response.json();
+        
+        // Filter by selected wallet if available
+        let filteredTransactions = transactions;
+        if (selectedWallet?.id) {
+          filteredTransactions = transactions.filter((tx: any) => tx.walletId === selectedWallet.id);
+        }
+        
+        let labels: string[] = [];
+        let incomeData: number[] = [];
+        let expenseData: number[] = [];
+        
+        // Format data based on selected period
         if (period === 'monthly') {
-          dummyData = {
-            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun'],
-            income: [7200000, 7500000, 7300000, 8100000, 7500000, 7800000],
-            expense: [2100000, 2800000, 2300000, 2600000, 2500000, 2400000],
-          };
+          // Last 6 months
+          labels = getLastNMonths(6);
+          
+          // Group transactions by month
+          const monthlyData = groupTransactionsByMonth(filteredTransactions, 6);
+          
+          // Extract income and expense data
+          labels.forEach(month => {
+            const monthData = monthlyData[month] || { income: 0, expense: 0 };
+            incomeData.push(monthData.income);
+            expenseData.push(monthData.expense);
+          });
         } else if (period === 'weekly') {
-          dummyData = {
-            labels: ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'],
-            income: [1900000, 1850000, 1800000, 1950000],
-            expense: [650000, 600000, 620000, 630000],
-          };
+          // Last 4 weeks
+          labels = getLastNWeeks(4);
+          
+          // Group transactions by week
+          const weeklyData = groupTransactionsByWeek(filteredTransactions, 4);
+          
+          // Extract income and expense data
+          labels.forEach((week, i) => {
+            const weekData = weeklyData[i] || { income: 0, expense: 0 };
+            incomeData.push(weekData.income);
+            expenseData.push(weekData.expense);
+          });
         } else if (period === 'yearly') {
-          dummyData = {
-            labels: ['2021', '2022', '2023', '2024'],
-            income: [82000000, 85000000, 90000000, 93000000],
-            expense: [25000000, 27000000, 28000000, 30000000],
-          };
+          // Last 4 years
+          const currentYear = new Date().getFullYear();
+          labels = [
+            (currentYear - 3).toString(),
+            (currentYear - 2).toString(),
+            (currentYear - 1).toString(),
+            currentYear.toString()
+          ];
+          
+          // Group transactions by year
+          const yearlyData = groupTransactionsByYear(filteredTransactions, 4);
+          
+          // Extract income and expense data
+          labels.forEach(year => {
+            const yearData = yearlyData[year] || { income: 0, expense: 0 };
+            incomeData.push(yearData.income);
+            expenseData.push(yearData.expense);
+          });
         } else { // daily
-          dummyData = {
-            labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
-            income: [500000, 450000, 470000, 480000, 510000, 0, 0],
-            expense: [150000, 130000, 145000, 160000, 170000, 80000, 50000],
-          };
+          // Last 7 days
+          labels = getLastNDays(7);
+          
+          // Group transactions by day
+          const dailyData = groupTransactionsByDay(filteredTransactions, 7);
+          
+          // Extract income and expense data
+          labels.forEach((day, i) => {
+            const dayData = dailyData[i] || { income: 0, expense: 0 };
+            incomeData.push(dayData.income);
+            expenseData.push(dayData.expense);
+          });
         }
 
-        // Simulate API delay
-        setTimeout(() => {
-          setChartData(dummyData);
-          setIsLoading(false);
-        }, 500);
-        
+        setChartData({
+          labels,
+          income: incomeData,
+          expense: expenseData
+        });
       } catch (error) {
         console.error('Error fetching income/expense data:', error);
+        toast.error('Gagal memuat data grafik');
+      } finally {
         setIsLoading(false);
       }
     };
@@ -177,4 +229,165 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
       </div>
     </div>
   );
+}
+
+// Helper functions for date processing
+function getLastNMonths(n: number): string[] {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'];
+  const today = new Date();
+  const result = [];
+  
+  for (let i = n - 1; i >= 0; i--) {
+    const monthIndex = (today.getMonth() - i + 12) % 12;
+    result.push(months[monthIndex]);
+  }
+  
+  return result;
+}
+
+function getLastNWeeks(n: number): string[] {
+  const result = [];
+  for (let i = n; i > 0; i--) {
+    result.push(`Minggu ${i}`);
+  }
+  return result;
+}
+
+function getLastNDays(n: number): string[] {
+  const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+  const today = new Date();
+  const result = [];
+  
+  for (let i = n - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    result.push(days[date.getDay()]);
+  }
+  
+  return result;
+}
+
+function groupTransactionsByMonth(transactions: any[], months: number) {
+  const result: Record<string, { income: number, expense: number }> = {};
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'];
+  const today = new Date();
+  
+  // Initialize result with last n months
+  for (let i = months - 1; i >= 0; i--) {
+    const monthIndex = (today.getMonth() - i + 12) % 12;
+    result[monthNames[monthIndex]] = { income: 0, expense: 0 };
+  }
+  
+  // Process transactions
+  transactions.forEach((tx: any) => {
+    const txDate = new Date(tx.date);
+    const monthName = monthNames[txDate.getMonth()];
+    
+    // Only include transactions from the last n months
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const txMonth = txDate.getMonth();
+    const txYear = txDate.getFullYear();
+    
+    const monthDiff = (currentYear - txYear) * 12 + (currentMonth - txMonth);
+    
+    if (monthDiff < months && monthDiff >= 0) {
+      if (tx.type === 'INCOME') {
+        result[monthName].income += tx.amount;
+      } else if (tx.type === 'EXPENSE') {
+        result[monthName].expense += tx.amount;
+      }
+    }
+  });
+  
+  return result;
+}
+
+function groupTransactionsByWeek(transactions: any[], weeks: number) {
+  // Create an array to hold data for each week
+  const result: { income: number, expense: number }[] = Array(weeks).fill(null).map(() => ({ income: 0, expense: 0 }));
+  
+  // Calculate date limits
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (weeks * 7));
+  
+  // Process transactions
+  transactions.forEach((tx: any) => {
+    const txDate = new Date(tx.date);
+    
+    // Only include transactions from the specified period
+    if (txDate >= startDate && txDate <= today) {
+      // Calculate which week this transaction belongs to
+      const daysDiff = Math.floor((today.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekIndex = Math.floor(daysDiff / 7);
+      
+      if (weekIndex < weeks) {
+        if (tx.type === 'INCOME') {
+          result[weekIndex].income += tx.amount;
+        } else if (tx.type === 'EXPENSE') {
+          result[weekIndex].expense += tx.amount;
+        }
+      }
+    }
+  });
+  
+  return result;
+}
+
+function groupTransactionsByDay(transactions: any[], days: number) {
+  // Create an array to hold data for each day
+  const result: { income: number, expense: number }[] = Array(days).fill(null).map(() => ({ income: 0, expense: 0 }));
+  
+  // Calculate date limits
+  const today = new Date();
+  today.setHours(23, 59, 59, 999); // End of today
+  
+  // Process transactions
+  transactions.forEach((tx: any) => {
+    const txDate = new Date(tx.date);
+    
+    // Calculate days difference
+    const daysDiff = Math.floor((today.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Only include transactions from the last n days
+    if (daysDiff < days && daysDiff >= 0) {
+      if (tx.type === 'INCOME') {
+        result[daysDiff].income += tx.amount;
+      } else if (tx.type === 'EXPENSE') {
+        result[daysDiff].expense += tx.amount;
+      }
+    }
+  });
+  
+  // Reverse the array so it's chronological
+  return result.reverse();
+}
+
+function groupTransactionsByYear(transactions: any[], years: number) {
+  const result: Record<string, { income: number, expense: number }> = {};
+  const currentYear = new Date().getFullYear();
+  
+  // Initialize result with last n years
+  for (let i = years - 1; i >= 0; i--) {
+    const year = currentYear - i;
+    result[year.toString()] = { income: 0, expense: 0 };
+  }
+  
+  // Process transactions
+  transactions.forEach((tx: any) => {
+    const txDate = new Date(tx.date);
+    const txYear = txDate.getFullYear().toString();
+    
+    // Only include transactions from the last n years
+    if (txYear >= (currentYear - years + 1).toString() && txYear <= currentYear.toString()) {
+      if (tx.type === 'INCOME') {
+        result[txYear].income += tx.amount;
+      } else if (tx.type === 'EXPENSE') {
+        result[txYear].expense += tx.amount;
+      }
+    }
+  });
+  
+  return result;
 } 

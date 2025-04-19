@@ -30,6 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tag } from 'lucide-react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { trackGoalActivityToTransaction } from '@/app/components/TransactionModalHelper';
 
 // Type definitions
 interface Goal {
@@ -39,7 +40,8 @@ interface Goal {
   current: number;
   type: string;
   description?: string;
-  targetDate: string;
+  targetDate?: string;
+  deadline?: string;
   status: string;
   icon?: string;
   color?: string;
@@ -99,6 +101,7 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
           throw new Error('Goal not found');
         }
         
+        console.log('Got goal data from API:', targetGoal);
         setGoal(targetGoal);
         
         // Fetch activities
@@ -111,11 +114,19 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
         const activitiesData = await activitiesResponse.json();
         setActivities(activitiesData.activities || []);
         
-        // Fetch tracked categories
-        const trackedCategoriesResponse = await fetch(`/api/goals/${params.goalId}/tracked-categories`);
-        if (trackedCategoriesResponse.ok) {
-          const trackedCategoriesData = await trackedCategoriesResponse.json();
-          setTrackedCategories(trackedCategoriesData || []);
+        // Fetch tracked categories - Handle errors gracefully
+        try {
+          const trackedCategoriesResponse = await fetch(`/api/goals/${params.goalId}/tracked-categories`);
+          if (trackedCategoriesResponse.ok) {
+            const trackedCategoriesData = await trackedCategoriesResponse.json();
+            setTrackedCategories(trackedCategoriesData || []);
+          } else {
+            console.warn('Tracked categories API returned an error. Feature might not be implemented.');
+            setTrackedCategories([]);
+          }
+        } catch (categoryError) {
+          console.warn('Failed to fetch tracked categories:', categoryError);
+          setTrackedCategories([]);
         }
       } catch (error) {
         console.error('Error fetching goal data:', error);
@@ -158,6 +169,7 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
     e.preventDefault();
     
     try {
+      // Create goal activity
       const response = await fetch(`/api/goals/${params.goalId}/activities`, {
         method: 'POST',
         headers: {
@@ -168,6 +180,36 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
       
       if (!response.ok) {
         throw new Error('Failed to add activity');
+      }
+      
+      // Also create a transaction if it's a manual activity (not linked to existing transaction)
+      try {
+        // First, get default wallet
+        const walletsResponse = await fetch('/api/wallets');
+        if (!walletsResponse.ok) {
+          throw new Error('Failed to fetch wallets');
+        }
+        
+        const wallets = await walletsResponse.json();
+        const defaultWallet = wallets.find((wallet: any) => wallet.isDefault) || wallets[0];
+        
+        if (!defaultWallet) {
+          throw new Error('No wallet available');
+        }
+        
+        // Use helper function to create transaction from goal activity
+        await trackGoalActivityToTransaction(
+          params.goalId,
+          activityForm.amount,
+          activityForm.description || `${goal?.name} goal activity`,
+          activityForm.date,
+          defaultWallet.id
+        );
+        
+        console.log('Transaction created successfully for goal activity');
+      } catch (transactionError) {
+        console.error('Error creating transaction:', transactionError);
+        // Continue execution even if transaction creation fails
       }
       
       // Refresh data
@@ -195,7 +237,7 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
       
       toast({
         title: 'Success',
-        description: 'Activity added successfully!',
+        description: 'Activity added successfully',
       });
     } catch (error) {
       console.error('Error adding activity:', error);
@@ -307,6 +349,43 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
     }
   };
 
+  // Delete goal
+  const handleDeleteGoal = async () => {
+    if (!confirm('Are you sure you want to delete this goal?')) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/goals?id=${params.goalId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete goal');
+      }
+      
+      router.push('/goals');
+      
+      toast({
+        title: 'Success',
+        description: 'Goal deleted successfully!',
+      });
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete goal. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const formattedDeadline = goal?.deadline ? new Date(goal.deadline).toLocaleDateString('id-ID', { 
+    day: 'numeric', 
+    month: 'short', 
+    year: 'numeric' 
+  }) : 'Target date not set';
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -402,11 +481,7 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
                       : 'Goal achieved!'}
                   </span>
                   <span className="text-xs px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
-                    Target: {new Date(goal.targetDate).toLocaleDateString('id-ID', { 
-                      day: 'numeric', 
-                      month: 'short', 
-                      year: 'numeric' 
-                    })}
+                    Target: {formattedDeadline}
                   </span>
                 </p>
               </div>
@@ -527,6 +602,11 @@ export default function GoalDetailPage({ params }: { params: { goalId: string } 
                 </form>
               </DialogContent>
             </Dialog>
+            
+            <Button variant="destructive" onClick={handleDeleteGoal}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Goal
+            </Button>
           </div>
         </div>
         

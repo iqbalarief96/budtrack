@@ -7,7 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { formatCurrency } from '@/lib/utils';
-import { Wallet, BarChart3, Calendar } from 'lucide-react';
+import { Wallet, BarChart3, Calendar, ArrowLeft, Edit2 } from 'lucide-react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
 // Fetch budget data
 async function getBudgetData(budgetId: string) {
@@ -51,11 +53,26 @@ export default async function BudgetPage({ params }: { params: { budgetId: strin
   
   return (
     <div className="container max-w-4xl mx-auto py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">{budget.category?.name || 'Budget'}</h1>
-        <p className="text-muted-foreground">
-          Period: {format(new Date(budget.startDate), 'MMM d, yyyy')} - {format(new Date(budget.endDate), 'MMM d, yyyy')}
-        </p>
+      <div className="mb-4">
+        <Link href="/budgets" className="flex items-center text-blue-600 hover:text-blue-800">
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          <span>Kembali ke Anggaran</span>
+        </Link>
+      </div>
+      
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{budget.category?.name || 'Budget'}</h1>
+          <p className="text-muted-foreground">
+            Period: {format(new Date(budget.startDate), 'MMM d, yyyy')} - {format(new Date(budget.endDate), 'MMM d, yyyy')}
+          </p>
+        </div>
+        <Button asChild variant="outline" className="flex items-center gap-2">
+          <Link href={`/budgets/${params.budgetId}/edit`}>
+            <Edit2 className="h-4 w-4" />
+            <span>Edit Budget</span>
+          </Link>
+        </Button>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

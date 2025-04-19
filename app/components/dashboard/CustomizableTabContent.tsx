@@ -64,11 +64,12 @@ export default function CustomizableTabContent({
     { id: 'transaction-list-widget', type: 'transaction-list', size: 'medium', title: 'Transaksi Terbaru', position: 5 },
     { id: 'emergency-fund-widget', type: 'emergency-fund', size: 'medium', title: 'Dana Darurat', position: 6 },
     { id: 'budget-overview-widget', type: 'budget-overview', size: 'large', title: 'Ringkasan Budget', position: 7 },
-    { id: 'financial-tips-widget', type: 'financial-tips', size: 'small', title: 'Tips Keuangan', position: 8 },
-    { id: 'savings-goals-widget', type: 'savings-goals', size: 'medium', title: 'Target Tabungan', position: 9 },
-    { id: 'investment-performance-widget', type: 'investment-performance', size: 'medium', title: 'Performa Investasi', position: 10 },
-    { id: 'summary-stats-widget', type: 'summary-stats', size: 'full', title: 'Ringkasan Keuangan', position: 11 },
-    { id: 'quick-actions-widget', type: 'quick-actions', size: 'large', title: 'Aksi Cepat', position: 12 },
+    { id: 'top-spending-widget', type: 'top-spending', size: 'medium', title: 'Top Spending', position: 8 },
+    { id: 'financial-tips-widget', type: 'financial-tips', size: 'small', title: 'Tips Keuangan', position: 9 },
+    { id: 'savings-goals-widget', type: 'savings-goals', size: 'medium', title: 'Target Tabungan', position: 10 },
+    { id: 'investment-performance-widget', type: 'investment-performance', size: 'medium', title: 'Performa Investasi', position: 11 },
+    { id: 'summary-stats-widget', type: 'summary-stats', size: 'full', title: 'Ringkasan Keuangan', position: 12 },
+    { id: 'quick-actions-widget', type: 'quick-actions', size: 'large', title: 'Aksi Cepat', position: 13 },
   ];
 
   // Add a new widget
