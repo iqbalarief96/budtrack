@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { FiChevronLeft, FiPlus, FiTrash2, FiEdit2, FiPhone, FiMail, FiMapPin, FiX, FiImage, FiDollarSign, FiCalendar, FiCheck, FiUsers } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from "../constants";
+
+// Don't hardcode a wedding ID that might not exist - we'll fetch it instead
+let WEDDING_ID = '';
 
 // Align interface with Prisma Schema
 interface Venue {
@@ -51,7 +53,7 @@ const formatFeatures = (featuresArray: string[] | null): string => {
 const demoVenues: Venue[] = [
   {
     id: '1',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: 'demo-wedding-id',
     name: 'Gedung Serbaguna Senayan (Demo)',
     address: 'Jl. Senayan No. 1, Jakarta Selatan',
     capacity: 1000,
@@ -71,76 +73,157 @@ const demoVenues: Venue[] = [
   }
 ];
 
-// Align initial empty state with Prisma Schema
-const emptyVenue: Omit<Venue, 'id' | 'createdAt' | 'updatedAt'> = {
-  weddingId: DEMO_WEDDING_ID,
-  name: '',
-  address: '',
-  capacity: null,
-  priceRange: null,
-  features: null,
-  imageUrl: null,
-  isBooked: false,
-  bookingDate: null,
-  depositAmount: null,
-  contactPerson: null,
-  phone: null,
-  email: null,
-  website: null,
-  notes: null,
-};
-
-
 export default function VenuePage() {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [isAddFormVisible, setIsAddFormVisible] = useState(false);
   const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false); // Renamed for clarity
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'booked' | 'available'>('all'); // Filter state
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'booked' | 'available'>('all');
+  const [weddingId, setWeddingId] = useState<string>('');
 
-  // Demo wedding ID for testing (replace with actual logic if needed)
-  const weddingId = DEMO_WEDDING_ID;
+  // First fetch the wedding information or create one if needed
+  const getOrCreateWedding = async () => {
+    try {
+      const response = await fetch('/api/wedding');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch wedding (${response.status})`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.wedding && data.wedding.id) {
+        console.log("Found existing wedding:", data.wedding.id);
+        setWeddingId(data.wedding.id);
+        WEDDING_ID = data.wedding.id;
+        // Update current venue with the correct wedding ID
+        setCurrentVenue(prev => ({ ...prev, weddingId: data.wedding.id }));
+        return data.wedding.id;
+      } else {
+        // Create a new wedding if none exists
+        console.log("No wedding found, creating a new one");
+        const createResponse = await fetch('/api/wedding', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: 'My Wedding',
+            date: new Date().toISOString(),
+            status: 'PLANNING',
+            budget: 250000000,
+            expectedGuests: 250
+          }),
+        });
+        
+        if (!createResponse.ok) {
+          throw new Error(`Failed to create wedding (${createResponse.status})`);
+        }
+        
+        const newWedding = await createResponse.json();
+        if (newWedding.wedding && newWedding.wedding.id) {
+          console.log("Created new wedding:", newWedding.wedding.id);
+          setWeddingId(newWedding.wedding.id);
+          WEDDING_ID = newWedding.wedding.id;
+          // Update current venue with the new wedding ID
+          setCurrentVenue(prev => ({ ...prev, weddingId: newWedding.wedding.id }));
+          return newWedding.wedding.id;
+        }
+      }
+      
+      throw new Error("Could not get or create a wedding");
+    } catch (err) {
+      console.error("Error getting/creating wedding:", err);
+      toast.error("Problem accessing wedding data");
+      // Use a fallback wedding ID for demo purposes only
+      const fallbackId = 'demo-wedding-id'; 
+      setWeddingId(fallbackId);
+      WEDDING_ID = fallbackId;
+      return fallbackId;
+    }
+  };
 
+  // Align initial empty state with Prisma Schema
+  const emptyVenue: Omit<Venue, 'id' | 'createdAt' | 'updatedAt'> = {
+    weddingId: weddingId || '', // Use state variable instead of constant
+    name: '',
+    address: '',
+    capacity: null,
+    priceRange: null,
+    features: null,
+    imageUrl: null,
+    isBooked: false,
+    bookingDate: null,
+    depositAmount: null,
+    contactPerson: null,
+    phone: null,
+    email: null,
+    website: null,
+    notes: null,
+  };
+  
   // State for the add/edit form, aligned with the interface
   const [currentVenue, setCurrentVenue] = useState<Omit<Venue, 'id' | 'createdAt' | 'updatedAt'>>(emptyVenue);
 
   // Function to fetch venues
   const fetchVenues = async () => {
+    if (!weddingId) {
+      console.log("No wedding ID available, getting wedding first");
+      const newWeddingId = await getOrCreateWedding();
+      if (!newWeddingId) {
+        setError("Could not establish a wedding ID");
+        setIsLoading(false);
+        return;
+      }
+    }
+    
     setIsLoading(true);
     setError(null); // Clear previous errors
+    
     try {
-      const response = await fetch(`/api/wedding/${weddingId}/venues`);
+      // Check weddingId once more to avoid potential race conditions
+      const currentWeddingId = weddingId || WEDDING_ID;
+      if (!currentWeddingId) {
+        console.error("No wedding ID available even after getOrCreateWedding");
+        setError("Could not retrieve wedding information");
+        setIsLoading(false);
+        setVenues(demoVenues); // Fallback to demo
+        return;
+      }
+      
+      console.log(`Fetching venues with wedding ID: ${currentWeddingId}`);
+      const response = await fetch(`/api/wedding/${currentWeddingId}/venues`);
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})); // Try to parse error
+        const errorData = await response.json().catch(() => ({}));
         console.error("API Error Response:", errorData);
+        
+        // Special handling for 404 - wedding not found
+        if (response.status === 404) {
+          console.log("Wedding not found (404), attempting to create/get a new one");
+          const newId = await getOrCreateWedding();
+          if (newId && newId !== currentWeddingId) {
+            // Only try once more with the new ID to prevent infinite loops
+            const retryResponse = await fetch(`/api/wedding/${newId}/venues`);
+            if (!retryResponse.ok) {
+              throw new Error(`Failed to fetch venues even after recreation (${retryResponse.status})`);
+            }
+            const retryData = await retryResponse.json();
+            if (retryData && Array.isArray(retryData)) {
+              processAndSetVenues(retryData);
+              setIsLoading(false);
+              return;
+            }
+          }
+          // If we get here, we failed even after recreation
+          throw new Error(`Wedding not found and recreation failed (${response.status})`);
+        }
+        
         throw new Error(`Failed to fetch venues (${response.status})`);
       }
+      
       const data = await response.json();
-      if (data && Array.isArray(data)) {
-         // Process data: ensure dates are Date objects, capacity is number
-         const processedData = data.map(venue => ({
-          ...venue,
-          features: venue.features || null, // Keep as string or null initially
-          capacity: venue.capacity !== null ? Number(venue.capacity) : null,
-          priceRange: venue.priceRange || null,
-          depositAmount: venue.depositAmount !== null ? Number(venue.depositAmount) : null,
-          isBooked: Boolean(venue.isBooked),
-          bookingDate: venue.bookingDate ? new Date(venue.bookingDate) : null,
-          createdAt: venue.createdAt ? new Date(venue.createdAt) : undefined,
-          updatedAt: venue.updatedAt ? new Date(venue.updatedAt) : undefined,
-        }));
-        setVenues(processedData);
-        console.log(`Venues loaded from API: ${processedData.length}`);
-        if (processedData.length === 0) {
-          console.log("API returned empty array, showing demo data as fallback.");
-          setVenues(demoVenues); // Use demo if API returns empty
-        }
-      } else {
-        console.log("Invalid data structure from API, using demo data.");
-        setVenues(demoVenues); // Fallback to demo data
-      }
+      processAndSetVenues(data);
     } catch (err) {
       console.error("Error fetching venues:", err);
       setError(`Failed to load venues. ${err instanceof Error ? err.message : 'Unknown error'}. Using demo data.`);
@@ -149,11 +232,78 @@ export default function VenuePage() {
       setIsLoading(false);
     }
   };
+  
+  // Helper function to process venue data
+  const processAndSetVenues = (data: any[]) => {
+    if (data && Array.isArray(data)) {
+      // Process data: ensure dates are Date objects, capacity is number
+      const processedData = data.map(venue => ({
+        ...venue,
+        features: venue.features || null, // Keep as string or null initially
+        capacity: venue.capacity !== null ? Number(venue.capacity) : null,
+        priceRange: venue.priceRange || null,
+        depositAmount: venue.depositAmount !== null ? Number(venue.depositAmount) : null,
+        isBooked: Boolean(venue.isBooked),
+        bookingDate: venue.bookingDate ? new Date(venue.bookingDate) : null,
+        createdAt: venue.createdAt ? new Date(venue.createdAt) : undefined,
+        updatedAt: venue.updatedAt ? new Date(venue.updatedAt) : undefined,
+      }));
+      
+      console.log(`Venues loaded from API: ${processedData.length}`);
+      
+      // Avoid setting state unnecessarily if we're showing empty data and already showing demo
+      if (processedData.length === 0) {
+        console.log("API returned empty array, showing demo data as fallback.");
+        // Only set demo venues if we don't already have venues (avoid re-render loop)
+        if (venues.length === 0 || venues[0].id !== "1") {
+          setVenues(demoVenues);
+        }
+      } else {
+        setVenues(processedData);
+      }
+    } else {
+      console.log("Invalid data structure from API, using demo data.");
+      // Only set demo venues if we don't already have venues (avoid re-render loop)
+      if (venues.length === 0 || venues[0].id !== "1") {
+        setVenues(demoVenues);
+      }
+    }
+  };
 
-  // Call fetchVenues on initial mount
+  // Call getOrCreateWedding and then fetchVenues on initial mount
   useEffect(() => {
-    fetchVenues();
-  }, [weddingId]); // Re-fetch if weddingId changes
+    let isMounted = true;
+    let hasInitialized = false; // Prevent double initialization
+    
+    const initPage = async () => {
+      if (hasInitialized) return;
+      hasInitialized = true;
+      
+      try {
+        const newWeddingId = await getOrCreateWedding();
+        // Check if component is still mounted before updating state
+        if (isMounted && newWeddingId) {
+          console.log("Initializing page with wedding ID:", newWeddingId);
+          await fetchVenues();
+        }
+      } catch (err) {
+        console.error("Error initializing page:", err);
+        if (isMounted) {
+          setError("Failed to initialize page data");
+          setVenues(demoVenues); // Fallback to demo
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    initPage();
+    
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+      hasInitialized = false;
+    };
+  }, []); // Empty dependency array for initial load only
 
   // Reset form function
   const resetForm = () => {
@@ -224,16 +374,46 @@ export default function VenuePage() {
 
 
     try {
-      const url = editingVenueId
+      let url = editingVenueId
         ? `/api/wedding/${weddingId}/venues/${editingVenueId}`
         : `/api/wedding/${weddingId}/venues`;
       const method = editingVenueId ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(venuePayload),
       });
+
+      // Handle specific case when wedding not found - try to recreate and retry once
+      if (response.status === 500) {
+        const errorText = await response.text();
+        console.log("Response error:", errorText);
+        
+        // Check if error contains "No 'Wedding' record(s) was found"
+        if (errorText.includes("No 'Wedding' record(s) was found")) {
+          console.log("Wedding not found, attempting to create wedding and retry");
+          toast.loading("Membuat ulang data pernikahan...");
+          
+          // Try to recreate wedding
+          const newWeddingId = await getOrCreateWedding();
+          if (newWeddingId) {
+            // Update venue payload with new wedding ID
+            venuePayload.weddingId = newWeddingId;
+            
+            // Retry the save with new wedding ID
+            url = editingVenueId
+              ? `/api/wedding/${newWeddingId}/venues/${editingVenueId}`
+              : `/api/wedding/${newWeddingId}/venues`;
+              
+            response = await fetch(url, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(venuePayload),
+            });
+          }
+        }
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -243,27 +423,27 @@ export default function VenuePage() {
 
       const savedVenue = await response.json();
 
-       // Process saved data (like API fetch) before updating state
-       const processedSavedVenue = {
-         ...savedVenue,
-         features: savedVenue.features || null,
-         capacity: savedVenue.capacity !== null ? Number(savedVenue.capacity) : null,
-         priceRange: savedVenue.priceRange || null,
-         depositAmount: savedVenue.depositAmount !== null ? Number(savedVenue.depositAmount) : null,
-         isBooked: Boolean(savedVenue.isBooked),
-         bookingDate: savedVenue.bookingDate ? new Date(savedVenue.bookingDate) : null,
-         createdAt: savedVenue.createdAt ? new Date(savedVenue.createdAt) : undefined,
-         updatedAt: savedVenue.updatedAt ? new Date(savedVenue.updatedAt) : undefined,
-       };
+      // Process saved data (like API fetch) before updating state
+      const processedSavedVenue = {
+        ...savedVenue,
+        features: savedVenue.features || null,
+        capacity: savedVenue.capacity !== null ? Number(savedVenue.capacity) : null,
+        priceRange: savedVenue.priceRange || null,
+        depositAmount: savedVenue.depositAmount !== null ? Number(savedVenue.depositAmount) : null,
+        isBooked: Boolean(savedVenue.isBooked),
+        bookingDate: savedVenue.bookingDate ? new Date(savedVenue.bookingDate) : null,
+        createdAt: savedVenue.createdAt ? new Date(savedVenue.createdAt) : undefined,
+        updatedAt: savedVenue.updatedAt ? new Date(savedVenue.updatedAt) : undefined,
+      };
 
-
+      // Update local state without triggering refetch
       if (editingVenueId) {
         // Update existing venue in the list
-        setVenues(venues.map(v => v.id === editingVenueId ? processedSavedVenue : v));
+        setVenues(prevVenues => prevVenues.map(v => v.id === editingVenueId ? processedSavedVenue : v));
         toast.success("Venue berhasil diperbarui!");
       } else {
         // Add new venue to the list
-        setVenues([...venues, processedSavedVenue]);
+        setVenues(prevVenues => [...prevVenues, processedSavedVenue]);
         toast.success("Venue berhasil ditambahkan!");
       }
 
@@ -602,10 +782,17 @@ export default function VenuePage() {
                   {/* Image */}
                   <div className="flex-shrink-0 w-full md:w-48 h-32 md:h-auto">
                     <img
-                      src={venue.imageUrl || 'https://via.placeholder.com/150/CCCCCC/808080?text=No+Image'} // Placeholder image
+                      src={venue.imageUrl || '/images/no-image.png'} 
                       alt={venue.name}
                       className="w-full h-full object-cover rounded-md"
-                      onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150/CCCCCC/808080?text=No+Image'; }} // Fallback on image error
+                      onError={(e) => { 
+                        // Prevent infinite loop - only set fallback if it's not already the fallback
+                        const imgElement = e.target as HTMLImageElement;
+                        if (!imgElement.src.endsWith('/images/no-image.png') && !imgElement.src.includes('data:image')) {
+                          // Use inline data URI as fallback to prevent network requests
+                          imgElement.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%20viewBox%3D%220%200%20200%20200%22%3E%3Crect%20fill%3D%22%23CCCCCC%22%20width%3D%22200%22%20height%3D%22200%22%2F%3E%3Ctext%20fill%3D%22%23808080%22%20font-family%3D%22sans-serif%22%20font-size%3D%2224%22%20dy%3D%220.3em%22%20text-anchor%3D%22middle%22%20x%3D%22100%22%20y%3D%22100%22%3ENo%20Image%3C%2Ftext%3E%3C%2Fsvg%3E';
+                        }
+                      }}
                     />
                   </div>
                   {/* Details */}

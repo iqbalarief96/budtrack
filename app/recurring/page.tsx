@@ -38,6 +38,30 @@ interface Category {
   color?: string;
 }
 
+// Tambahkan interface untuk RecurringTransactionHistory
+interface RecurringTransactionHistory {
+  id: string;
+  recurringTransactionId: string;
+  transactionId: string | null;
+  processedDate: string;
+  targetDate: string;
+  amount: number;
+  status: string;
+  notes: string | null;
+  recurringTransaction: {
+    name: string;
+    category: string | null;
+    type: string;
+  };
+  transaction: {
+    id: string;
+    amount: number;
+    date: string;
+    categoryId: string | null;
+    type: string;
+  } | null;
+}
+
 export default function RecurringPage() {
   const { data: session, status } = useSession()
   const { selectedWallet, refreshWallets } = useWallet()
@@ -60,6 +84,8 @@ export default function RecurringPage() {
   const [isSynchronizing, setIsSynchronizing] = useState(false)
   const [syncResult, setSyncResult] = useState<{success: number; skipped: number} | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
+  const [transactionHistory, setTransactionHistory] = useState<RecurringTransactionHistory[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   // Fetch wallets when component mounts
   useEffect(() => {
@@ -87,6 +113,13 @@ export default function RecurringPage() {
       fetchCategories()
     }
   }, [session])
+
+  // Fetch history when tab changes to history
+  useEffect(() => {
+    if (activeTab === 'history' && selectedWallet && session) {
+      fetchTransactionHistory()
+    }
+  }, [activeTab, selectedWallet, session])
 
   // Fetch wallets from API
   const fetchWallets = async () => {
@@ -190,6 +223,41 @@ export default function RecurringPage() {
       setError('Failed to load categories')
     }
   }
+
+  // Fetch recurring transaction history
+  const fetchTransactionHistory = async () => {
+    if (!selectedWallet) return;
+    
+    try {
+      setIsLoadingHistory(true);
+      setError(null);
+      
+      console.log('🔍 Fetching transaction history for wallet:', selectedWallet.id);
+      
+      const response = await fetch(`/api/recurring/history?walletId=${selectedWallet.id}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ Error response:', errorData);
+        throw new Error(errorData.message || errorData.error || 'Failed to fetch history');
+      }
+      
+      const data = await response.json();
+      console.log(`✅ Received ${data.length} history items`);
+      setTransactionHistory(data);
+    } catch (err) {
+      console.error('❌ Error fetching recurring transaction history:', err);
+      
+      let errorMessage = 'Failed to load recurring transaction history';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   if (status === 'loading' || isLoading) {
     return <div className="p-8 flex justify-center">Loading...</div>
@@ -454,6 +522,150 @@ export default function RecurringPage() {
       return categories.filter(cat => cat.type === 'EXPENSE' || cat.type === 'BOTH')
     }
   }
+
+  // Render the History tab content
+  const renderHistoryTab = () => {
+    if (isLoadingHistory) {
+      return (
+        <div className="p-8 flex justify-center">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin h-5 w-5 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+            <span>Loading history...</span>
+          </div>
+        </div>
+      );
+    }
+    
+    if (error) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 mb-4">
+          <FiAlertCircle className="text-red-500" size={20} />
+          <div className="flex-1">
+            <div className="font-medium">Error loading history</div>
+            <div className="text-sm text-red-700">{error}</div>
+          </div>
+          <button 
+            onClick={fetchTransactionHistory}
+            className="ml-4 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-sm"
+          >
+            <FiRefreshCw className="mr-1 inline-block" size={14} /> Retry
+          </button>
+        </div>
+      );
+    }
+    
+    // Check if we have recurring transactions
+    if (recurringTransactions.length === 0) {
+      return (
+        <div className="bg-gray-50 border rounded-lg p-8 text-center text-gray-500">
+          <FiRepeat className="mx-auto mb-4" size={40} />
+          <p className="text-lg font-medium mb-2">No recurring transactions</p>
+          <p>Set up recurring transactions first to see their history.</p>
+        </div>
+      );
+    }
+    
+    // Even if history is empty, show recurring transactions
+    if (transactionHistory.length === 0) {
+      return (
+        <div className="space-y-6">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
+            <FiClock className="text-yellow-500" size={20} />
+            <span>No history available yet. Try running the "Sync Transactions" function first.</span>
+          </div>
+          
+          <div className="mt-4">
+            <h3 className="text-lg font-medium mb-3">Your Active Recurring Transactions</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white rounded-lg border">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="py-3 px-4 text-left">Name</th>
+                    <th className="py-3 px-4 text-left">Category</th>
+                    <th className="py-3 px-4 text-left">Frequency</th>
+                    <th className="py-3 px-4 text-left">Amount</th>
+                    <th className="py-3 px-4 text-left">Next Payment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {recurringTransactions.map(rt => (
+                    <tr key={rt.id}>
+                      <td className="py-3 px-4">{rt.name}</td>
+                      <td className="py-3 px-4">{rt.category || '-'}</td>
+                      <td className="py-3 px-4">{rt.frequency}</td>
+                      <td className="py-3 px-4">{displayAmount(rt.amount, rt.type)}</td>
+                      <td className="py-3 px-4">{formatDate(rt.nextPaymentDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="mt-4 text-center">
+              <button
+                onClick={synchronizeTransactions}
+                disabled={isSynchronizing}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 mx-auto disabled:opacity-50"
+              >
+                <FiRefreshCw className={isSynchronizing ? "animate-spin" : ""} /> 
+                {isSynchronizing ? "Synchronizing..." : "Sync Transactions Now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white rounded-lg border">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="py-3 px-4 text-left">Name</th>
+              <th className="py-3 px-4 text-left">Date</th>
+              <th className="py-3 px-4 text-left">Amount</th>
+              <th className="py-3 px-4 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {transactionHistory.map((historyItem) => {
+              // Handle different formats of data (our mock data vs real history)
+              const name = historyItem.recurringTransaction?.name || 'Unknown';
+              const date = historyItem.targetDate || historyItem.transaction?.date;
+              const amount = historyItem.amount || historyItem.transaction?.amount || 0;
+              const type = historyItem.recurringTransaction?.type || historyItem.transaction?.type || 'expense';
+              const status = historyItem.status || 'CREATED';
+              
+              return (
+                <tr key={historyItem.id}>
+                  <td className="py-3 px-4">{name}</td>
+                  <td className="py-3 px-4">{date ? formatDate(date) : '-'}</td>
+                  <td className="py-3 px-4">{displayAmount(amount, type)}</td>
+                  <td className="py-3 px-4">
+                    {status === 'CREATED' ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <FiCheckCircle className="mr-1" size={12} />
+                        Created
+                      </span>
+                    ) : status === 'SKIPPED' ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                        <FiX className="mr-1" size={12} />
+                        Skipped
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        {status}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -952,30 +1164,10 @@ export default function RecurringPage() {
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
                 <FiRepeat className="text-blue-500" size={20} />
-                <span>Histori transaksi berulang yang telah dibayar.</span>
+                <span>Histori transaksi berulang yang telah diproses.</span>
               </div>
               
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white rounded-lg border">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="py-3 px-4 text-left">Nama</th>
-                      <th className="py-3 px-4 text-left">Kategori</th>
-                      <th className="py-3 px-4 text-left">Tanggal Bayar</th>
-                      <th className="py-3 px-4 text-left">Jumlah</th>
-                      <th className="py-3 px-4 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {/* This would be filled from transaction history, not the recurring transaction list */}
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-gray-500">
-                        No payment history available. History will be shown after recurring transactions are processed.
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              {renderHistoryTab()}
             </div>
           )}
         </div>

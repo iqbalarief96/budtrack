@@ -21,11 +21,11 @@ const MainNav = () => {
   const navItems = [
     { href: '/', label: 'Dashboard', icon: FiHome },
     { href: '/transactions', label: 'Transactions', icon: FiDollarSign },
+    { href: '/wedding-planner', label: 'Wedding Planner', icon: FiHeart },
     { href: '/categories', label: 'Categories', icon: FiPieChart },
     { href: '/wallets', label: 'Wallets', icon: FiCreditCard },
     { href: '/budgets', label: 'Budgets', icon: FiTarget },
     { href: '/recurring', label: 'Recurring', icon: FiCalendar },
-    { href: '/wedding-planner', label: 'Wedding Planner', icon: FiHeart },
     { href: '/insights', label: 'Insights', icon: FiPieChart },
     { href: '/groups', label: 'Groups', icon: FiUsers },
     { href: '/investments', label: 'Investments', icon: FiBriefcase },

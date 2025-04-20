@@ -149,6 +149,7 @@ export default function BudgetDashboard({ initialBudgets, categories, wallets }:
                 endDate: new Date(editingBudget.endDate)
               } : undefined}
               isEditing={!!editingBudget}
+              onSuccess={handleFormSuccess}
             />
           </div>
         </div>

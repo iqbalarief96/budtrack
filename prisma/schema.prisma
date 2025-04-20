@@ -1,5 +1,7 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  previewFeatures = ["extendedWhereUnique"]
 }
 
 datasource db {
@@ -20,8 +22,8 @@ model Investment {
   updatedAt            DateTime @updatedAt
   userId               String
   walletId             String
-  wallet               Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet               Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([walletId])
@@ -38,11 +40,16 @@ model User {
   updatedAt            DateTime               @updatedAt
   riskProfile          String?
   accounts             Account[]
+  alerts               Alert[]
   budgets              Budget[]
   categories           Category[]
   categoryRules        CategoryRule[]
+  chatMessages         ChatMessage[]
+  dashboardViews       DashboardView[]
+  emergencyFund        EmergencyFund?
   expenseSplits        ExpenseSplit[]
   financialAdvice      FinancialAdvice[]
+  goals                Goal[]
   ownedGroups          Group[]                @relation("OwnedGroups")
   groupTransactions    GroupTransaction[]
   investments          Investment[]
@@ -53,12 +60,7 @@ model User {
   groupSettings        UserGroupSettings[]
   settings             UserSettings?
   wallets              Wallet[]
-  chatMessages         ChatMessage[]
-  alerts               Alert[]
-  emergencyFund        EmergencyFund?
-  dashboardViews       DashboardView[]
   weddings             Wedding[]
-  goals                Goal[]
 }
 
 model Account {
@@ -135,21 +137,22 @@ model Category {
 }
 
 model Transaction {
-  id            String         @id @default(cuid())
-  amount        Float
-  description   String?
-  date          DateTime
-  type          String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  userId        String
-  walletId      String
-  categoryId    String?
-  goalId        String?
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet        Wallet         @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  category      Category?      @relation(fields: [categoryId], references: [id])
-  goalActivities GoalActivity[]
+  id               String                        @id @default(cuid())
+  amount           Float
+  description      String?
+  date             DateTime
+  type             String
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  userId           String
+  walletId         String
+  categoryId       String?
+  goalId           String?
+  goalActivities   GoalActivity[]
+  recurringHistory RecurringTransactionHistory[]
+  category         Category?                     @relation(fields: [categoryId], references: [id])
+  wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Budget {
@@ -163,21 +166,21 @@ model Budget {
   userId     String
   walletId   String
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  wallet     Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet     Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 }
 
 model EmergencyFund {
   id                  String   @id @default(cuid())
   userId              String   @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetAmount        Float
   currentAmount       Float
   monthlyContribution Float
   isActive            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -222,12 +225,12 @@ model CategoryRule {
   categoryId String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 }
 
 model RecurringTransaction {
-  id              String   @id @default(cuid())
+  id              String                        @id @default(cuid())
   name            String
   amount          Float
   category        String?
@@ -235,14 +238,33 @@ model RecurringTransaction {
   startDate       DateTime
   nextPaymentDate DateTime
   description     String?
-  isActive        Boolean  @default(true)
-  type            String   @default("expense")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isActive        Boolean                       @default(true)
+  type            String                        @default("expense")
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
   walletId        String
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  wallet          Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user            User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  history         RecurringTransactionHistory[]
+}
+
+model RecurringTransactionHistory {
+  id                     String               @id @default(cuid())
+  recurringTransactionId String
+  transactionId          String?
+  processedDate          DateTime             @default(now())
+  targetDate             DateTime
+  amount                 Float
+  status                 String               @default("CREATED")
+  notes                  String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  transaction            Transaction?         @relation(fields: [transactionId], references: [id])
+  recurringTransaction   RecurringTransaction @relation(fields: [recurringTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([recurringTransactionId])
+  @@index([transactionId])
 }
 
 model Group {
@@ -270,8 +292,8 @@ model UserGroup {
   role        String   @default("MEMBER")
   permissions String?
   joinedAt    DateTime @default(now())
-  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([userId, groupId])
 }
@@ -283,8 +305,8 @@ model UserGroupSettings {
   notificationMethod String   @default("email")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([userId, groupId])
 }
@@ -316,9 +338,9 @@ model GroupTransaction {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   splits        ExpenseSplit[]
-  groupWallet   GroupWallet    @relation(fields: [groupWalletId], references: [id])
-  category      Category?      @relation(fields: [categoryId], references: [id])
   createdBy     User           @relation(fields: [createdById], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  groupWallet   GroupWallet    @relation(fields: [groupWalletId], references: [id])
 }
 
 model ExpenseSplit {
@@ -330,8 +352,8 @@ model ExpenseSplit {
   paidDate           DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
-  user               User             @relation(fields: [userId], references: [id])
   transaction        GroupTransaction @relation(fields: [groupTransactionId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id])
 
   @@unique([groupTransactionId, userId])
 }
@@ -347,8 +369,8 @@ model GroupBudget {
   categoryId String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
-  group      Group     @relation(fields: [groupId], references: [id])
   category   Category? @relation(fields: [categoryId], references: [id])
+  group      Group     @relation(fields: [groupId], references: [id])
 }
 
 model GroupInvite {
@@ -365,32 +387,27 @@ model GroupInvite {
   group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
 }
 
-// Chat messages for the AI assistant
 model ChatMessage {
   id               String   @id @default(cuid())
   userId           String
   userMessage      String
   assistantMessage String
   createdAt        DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Alerts for unusual spending and other notifications
 model Alert {
   id             String   @id @default(cuid())
   userId         String
-  type           String // UNUSUAL_SPENDING, BUDGET_LIMIT, GOAL_ACHIEVED, etc.
+  type           String
   title          String
   message        String
-  additionalData String? // JSON data for specific alert types
+  additionalData String?
   isRead         Boolean  @default(false)
   createdAt      DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Financial goal models
 model Goal {
   id          String         @id @default(cuid())
   userId      String
@@ -406,8 +423,8 @@ model Goal {
   isArchived  Boolean        @default(false)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
-  activities  GoalActivity[]
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities  GoalActivity[]
 
   @@index([userId])
 }
@@ -419,59 +436,84 @@ model GoalActivity {
   date          DateTime     @default(now())
   description   String?
   createdAt     DateTime     @default(now())
-  goal          Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
   userId        String
   transactionId String?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  goal          Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
   @@index([goalId])
   @@index([transactionId])
   @@index([userId])
 }
 
-// Dashboard customization models
 model DashboardView {
   id        String   @id @default(cuid())
   name      String
   isDefault Boolean  @default(false)
   timeframe String?
-  widgets   String? // Stored as JSON string array of widget objects
+  widgets   String?
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
-// Wedding planner models
 model Wedding {
-  id             String   @id @default(cuid())
-  userId         String
-  title          String
-  date           DateTime
-  location       String?
-  budget         Float    @default(0)
-  spentBudget    Float    @default(0)
-  expectedGuests Int      @default(0)
-  status         String   @default("PLANNING") // PLANNING, CONFIRMED, COMPLETED
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // Relations
-  venues         Venue[]
-  vendors        Vendor[]
-  documents      Document[]
-  rundownItems   Rundown[]
-  souvenirs      Souvenir[]
-  playlists      Playlist[]
-  moodboardItems Moodboard[]
-  gifts          Gift[]
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(cuid())
+  userId           String
+  title            String
+  date             DateTime
+  location         String?
+  budget           Float                   @default(0)
+  spentBudget      Float                   @default(0)
+  expectedGuests   Int                     @default(0)
+  status           String                  @default("PLANNING")
+  notes            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  documents        Document[]
+  gifts            Gift[]
+  moodboardItems   Moodboard[]
+  playlists        Playlist[]
+  rundownItems     Rundown[]
+  souvenirs        Souvenir[]
+  vendors          Vendor[]
+  venues           Venue[]
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budgetCategories WeddingBudgetCategory[]
+  guests           WeddingGuest[]
 
   @@index([userId])
+}
+
+model WeddingBudgetCategory {
+  id        String              @id @default(cuid())
+  weddingId String
+  name      String
+  total     Float               @default(0)
+  spent     Float               @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  wedding   Wedding             @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  items     WeddingBudgetItem[]
+
+  @@index([weddingId])
+}
+
+model WeddingBudgetItem {
+  id         String                @id @default(cuid())
+  categoryId String
+  name       String
+  budgeted   Float
+  actual     Float                 @default(0)
+  paid       Boolean               @default(false)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  category   WeddingBudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
 }
 
 model Venue {
@@ -490,11 +532,10 @@ model Venue {
   bookingDate   DateTime?
   depositAmount Float?
   imageUrl      String?
-  features      String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  features      String?
+  wedding       Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -503,7 +544,7 @@ model Vendor {
   id              String   @id @default(cuid())
   weddingId       String
   name            String
-  category        String // PHOTOGRAPHY, CATERING, DECOR, etc.
+  category        String
   description     String?
   contactPerson   String?
   phone           String?
@@ -511,7 +552,7 @@ model Vendor {
   website         String?
   address         String?
   priceRange      String?
-  status          String   @default("pending") // pending, contacted, booked, completed
+  status          String   @default("pending")
   rating          Float?
   imageUrl        String?
   instagramHandle String?
@@ -519,8 +560,7 @@ model Vendor {
   features        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -532,14 +572,13 @@ model Document {
   description   String?
   deadline      DateTime?
   location      String?
-  status        String    @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED
+  status        String    @default("NOT_STARTED")
   isMandatory   Boolean   @default(false)
   notes         String?
   attachmentUrl String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  wedding       Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -553,12 +592,11 @@ model Rundown {
   description String?
   location    String?
   responsible String?
-  category    String? // CEREMONY, RECEPTION, PREPARATION, etc.
+  category    String?
   notes       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -576,14 +614,13 @@ model Souvenir {
   vendor            String?
   description       String?
   imageUrl          String?
-  status            String    @default("PLANNING") // PLANNING, ORDERED, RECEIVED
+  status            String    @default("PLANNING")
   orderDate         DateTime?
   deliveryDate      DateTime?
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  wedding           Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -594,15 +631,14 @@ model Playlist {
   title      String
   artist     String
   duration   String?
-  category   String? // CEREMONY, FIRST_DANCE, RECEPTION, etc.
+  category   String?
   url        String?
   notes      String?
   order      Int?
   isApproved Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  wedding    Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -613,15 +649,14 @@ model Moodboard {
   title         String
   description   String?
   imageUrl      String
-  category      String? // COLORS, DECOR, DRESS, FLOWERS, etc.
+  category      String?
   isInspiration Boolean  @default(true)
   isApproved    Boolean  @default(false)
   source        String?
-  tags          String? // Comma-separated tags
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  tags          String?
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }
@@ -633,13 +668,33 @@ model Gift {
   quantity      Int      @default(1)
   estimatedCost Float    @default(0)
   actualCost    Float    @default(0)
-  status        String   @default("not-started") // not-started, pending, completed
+  status        String   @default("not-started")
   responsible   String?
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
-  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  @@index([weddingId])
+}
+
+model WeddingGuest {
+  id                  String   @id @default(cuid())
+  weddingId           String
+  name                String
+  relationship        String?
+  contactNumber       String?
+  email               String?
+  address             String?
+  confirmed           Boolean  @default(false)
+  attended            Boolean  @default(false)
+  group               String?
+  seats               Int      @default(1)
+  dietaryRestrictions String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  wedding             Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
   @@index([weddingId])
 }

@@ -95,6 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   const menuItems = [
     { path: '/dashboard', icon: <FiHome size={20} />, label: 'Dashboard' },
     { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
+    { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
     { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
     { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
     { path: '/budgets', icon: <FiTarget size={20} />, label: 'Anggaran' },
@@ -108,7 +109,6 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     { path: '/categories/smart', icon: <FiZap size={20} />, label: 'Smart Kategorisasi' },
     { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },
     { path: '/settings', icon: <FiSettings size={20} />, label: 'Pengaturan' },
-    { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
   ]
 
   if (!session) {

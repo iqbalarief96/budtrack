@@ -34,6 +34,7 @@ interface BudgetFormProps {
     endDate: Date;
   };
   isEditing?: boolean;
+  onSuccess?: () => void;
 }
 
 export default function BudgetForm({ 
@@ -41,7 +42,8 @@ export default function BudgetForm({
   categories, 
   wallets, 
   initialData,
-  isEditing = false
+  isEditing = false,
+  onSuccess
 }: BudgetFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -115,6 +117,11 @@ export default function BudgetForm({
       
       toast.success(isEditing ? 'Budget updated!' : 'Budget created!');
       
+      // Call onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
+      
       // Redirect setelah berhasil update/create
       if (isEditing && initialData?.id) {
         // Jika sedang edit, kembali ke halaman detail budget
@@ -133,31 +140,33 @@ export default function BudgetForm({
   };
   
   const handlePeriodChange = (period: string) => {
-    const currentStartDate = formData.startDate;
-    let newEndDate = new Date(currentStartDate);
-    
-    switch (period) {
-      case 'daily':
-        newEndDate = addDays(currentStartDate, 1);
-        break;
-      case 'weekly':
-        newEndDate = addWeeks(currentStartDate, 1);
-        break;
-      case 'monthly':
-        // Set to last day of the current month
-        const year = currentStartDate.getFullYear();
-        const month = currentStartDate.getMonth();
-        // Create date for the first day of next month, then subtract 1 day
-        newEndDate = new Date(year, month + 1, 0);
-        break;
-      default:
-        newEndDate = addMonths(currentStartDate, 1);
-    }
-    
-    setFormData({
-      ...formData,
-      period,
-      endDate: newEndDate
+    setFormData(prev => {
+      const currentStartDate = prev.startDate;
+      let newEndDate = new Date(currentStartDate);
+      
+      switch (period) {
+        case 'daily':
+          newEndDate = addDays(currentStartDate, 1);
+          break;
+        case 'weekly':
+          newEndDate = addWeeks(currentStartDate, 1);
+          break;
+        case 'monthly':
+          // Set to last day of the current month
+          const year = currentStartDate.getFullYear();
+          const month = currentStartDate.getMonth();
+          // Create date for the first day of next month, then subtract 1 day
+          newEndDate = new Date(year, month + 1, 0);
+          break;
+        default:
+          newEndDate = addMonths(currentStartDate, 1);
+      }
+      
+      return {
+        ...prev,
+        period,
+        endDate: newEndDate
+      };
     });
   };
   
@@ -171,7 +180,7 @@ export default function BudgetForm({
           step="0.01"
           min="0"
           value={formData.amount}
-          onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+          onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
           placeholder="0.00"
           required
         />
@@ -181,7 +190,7 @@ export default function BudgetForm({
         <Label htmlFor="category">Category</Label>
         <Select 
           value={formData.categoryId} 
-          onValueChange={(value) => setFormData({ ...formData, categoryId: value })}
+          onValueChange={(value) => setFormData(prev => ({ ...prev, categoryId: value }))}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
@@ -200,7 +209,7 @@ export default function BudgetForm({
         <Label htmlFor="wallet">Wallet</Label>
         <Select 
           value={formData.walletId} 
-          onValueChange={(value) => setFormData({ ...formData, walletId: value })}
+          onValueChange={(value) => setFormData(prev => ({ ...prev, walletId: value }))}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select a wallet" />
@@ -242,7 +251,7 @@ export default function BudgetForm({
             onChange={(e) => {
               const date = new Date(e.target.value);
               if (!isNaN(date.getTime())) {
-                setFormData({ ...formData, startDate: date });
+                setFormData(prev => ({ ...prev, startDate: date }));
               }
             }}
             required
@@ -258,7 +267,7 @@ export default function BudgetForm({
             onChange={(e) => {
               const date = new Date(e.target.value);
               if (!isNaN(date.getTime())) {
-                setFormData({ ...formData, endDate: date });
+                setFormData(prev => ({ ...prev, endDate: date }));
               }
             }}
             min={format(formData.startDate, "yyyy-MM-dd")}

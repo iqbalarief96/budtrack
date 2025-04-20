@@ -1,57 +1,38 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FiTarget } from 'react-icons/fi';
+import { FiTarget, FiChevronRight } from 'react-icons/fi';
 import { formatCurrency } from '@/lib/utils';
+import Link from 'next/link';
 
-type SavingsGoal = {
+type Goal = {
   id: string;
   name: string;
-  currentAmount: number;
-  targetAmount: number;
-  dueDate: string;
+  current: number;
+  target: number;
+  deadline: string | null;
 };
 
 export default function SavingsGoalCard() {
-  const [goals, setGoals] = useState<SavingsGoal[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Mock data fetching
     const fetchGoals = async () => {
       setIsLoading(true);
       try {
-        // Dummy data
-        const dummyGoals = [
-          {
-            id: 'g1',
-            name: 'Liburan Bali',
-            currentAmount: 8500000,
-            targetAmount: 15000000,
-            dueDate: '2024-12-31'
-          },
-          {
-            id: 'g2',
-            name: 'iPhone Baru',
-            currentAmount: 12000000,
-            targetAmount: 15000000,
-            dueDate: '2024-09-15'
-          },
-          {
-            id: 'g3',
-            name: 'Down Payment Mobil',
-            currentAmount: 35000000,
-            targetAmount: 80000000,
-            dueDate: '2025-06-01'
-          }
-        ];
-
-        setTimeout(() => {
-          setGoals(dummyGoals);
-          setIsLoading(false);
-        }, 500);
+        const response = await fetch('/api/goals');
+        if (!response.ok) {
+          throw new Error('Failed to fetch goals');
+        }
+        
+        const data = await response.json();
+        setGoals(data);
+        setIsLoading(false);
       } catch (error) {
         console.error('Error fetching savings goals:', error);
+        setError('Failed to load goals');
         setIsLoading(false);
       }
     };
@@ -60,6 +41,7 @@ export default function SavingsGoalCard() {
   }, []);
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const date = new Date(dateStr);
     return new Intl.DateTimeFormat('id-ID', {
       day: 'numeric',
@@ -86,33 +68,46 @@ export default function SavingsGoalCard() {
       </div>
     );
   }
+  
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[200px] p-4 text-center">
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
 
   if (goals.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[200px] p-4 text-center">
         <FiTarget className="h-8 w-8 text-gray-400 mb-2" />
         <p className="text-gray-500">Belum ada target tabungan</p>
-        <button className="mt-3 text-blue-600 text-sm hover:underline">
+        <Link href="/goals" className="mt-3 text-blue-600 text-sm hover:underline">
           + Tambah Target Baru
-        </button>
+        </Link>
       </div>
     );
   }
 
+  // Display only up to 3 goals in the dashboard widget
+  const displayGoals = goals.slice(0, 3);
+
   return (
     <div className="h-full flex flex-col">
       <div className="overflow-y-auto space-y-4 flex-1">
-        {goals.map(goal => {
-          const progress = calculateProgress(goal.currentAmount, goal.targetAmount);
+        {displayGoals.map(goal => {
+          const progress = calculateProgress(goal.current, goal.target);
           const colorClass = getColorClass(progress);
           
           return (
             <div key={goal.id} className="border border-gray-100 rounded-lg p-3 shadow-sm">
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-medium">{goal.name}</h3>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                  Target: {formatDate(goal.dueDate)}
-                </span>
+                {goal.deadline && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                    Target: {formatDate(goal.deadline)}
+                  </span>
+                )}
               </div>
               
               <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
@@ -125,7 +120,7 @@ export default function SavingsGoalCard() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{progress}% tercapai</span>
                 <span className="font-medium">
-                  {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
+                  {formatCurrency(goal.current)} / {formatCurrency(goal.target)}
                 </span>
               </div>
             </div>
@@ -134,9 +129,9 @@ export default function SavingsGoalCard() {
       </div>
       
       <div className="mt-4 pt-3 border-t text-center">
-        <a href="/wedding-planner/savings" className="text-blue-600 text-sm hover:underline">
-          Lihat Semua Target
-        </a>
+        <Link href="/goals" className="text-blue-600 text-sm hover:underline flex items-center justify-center">
+          Lihat Semua Target <FiChevronRight className="ml-1 h-4 w-4" />
+        </Link>
       </div>
     </div>
   );

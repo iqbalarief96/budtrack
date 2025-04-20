@@ -1,9 +1,28 @@
 'use client'
 
 import React, { useState } from 'react'
-import { FiPlusCircle, FiCreditCard, FiTrash, FiEdit, FiX } from 'react-icons/fi'
+import { FiPlusCircle, FiCreditCard, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign, 
+  FiCreditCard as FiCreditCardIcon, FiGift, FiHeart, FiSmile, FiTruck, FiBookmark,
+  FiShoppingCart, FiMusic, FiMonitor, FiActivity } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
+
+// Define Icon mapping
+const AVAILABLE_ICONS = [
+  { name: 'FiCreditCard', component: FiCreditCardIcon },
+  { name: 'FiDollarSign', component: FiDollarSign },
+  { name: 'FiShoppingBag', component: FiShoppingBag },
+  { name: 'FiCoffee', component: FiCoffee },
+  { name: 'FiHome', component: FiHome },
+  { name: 'FiGift', component: FiGift },
+  { name: 'FiHeart', component: FiHeart },
+  { name: 'FiSmile', component: FiSmile },
+  { name: 'FiActivity', component: FiActivity },
+  { name: 'FiBookmark', component: FiBookmark },
+  { name: 'FiMusic', component: FiMusic },
+  { name: 'FiMonitor', component: FiMonitor },
+  { name: 'FiShoppingCart', component: FiShoppingCart }
+]
 
 // Define Wallet type
 type Wallet = {
@@ -23,7 +42,8 @@ const WalletsPage = () => {
   const [formData, setFormData] = useState({
     name: '',
     color: '#1976D2',
-    isDefault: false
+    isDefault: false,
+    icon: 'FiCreditCard'
   })
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -36,7 +56,8 @@ const WalletsPage = () => {
     setFormData({
       name: '',
       color: '#1976D2',
-      isDefault: false
+      isDefault: false,
+      icon: 'FiCreditCard'
     })
     setEditingWallet(null)
     setError('')
@@ -48,7 +69,8 @@ const WalletsPage = () => {
     setFormData({
       name: wallet.name,
       color: wallet.color || '#1976D2',
-      isDefault: wallet.isDefault
+      isDefault: wallet.isDefault,
+      icon: wallet.icon || 'FiCreditCard'
     })
     setIsAddModalOpen(true)
   }
@@ -111,6 +133,13 @@ const WalletsPage = () => {
     setIsAddModalOpen(false)
     resetForm()
   }
+  
+  // Get the icon component for a wallet
+  const getWalletIcon = (iconName: string = 'FiCreditCard') => {
+    const icon = AVAILABLE_ICONS.find(i => i.name === iconName);
+    const IconComponent = icon?.component || FiCreditCardIcon;
+    return IconComponent;
+  }
 
   if (isLoading) {
     return <div>Loading...</div>
@@ -137,46 +166,49 @@ const WalletsPage = () => {
       
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {wallets.map((wallet) => (
-          <div key={wallet.id} className="card">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center">
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center mr-3" 
-                  style={{ backgroundColor: wallet.color || '#1976D2' }}
-                >
-                  <FiCreditCard className="text-white text-xl" />
+        {wallets.map((wallet) => {
+          const WalletIcon = getWalletIcon(wallet.icon);
+          return (
+            <div key={wallet.id} className="card">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center">
+                  <div 
+                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3" 
+                    style={{ backgroundColor: wallet.color || '#1976D2' }}
+                  >
+                    <WalletIcon className="text-white text-xl" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">{wallet.name}</h3>
+                    {wallet.isDefault && (
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-medium">{wallet.name}</h3>
-                  {wallet.isDefault && (
-                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
-                  )}
+                <div className="flex gap-2">
+                  <button 
+                    className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                    onClick={() => handleEditWallet(wallet)}
+                  >
+                    <FiEdit size={16} />
+                  </button>
+                  <button 
+                    className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
+                    onClick={() => handleDeleteWallet(wallet.id)}
+                    disabled={wallet.isDefault}
+                    title={wallet.isDefault ? 'Dompet default tidak dapat dihapus' : ''}
+                  >
+                    <FiTrash size={16} />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button 
-                  className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
-                  onClick={() => handleEditWallet(wallet)}
-                >
-                  <FiEdit size={16} />
-                </button>
-                <button 
-                  className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
-                  onClick={() => handleDeleteWallet(wallet.id)}
-                  disabled={wallet.isDefault}
-                  title={wallet.isDefault ? 'Dompet default tidak dapat dihapus' : ''}
-                >
-                  <FiTrash size={16} />
-                </button>
+              <div className="border-t pt-3">
+                <p className="text-gray-500 text-sm">Saldo</p>
+                <p className="text-xl font-bold">{formatCurrency(wallet.balance, wallet.currencyCode)}</p>
               </div>
             </div>
-            <div className="border-t pt-3">
-              <p className="text-gray-500 text-sm">Saldo</p>
-              <p className="text-xl font-bold">{formatCurrency(wallet.balance, wallet.currencyCode)}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Add/Edit Wallet Modal */}
@@ -209,6 +241,41 @@ const WalletsPage = () => {
                   placeholder="Contoh: Dompet Utama"
                   required
                 />
+              </div>
+
+              {/* Wallet Icon */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ikon
+                </label>
+                <div className="mb-2 p-3 border rounded-lg flex items-center">
+                  <div 
+                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3"
+                    style={{ backgroundColor: formData.color }}
+                  >
+                    {React.createElement(getWalletIcon(formData.icon), { className: "text-white text-xl" })}
+                  </div>
+                  <span className="text-gray-600 text-sm">Ikon terpilih</span>
+                </div>
+                <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto p-2 border rounded-lg">
+                  {AVAILABLE_ICONS.map((icon) => {
+                    const IconComponent = icon.component;
+                    return (
+                      <button
+                        key={icon.name}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, icon: icon.name })}
+                        className={`w-full aspect-square flex items-center justify-center rounded-lg border ${
+                          formData.icon === icon.name 
+                            ? 'bg-blue-50 border-blue-500' 
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <IconComponent className="text-lg" style={{ color: formData.color }} />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Wallet Color */}

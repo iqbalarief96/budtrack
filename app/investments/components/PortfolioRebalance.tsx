@@ -76,6 +76,13 @@ const PortfolioRebalance = () => {
       }
       
       const data = await response.json();
+
+      // Check if we have zero value but have investments (fallback case)
+      if (data.totalPortfolioValue <= 0 && 
+          Object.values(data.currentAllocation).some((item: any) => item.amount > 0)) {
+        console.log("Warning: Portfolio has zero total value but contains investments");
+        // Still proceed to show the data we have
+      }
       
       setRiskProfile(data.riskProfile);
       setTotalPortfolioValue(data.totalPortfolioValue);

@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { name, balance = 0 } = await request.json()
+    const { name, color, icon, balance = 0 } = await request.json()
 
     if (!name) {
       return NextResponse.json(
@@ -119,7 +119,9 @@ export async function POST(request: Request) {
       data: {
         name,
         balance: parseFloat(balance.toString()),
-        userId: session.user.id
+        userId: session.user.id,
+        color,
+        icon
       }
     })
 
@@ -142,7 +144,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, name, color, isDefault } = await request.json()
+    const { id, name, color, icon, isDefault } = await request.json()
 
     if (!id || !name) {
       return NextResponse.json(
@@ -210,6 +212,7 @@ export async function PUT(request: Request) {
       data: { 
         name,
         color,
+        icon,
         isDefault: isDefault ?? wallet.isDefault // Keep existing value if not provided
       }
     })

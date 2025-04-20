@@ -39,17 +39,18 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
   useEffect(() => {
     if (initialData) {
+      console.log('Initializing form with data:', initialData);
       if (initialData.id) {
         // Full transaction object for editing
         setFormData({
           type: initialData.type,
           amount: initialData.amount.toString(),
-          description: initialData.description,
+          description: initialData.description || '',
           date: new Date(initialData.date).toISOString().split('T')[0],
-          categoryId: initialData.category?.id || '',
-          walletId: initialData.wallet?.id || '',
-          goalId: initialData.goal?.id || '',
-          updateGoalProgress: initialData.updateGoalProgress || true,
+          categoryId: initialData.categoryId || initialData.category?.id || '',
+          walletId: initialData.walletId || initialData.wallet?.id || '',
+          goalId: initialData.goalId || initialData.goal?.id || '',
+          updateGoalProgress: initialData.updateGoalProgress !== false, // Default to true unless explicitly false
         });
       } else if (initialData.type) {
         // Only type provided, for new transaction with predetermined type
@@ -58,15 +59,15 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           type: initialData.type,
           walletId: selectedWallet?.id || '',
           goalId: initialData.goal?.id || '',
-          updateGoalProgress: initialData.updateGoalProgress || true,
+          updateGoalProgress: initialData.updateGoalProgress !== false,
         }));
       }
     } else {
       setFormData(prev => ({
         ...prev,
         walletId: selectedWallet?.id || '',
-        goalId: initialData?.goal?.id || '',
-        updateGoalProgress: initialData?.updateGoalProgress || true,
+        goalId: '',
+        updateGoalProgress: true,
       }));
     }
   }, [initialData, selectedWallet]);
@@ -110,6 +111,13 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     }
   }, [isOpen])
 
+  // Debug logs
+  useEffect(() => {
+    if (isOpen) {
+      console.log('TransactionModal opened with initialData:', initialData);
+    }
+  }, [isOpen, initialData]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -120,6 +128,13 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
       if (isNaN(amount) || amount <= 0) {
         throw new Error('Jumlah harus lebih besar dari 0')
       }
+
+      console.log('Submitting transaction:', {
+        ...formData,
+        amount,
+        id: initialData?.id,
+        isEdit: !!initialData?.id
+      });
 
       // Submit the transaction first
       const response = await fetch('/api/transactions', {
@@ -136,10 +151,12 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to save transaction')
+        console.error('Transaction API error:', errorData);
+        throw new Error(errorData.error || `Failed to ${initialData?.id ? 'update' : 'create'} transaction`)
       }
 
       const savedTransaction = await response.json()
+      console.log('Transaction saved successfully:', savedTransaction);
       
       // If a goal was selected and should update goal progress, create a goal activity
       if (formData.goalId && formData.updateGoalProgress) {
@@ -149,6 +166,12 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           // For INCOME, we update positive amounts
           const activityAmount = formData.type === 'INCOME' ? amount : -amount;
           const transactionId = savedTransaction.transaction?.id || savedTransaction.id;
+          
+          console.log('Creating goal activity:', {
+            goalId: formData.goalId,
+            amount: activityAmount,
+            transactionId
+          });
           
           await fetch(`/api/goals/${formData.goalId}/activities`, {
             method: 'POST',
@@ -185,7 +208,12 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     }
   }
 
-  if (!isOpen) return null
+  if (!isOpen) {
+    console.log('TransactionModal is closed');
+    return null;
+  }
+
+  console.log('Rendering TransactionModal with formData:', formData);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">

@@ -90,7 +90,18 @@ export async function GET(request: NextRequest) {
 
     const totalPortfolioValue = totalInvestmentValue + totalCashValue;
 
-    if (totalPortfolioValue <= 0) {
+    // Add debug log
+    console.log("Debug portfolio rebalance:", {
+      userId: user.id,
+      investments: investments.length,
+      wallets: wallets.length,
+      totalInvestmentValue,
+      totalCashValue,
+      totalPortfolioValue
+    });
+
+    // Modify the check to be more lenient (allow proceeding if we have investments even if value is 0)
+    if (totalPortfolioValue <= 0 && investments.length === 0) {
       return NextResponse.json({
         error: "No investments or cash found in your portfolio.",
         totalPortfolioValue: 0

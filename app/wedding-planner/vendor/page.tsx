@@ -169,21 +169,21 @@ export default function VendorPage() {
         body: JSON.stringify(vendorData),
       });
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error(editVendorId ? 'Failed to update vendor' : 'Failed to add vendor');
+        throw new Error(data.error || data.details || (editVendorId ? 'Failed to update vendor' : 'Failed to add vendor'));
       }
-
-      const savedVendor = await response.json();
       
       if (editVendorId) {
         setVendors(prevVendors => 
           prevVendors.map(vendor => 
-            vendor.id === editVendorId ? savedVendor : vendor
+            vendor.id === editVendorId ? data : vendor
           )
         );
         setEditVendorId(null);
       } else {
-        setVendors(prevVendors => [...prevVendors, savedVendor]);
+        setVendors(prevVendors => [...prevVendors, data]);
       }
       
       // Reset form

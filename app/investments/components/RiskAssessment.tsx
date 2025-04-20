@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -18,6 +18,13 @@ type Answers = {
 };
 
 type RiskProfile = 'Konservatif' | 'Moderat' | 'Agresif' | null;
+
+// Kunci untuk localStorage
+const LOCAL_STORAGE_KEYS = {
+  ANSWERS: 'risk-assessment-answers',
+  RISK_PROFILE: 'risk-assessment-profile',
+  AI_EXPLANATION: 'risk-assessment-explanation'
+};
 
 // Contoh Pertanyaan
 const questions: Question[] = [
@@ -81,9 +88,50 @@ const RiskAssessment = () => {
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
+  // Load data from localStorage on component mount
+  useEffect(() => {
+    // Only run in client-side
+    if (typeof window !== 'undefined') {
+      try {
+        // Load answers
+        const savedAnswers = localStorage.getItem(LOCAL_STORAGE_KEYS.ANSWERS);
+        if (savedAnswers) {
+          setAnswers(JSON.parse(savedAnswers));
+        }
+
+        // Load risk profile
+        const savedProfile = localStorage.getItem(LOCAL_STORAGE_KEYS.RISK_PROFILE);
+        if (savedProfile) {
+          setRiskProfile(savedProfile as RiskProfile);
+        }
+
+        // Load AI explanation
+        const savedExplanation = localStorage.getItem(LOCAL_STORAGE_KEYS.AI_EXPLANATION);
+        if (savedExplanation) {
+          setAiExplanation(savedExplanation);
+        }
+      } catch (err) {
+        console.error('Error loading data from localStorage:', err);
+      }
+    }
+  }, []);
+
   const handleAnswerChange = (questionId: string, value: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    const newAnswers = { ...answers, [questionId]: value };
+    setAnswers(newAnswers);
+    
+    // Save to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.ANSWERS, JSON.stringify(newAnswers));
+    }
+    
     setRiskProfile(null); // Reset profile jika jawaban berubah
+    
+    // Clear saved profile and explanation from localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.RISK_PROFILE);
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.AI_EXPLANATION);
+    }
   };
 
   const calculateProfile = () => {
@@ -157,6 +205,11 @@ const RiskAssessment = () => {
         
         const data = await response.json();
         setAiExplanation(data.explanation);
+        
+        // Save explanation to localStorage
+        if (typeof window !== 'undefined' && data.explanation) {
+          localStorage.setItem(LOCAL_STORAGE_KEYS.AI_EXPLANATION, data.explanation);
+        }
       } catch (err) {
         console.error('Error fetching AI explanation:', err);
         setError((prev) => prev ? `${prev}. Gagal mendapatkan penjelasan AI.` : 'Gagal mendapatkan penjelasan AI.');
@@ -170,6 +223,11 @@ const RiskAssessment = () => {
         console.log("Calculated Score:", totalScore);
         console.log("Calculated Profile:", calculatedProfile);
         setRiskProfile(calculatedProfile);
+        
+        // Save to localStorage
+        if (typeof window !== 'undefined' && calculatedProfile) {
+          localStorage.setItem(LOCAL_STORAGE_KEYS.RISK_PROFILE, calculatedProfile);
+        }
         
         // Simpan profil ke API
         if (calculatedProfile) {

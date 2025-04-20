@@ -17,6 +17,18 @@ export async function GET(
       return NextResponse.json({ error: 'Wedding ID is required' }, { status: 400 });
     }
 
+    // First check if the wedding exists
+    const wedding = await dbClient.wedding.findUnique({
+      where: { id: weddingId }
+    });
+
+    if (!wedding) {
+      return NextResponse.json(
+        { error: 'Wedding not found', details: `No wedding found with ID: ${weddingId}` },
+        { status: 404 }
+      );
+    }
+
     const venues = await dbClient.venue.findMany({
       where: { weddingId: weddingId },
       orderBy: { createdAt: 'desc' } // Optional: order by creation date
@@ -43,13 +55,26 @@ export async function POST(
     if (!weddingId) {
       return NextResponse.json({ error: 'Wedding ID is required' }, { status: 400 });
     }
+    
+    // First check if the wedding exists
+    const wedding = await dbClient.wedding.findUnique({
+      where: { id: weddingId }
+    });
+
+    if (!wedding) {
+      return NextResponse.json(
+        { error: 'Wedding not found', details: `No wedding found with ID: ${weddingId}. Please make sure the wedding exists before adding venues.` },
+        { status: 404 }
+      );
+    }
+    
     const body = await request.json();
 
     // Prepare data aligning with Prisma Schema
     const dataToCreate: Prisma.VenueCreateInput = {
       wedding: { connect: { id: weddingId } }, // Connect to the wedding
       name: body.name,
-      address: body.address || null,
+      address: body.address || '',
       capacity: body.capacity !== null ? Number(body.capacity) : null,
       priceRange: body.priceRange || null,
       features: typeof body.features === 'string' ? body.features : null, // Ensure it's string or null
@@ -80,13 +105,16 @@ export async function POST(
     let errorDetails = error instanceof Error ? error.message : String(error);
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Handle specific Prisma errors if needed
+      // Handle specific Prisma errors
       if (error.code === 'P2002') { // Unique constraint violation
         statusCode = 409;
         errorMessage = 'A venue with this name might already exist.';
         errorDetails = 'Unique constraint failed.';
+      } else if (error.code === 'P2025') { // Record not found
+        statusCode = 404;
+        errorMessage = 'Wedding not found';
+        errorDetails = 'The wedding you are trying to add a venue to does not exist.';
       }
-       // Add more Prisma error codes as needed
     }
 
     return NextResponse.json(

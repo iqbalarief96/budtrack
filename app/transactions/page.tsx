@@ -190,12 +190,23 @@ const TransactionsPage = () => {
   // Handle transaction save
   const handleSaveTransaction = async (transactionData: any) => {
     try {
-      await fetchTransactions()
-      await refreshWallets()
-      setIsModalOpen(false)
-      setEditingTransaction(null)
+      // Wait for the transaction to be saved (handled by TransactionModal)
+      console.log('Transaction saved:', transactionData);
+      
+      // Refresh transaction list
+      await fetchTransactions(activeFilters);
+      
+      // Refresh wallet balances
+      await refreshWallets();
+      
+      // Close modal and reset editing state
+      setIsModalOpen(false);
+      setEditingTransaction(null);
+      
+      // Force refresh page to ensure all data is updated correctly
+      window.location.reload();
     } catch (error) {
-      console.error('Error saving transaction:', error)
+      console.error('Error handling transaction save:', error);
     }
   }
 
@@ -374,7 +385,11 @@ const TransactionsPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
-                      onClick={() => setEditingTransaction(transaction)}
+                      onClick={() => {
+                        console.log('Edit button clicked for transaction:', transaction);
+                        setEditingTransaction(transaction);
+                        setIsModalOpen(true);
+                      }}
                       className="text-blue-600 hover:text-blue-900 mx-1"
                     >
                       <FiEdit2 className="inline" />
@@ -394,12 +409,17 @@ const TransactionsPage = () => {
       </div>
 
       {/* Transaction Modal */}
-      <TransactionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveTransaction}
-        initialData={editingTransaction ? editingTransaction : { type: initialType }}
-      />
+      {isModalOpen && (
+        <TransactionModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingTransaction(null);
+          }}
+          onSave={handleSaveTransaction}
+          initialData={editingTransaction || { type: initialType }}
+        />
+      )}
 
       {/* Filter Modal */}
       <FilterModal

@@ -85,6 +85,17 @@ export async function POST(request: NextRequest) {
       
       // Loop semua recurring transactions
       for (const recurring of recurringTransactions) {
+        // Tentukan tanggal transaksi
+        // Gunakan tanggal dari startDate recurring transaction
+        const startDateDay = recurring.startDate.getDate(); // Get day of month from startDate
+        const transactionDate = new Date(currentYear, month, startDateDay);
+        
+        // Skip if transaction date is in the future
+        if (transactionDate > new Date()) {
+          console.log(`Transaksi "${recurring.name}" untuk tanggal ${transactionDate.toISOString()} masih di masa depan, dilewati`);
+          continue;
+        }
+        
         // Periksa apakah transaksi sudah ada di database untuk bulan ini
         const existingTransaction = await prisma.transaction.findFirst({
           where: {
@@ -135,15 +146,11 @@ export async function POST(request: NextRequest) {
             }
           }
           
-          // Tentukan tanggal transaksi
-          // Gunakan tanggal 15 bulan ini sebagai default
-          const transactionDate = new Date(currentYear, month, 15); 
-          
           console.log(`Membuat transaksi bertipe '${formattedType}' untuk ${recurring.name} dengan tanggal ${transactionDate.toISOString()}`);
           console.log(`Amount: ${recurring.amount}`);
           
           // Buat transaksi baru
-          await prisma.transaction.create({
+          const newTransaction = await prisma.transaction.create({
             data: {
               amount: recurring.amount,
               description: recurring.name,
@@ -152,6 +159,19 @@ export async function POST(request: NextRequest) {
               categoryId: categoryId, // Gunakan categoryId yang sudah divalidasi
               walletId: walletId,
               userId: recurring.userId
+            }
+          });
+          
+          // Buat history record untuk transaksi berulang dengan Prisma model
+          // @ts-ignore: Prisma client not updated yet
+          await prisma.recurringTransactionHistory.create({
+            data: {
+              recurringTransactionId: recurring.id,
+              transactionId: newTransaction.id,
+              processedDate: new Date(),
+              targetDate: transactionDate,
+              amount: recurring.amount,
+              status: 'CREATED'
             }
           });
           
@@ -175,6 +195,21 @@ export async function POST(request: NextRequest) {
         } else {
           // Transaksi sudah ada, lewati
           console.log(`Transaksi untuk ${recurring.name} sudah ada di bulan ${month+1}, dilewati`);
+          
+          // Buat history record untuk yang dilewati dengan Prisma model
+          // @ts-ignore: Prisma client not updated yet
+          await prisma.recurringTransactionHistory.create({
+            data: {
+              recurringTransactionId: recurring.id,
+              transactionId: existingTransaction.id,
+              processedDate: new Date(),
+              targetDate: transactionDate,
+              amount: recurring.amount,
+              status: 'SKIPPED',
+              notes: 'Transaction already exists'
+            }
+          });
+          
           syncResult.skipped++;
         }
       }
