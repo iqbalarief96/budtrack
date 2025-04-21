@@ -95,12 +95,21 @@ export async function POST(request: NextRequest) {
     
     const { name, description, icon, color } = validationResult.data
     
+    // Check if the user exists first to prevent foreign key constraint violation
+    const userExists = await prisma.user.findUnique({
+      where: { id: session.user.id }
+    });
+    
+    if (!userExists) {
+      return NextResponse.json({ error: 'User tidak ditemukan' }, { status: 404 });
+    }
+    
     // Use Prisma transaction to create group, membership, wallet and invite
     const result = await prisma.$transaction(async (tx) => {
       // Generate a unique invite code
       const inviteCode = generateInviteCode();
       
-      // Create the group with related models
+      // Create the group first
       const group = await tx.group.create({
         data: {
           name,
@@ -108,31 +117,40 @@ export async function POST(request: NextRequest) {
           icon: icon || null,
           color: color || '#6366f1',
           ownerId: session.user.id,
-          // Create owner membership
-          members: {
-            create: {
-              userId: session.user.id,
-              role: 'OWNER'
-            }
-          },
-          // Create default wallet
-          wallets: {
-            create: {
-              name: 'Dompet Utama',
-              balance: 0,
-              currencyCode: 'IDR',
-              color: '#6366f1'
-            }
-          },
-          // Create invite
-          invites: {
-            create: {
-              code: inviteCode,
-              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-              createdBy: session.user.id
-            }
-          }
-        },
+        }
+      });
+      
+      // Then create related models separately to avoid potential issues
+      const membership = await tx.userGroup.create({
+        data: {
+          userId: session.user.id,
+          groupId: group.id,
+          role: 'OWNER'
+        }
+      });
+      
+      const wallet = await tx.groupWallet.create({
+        data: {
+          groupId: group.id,
+          name: 'Dompet Utama',
+          balance: 0,
+          currencyCode: 'IDR',
+          color: '#6366f1'
+        }
+      });
+      
+      const invite = await tx.groupInvite.create({
+        data: {
+          groupId: group.id,
+          code: inviteCode,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          createdBy: session.user.id
+        }
+      });
+      
+      // Return complete group with relations
+      return await tx.group.findUnique({
+        where: { id: group.id },
         include: {
           members: {
             include: {
@@ -150,8 +168,6 @@ export async function POST(request: NextRequest) {
           invites: true
         }
       });
-      
-      return group;
     });
     
     return NextResponse.json(result, { status: 201 })

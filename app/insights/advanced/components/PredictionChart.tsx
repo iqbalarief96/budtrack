@@ -213,7 +213,7 @@ export default function PredictionChart({ transactionsData, predictedExpense }: 
           )}
         </div>
         
-        <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-100">
+        <div className="mt-8 p-4 bg-yellow-50 rounded-lg border border-yellow-100">
           <h4 className="font-medium text-yellow-800">Tentang Prediksi</h4>
           <p className="text-sm text-yellow-700 mt-1">
             Prediksi ini didasarkan pada rata-rata pengeluaran 3 bulan terakhir. 

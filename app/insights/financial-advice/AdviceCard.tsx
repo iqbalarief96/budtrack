@@ -120,9 +120,9 @@ export function AdviceCard({ advice }: AdviceCardProps) {
           title: formData.name,
           description: formData.description,
           amount: formData.target || 0,
-          categoryId: formData.trackedCategoryIds && formData.trackedCategoryIds.length > 0 
+          categoryId: formData.categoryId || (formData.trackedCategoryIds && formData.trackedCategoryIds.length > 0 
             ? formData.trackedCategoryIds[0] 
-            : 'uncategorized',
+            : 'uncategorized'),
           walletId: formData.walletId,
           timeframe: advice.timeframe,
           userId: formData.userId

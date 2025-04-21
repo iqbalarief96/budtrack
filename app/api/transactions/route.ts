@@ -385,8 +385,8 @@ export async function PUT(request: Request) {
       },
     })
 
-    // If the transaction was an expense, update the old budget
-    if (existingTransaction.type === 'EXPENSE') {
+    // If the transaction was an expense and has a category, update the old budget
+    if (existingTransaction.type === 'EXPENSE' && existingTransaction.categoryId) {
       const oldBudget = await prisma.budget.findFirst({
         where: {
           userId: session.user.id,
@@ -444,15 +444,20 @@ export async function PUT(request: Request) {
       walletId,
     };
     
-    // Only add categoryId if it exists
+    // Handle categoryId properly for Prisma
     if (categoryId) {
       transactionData.categoryId = categoryId;
+    } else {
+      // Use Prisma's disconnect syntax for setting to null
+      transactionData.category = { disconnect: true };
     }
     
     // Only add goalId if it exists
     if (goalId) {
       transactionData.goalId = goalId;
     }
+
+    console.log('Updating transaction with data:', JSON.stringify(transactionData, null, 2));
 
     // Update transaction
     const updatedTransaction = await prisma.transaction.update({
@@ -487,8 +492,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    // If the new transaction is an expense, update the new budget
-    if (type === 'EXPENSE') {
+    // If the new transaction is an expense and has a category, update the new budget
+    if (type === 'EXPENSE' && categoryId) {
       const newBudget = await prisma.budget.findFirst({
         where: {
           userId: session.user.id,

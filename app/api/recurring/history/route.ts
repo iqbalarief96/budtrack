@@ -78,9 +78,13 @@ export async function GET(request: NextRequest) {
     
     console.log(`✅ Found user: ${user.id}`);
     
-    // Find history records using the model directly
-    // Using @ts-ignore to bypass TypeScript error until Prisma client is regenerated
-    // @ts-ignore: Prisma client not updated yet
+    // Prisma model access format check
+    if (!prisma || typeof prisma.$transaction !== 'function') {
+      console.error('⚠️ Prisma client appears to be invalid:', prisma);
+      return NextResponse.json({ error: 'Database client configuration error' }, { status: 500 });
+    }
+    
+    // Find history records using the model directly now that Prisma is properly generated
     let history = await prisma.recurringTransactionHistory.findMany({
       where: {
         recurringTransaction: {

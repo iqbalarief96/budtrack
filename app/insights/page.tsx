@@ -15,7 +15,7 @@ import {
   Filler 
 } from 'chart.js'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
-import { FiTrendingUp, FiTrendingDown, FiAlertCircle, FiCheckCircle, FiRefreshCw } from 'react-icons/fi'
+import { FiTrendingUp, FiTrendingDown, FiAlertCircle, FiCheckCircle, FiRefreshCw, FiTrash2 } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import WalletSelector from '../components/WalletSelector'
 import { FaChartLine, FaChartPie, FaChartBar } from 'react-icons/fa'
@@ -64,8 +64,48 @@ const InsightsPage = () => {
   useEffect(() => {
     if (selectedWallet) {
       fetchInsights()
+      // Load saved analysis when wallet is selected
+      loadSavedAnalysis()
     }
   }, [selectedWallet, dateRange])
+
+  // Load saved analysis from localStorage
+  const loadSavedAnalysis = () => {
+    if (!selectedWallet) return
+    
+    try {
+      const savedAnalysis = localStorage.getItem(`financial-analysis-${selectedWallet.id}`)
+      if (savedAnalysis) {
+        const parsedAnalysis = JSON.parse(savedAnalysis)
+        setAnalysisResult(parsedAnalysis)
+      }
+    } catch (err) {
+      console.error('Failed to load saved analysis:', err)
+    }
+  }
+
+  // Save analysis to localStorage
+  const saveAnalysisToStorage = (analysis: { summary: string | null; analysis: string | null }) => {
+    if (!selectedWallet) return
+    
+    try {
+      localStorage.setItem(`financial-analysis-${selectedWallet.id}`, JSON.stringify(analysis))
+    } catch (err) {
+      console.error('Failed to save analysis to storage:', err)
+    }
+  }
+
+  // Clear saved analysis
+  const clearSavedAnalysis = () => {
+    if (!selectedWallet) return
+    
+    try {
+      localStorage.removeItem(`financial-analysis-${selectedWallet.id}`)
+      setAnalysisResult({ summary: null, analysis: null })
+    } catch (err) {
+      console.error('Failed to clear saved analysis:', err)
+    }
+  }
 
   const fetchInsights = async () => {
     if (!selectedWallet) return
@@ -125,10 +165,16 @@ const InsightsPage = () => {
         throw new Error(data.error || 'Failed to generate analysis')
       }
 
-      setAnalysisResult({
+      const newAnalysis = {
         summary: data.summary,
         analysis: data.analysis
-      })
+      }
+      
+      setAnalysisResult(newAnalysis)
+      
+      // Save to localStorage
+      saveAnalysisToStorage(newAnalysis)
+      
     } catch (err) {
       console.error('Failed to generate analysis:', err)
       setGenerationError(err instanceof Error ? err.message : 'Failed to generate analysis')
@@ -281,9 +327,20 @@ const InsightsPage = () => {
                       Generating...
                     </>
                   ) : (
-                    'Generate Analysis'
+                    <>
+                      <FiRefreshCw className="w-4 h-4" />
+                      {analysisResult.summary ? 'Refresh Analysis' : 'Generate Analysis'}
+                    </>
                   )}
                 </button>
+                {analysisResult.summary && (
+                  <button
+                    onClick={clearSavedAnalysis}
+                    className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm flex items-center gap-1 hover:bg-gray-300"
+                  >
+                    <FiTrash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 

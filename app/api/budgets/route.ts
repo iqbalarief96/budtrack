@@ -59,10 +59,32 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json();
+    console.log("Budget submission data:", data);
     
     // Check if categoryId is valid or use a default
     let categoryId = data.categoryId;
+    
+    // Jangan override categoryId yang sudah dipilih dari form
+    if (categoryId) {
+      console.log("Using provided categoryId from form:", categoryId);
+      
+      // Verifikasi category exists
+      const selectedCategory = await prisma.category.findFirst({
+        where: {
+          id: categoryId,
+          userId: session.user.id,
+        },
+      });
+      
+      if (!selectedCategory) {
+        console.warn("Selected category not found, will use default instead");
+        categoryId = null; // Reset to null so we'll use the default
+      }
+    }
+    
+    // Jika categoryId null atau uncategorized
     if (!categoryId || categoryId === 'uncategorized') {
+      console.log("No categoryId provided or invalid, using default Uncategorized");
       // Find or create an 'Uncategorized' category
       const uncategorizedCategory = await prisma.category.findFirst({
         where: {
@@ -129,8 +151,17 @@ export async function POST(request: NextRequest) {
     let startDate = data.startDate ? new Date(data.startDate) : new Date();
     let endDate = data.endDate ? new Date(data.endDate) : new Date();
     
+    // Gunakan deadline sebagai endDate jika tersedia (dikonversi dari GoalForm)
+    if (data.deadline && !data.endDate) {
+      endDate = new Date(data.deadline);
+      // Set startDate to current date if not provided
+      if (!data.startDate) {
+        startDate = new Date();
+      }
+    }
+    
     // Hanya gunakan timeframe jika startDate dan endDate tidak ada
-    if (!data.startDate || !data.endDate) {
+    if (!data.startDate && !data.endDate && !data.deadline) {
       // Calculate date ranges based on timeframe
       startDate = new Date();
       endDate = new Date();
@@ -150,16 +181,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const budgetData = {
+      amount: parseFloat(data.amount?.toString() || data.target?.toString() || "0"),
+      startDate,
+      endDate,
+      walletId,
+      categoryId,
+      userId: session.user.id,
+      spent: 0,
+    };
+    
+    console.log("Creating budget with data:", budgetData);
+
     const budget = await prisma.budget.create({
-      data: {
-        amount: parseFloat(data.amount.toString()),
-        startDate,
-        endDate,
-        walletId,
-        categoryId,
-        userId: session.user.id,
-        spent: 0,
-      },
+      data: budgetData,
     });
 
     return NextResponse.json(budget);

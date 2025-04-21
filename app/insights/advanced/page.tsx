@@ -118,7 +118,7 @@ export default function AdvancedAnalyticsPage() {
   const detectAnomalies = (data: Transaction[]) => {
     // Group by category
     const expensesByCategory = data
-      .filter(tx => tx.type === 'EXPENSE')
+      .filter(tx => tx.type === 'EXPENSE' && tx.category && tx.category.name)
       .reduce<Record<string, Transaction[]>>((acc, tx) => {
         const catName = tx.category.name;
         if (!acc[catName]) acc[catName] = [];
@@ -169,38 +169,22 @@ export default function AdvancedAnalyticsPage() {
 
   const fetchBenchmarkData = async (data: Transaction[]) => {
     try {
-      // In a real app, this would be an API call to get platform averages
-      // For demo, we'll simulate some comparison data
-      const userTotal = data
-        .filter(tx => tx.type === 'EXPENSE')
-        .reduce((sum, tx) => sum + tx.amount, 0);
+      if (!selectedWallet) return;
       
-      const userAverage = userTotal / 
-        (data.filter(tx => tx.type === 'EXPENSE').length || 1);
+      // Use our real benchmark API to get platform-wide averages
+      const response = await fetch(`/api/insights/benchmarks?walletId=${selectedWallet.id}`);
       
-      // Simulated platform average (20% higher than user's)
-      const platformAverage = userAverage * 1.2;
+      if (!response.ok) {
+        throw new Error('Failed to fetch benchmark data');
+      }
       
-      // Category comparisons
-      const userCategoryData = data
-        .filter(tx => tx.type === 'EXPENSE')
-        .reduce<Record<string, number>>((acc, tx) => {
-          const category = tx.category.name;
-          if (!acc[category]) acc[category] = 0;
-          acc[category] += tx.amount;
-          return acc;
-        }, {});
-      
-      const categories = Object.entries(userCategoryData).map(([name, amount]) => ({
-        name,
-        userAmount: amount,
-        platformAmount: amount * (0.8 + Math.random() * 0.8) // Random between 80-160% of user's amount
-      }));
+      const benchmarkData = await response.json();
+      console.log('Benchmark data:', benchmarkData);
       
       setBenchmarkData({
-        userAverage,
-        platformAverage,
-        categories
+        userAverage: benchmarkData.userAverage || 0,
+        platformAverage: benchmarkData.platformAverage || 0,
+        categories: benchmarkData.categories || []
       });
     } catch (error) {
       console.error('Error fetching benchmark data:', error);

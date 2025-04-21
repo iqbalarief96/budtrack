@@ -15,6 +15,7 @@ interface GoalFormProps {
     description?: string;
     targetDate: Date;
     trackedCategories?: any[];
+    categoryId?: string;
   };
   isEditing?: boolean;
   formType?: 'goal' | 'budget';
@@ -37,7 +38,8 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
     type: initialData?.type || 'EMERGENCY_FUND',
     description: initialData?.description || '',
     targetDate: initialData?.targetDate ? new Date(initialData.targetDate).toISOString().split('T')[0] : '',
-    trackedCategoryIds: initialData?.trackedCategories?.map((tc: any) => tc.categoryId) || []
+    trackedCategoryIds: initialData?.trackedCategories?.map((tc: any) => tc.categoryId) || [],
+    categoryId: initialData?.categoryId || ''
   });
   
   const [categories, setCategories] = useState<any[]>([]);
@@ -120,6 +122,13 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
     }));
   };
   
+  const handleCategoryChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      categoryId: value,
+    }));
+  };
+  
   const handleCategoryToggle = (categoryId: string) => {
     setFormData(prev => {
       // Check if category is already selected
@@ -173,6 +182,35 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
           </SelectContent>
         </Select>
       </div>
+
+      {formType === 'budget' && (
+        <div className="space-y-2">
+          <Label htmlFor="categoryId">Budget Category</Label>
+          <Select
+            value={formData.categoryId}
+            onValueChange={handleCategoryChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select budget category" />
+            </SelectTrigger>
+            <SelectContent>
+              {!loading && categories.map(category => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                </SelectItem>
+              ))}
+              {loading && (
+                <SelectItem value="loading" disabled>
+                  Loading categories...
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-gray-500 mt-1">
+            Pilih kategori utama untuk budget ini
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="target">

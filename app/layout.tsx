@@ -9,6 +9,7 @@ import { authOptions } from '@/lib/auth'
 import './sidebar.css'
 import { Toaster } from '@/components/ui/toast'
 import ChatbotButton from './components/ChatbotButton'
+import { TransactionModalProvider } from './providers/TransactionModalProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -30,12 +31,14 @@ export default async function RootLayout({
         <AuthProvider session={session}>
           {session ? (
             <WalletProvider>
-              <Sidebar session={session} />
-              <main className="content-area">
-                {children}
-              </main>
-              <Toaster />
-              <ChatbotButton />
+              <TransactionModalProvider>
+                <Sidebar session={session} />
+                <main className="content-area">
+                  {children}
+                </main>
+                <Toaster />
+                <ChatbotButton />
+              </TransactionModalProvider>
             </WalletProvider>
           ) : (
             <main className="min-h-screen bg-gray-50">

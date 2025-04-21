@@ -5,6 +5,7 @@ import { DashboardWidget } from './WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
+import { useTransactionModal } from '@/app/providers/TransactionModalProvider';
 
 // Import widget components
 import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard';
@@ -185,6 +186,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     expense: 0,
   });
   
+  // Use the transaction modal provider
+  const { openTransactionModal } = useTransactionModal();
+  
   // Fetch data for widgets
   React.useEffect(() => {
     if (!walletId) return;
@@ -241,14 +245,6 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     }
   }, [selectedWalletId, selectedWallet?.id, wallets, setSelectedWalletAndPersist]);
   
-  // Function to open transaction modal - in production this would be handled by a global state manager
-  const openTransactionModal = (type: 'INCOME' | 'EXPENSE') => {
-    console.log(`Opening transaction modal for ${type}`);
-    // In real implementation, this would trigger a modal via a state manager
-    // For demo, we'll just redirect to the transactions page
-    router.push('/transactions/new?type=' + type);
-  };
-
   // Render widget based on type
   switch (widget.type) {
     case 'balance':

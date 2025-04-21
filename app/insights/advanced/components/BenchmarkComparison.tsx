@@ -190,12 +190,15 @@ export default function BenchmarkComparison({ benchmarkData }: BenchmarkProps) {
         </div>
       </div>
 
-      <div className="h-80 mt-6">
+      <div className="h-96 mt-6">
         <h3 className="text-lg font-medium mb-4">Perbandingan per Kategori</h3>
         <Bar options={options} data={chartData} />
       </div>
       
-      <div className="mt-6 space-y-4">
+      {/* Small divider instead of large spacer */}
+      <div className="border-t border-gray-200 mt-8"></div>
+      
+      <div className="mt-6 space-y-4 bg-gray-50 p-6 rounded-lg">
         <h3 className="text-lg font-medium">Rincian Kategori</h3>
         <div className="bg-white rounded-lg border p-4">
           <table className="min-w-full">
