@@ -18,7 +18,8 @@ export type WidgetType =
   | 'investment-performance'
   | 'summary-stats'
   | 'quick-actions'
-  | 'top-spending';
+  | 'top-spending'
+  | 'summary';
 
 export interface DashboardWidget {
   id: string;
@@ -42,46 +43,53 @@ export interface DashboardView {
 // Predefined widget configurations
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
   {
+    id: 'summary-widget',
+    type: 'summary',
+    size: 'medium',
+    title: 'Ringkasan',
+    position: 0
+  },
+  {
     id: 'balance-widget',
     type: 'balance',
     size: 'small',
     title: 'Total Saldo',
-    position: 0
+    position: 1
   },
   {
     id: 'income-widget',
     type: 'income',
     size: 'small',
     title: 'Pemasukan',
-    position: 1
+    position: 2
   },
   {
     id: 'expense-widget',
     type: 'expense',
     size: 'small',
     title: 'Pengeluaran',
-    position: 2
+    position: 3
   },
   {
     id: 'expense-chart-widget',
     type: 'expense-chart',
     size: 'medium',
     title: 'Distribusi Pengeluaran',
-    position: 3
+    position: 4
   },
   {
     id: 'income-expense-chart-widget',
     type: 'income-expense-chart',
     size: 'medium',
     title: 'Tren Keuangan',
-    position: 4
+    position: 5
   },
   {
     id: 'transaction-list-widget',
     type: 'transaction-list',
     size: 'medium',
     title: 'Transaksi Terbaru',
-    position: 5,
+    position: 6,
     config: {
       limit: 5
     }
@@ -91,22 +99,22 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     type: 'emergency-fund',
     size: 'medium',
     title: 'Dana Darurat',
-    position: 6
+    position: 7
   },
   {
     id: 'budget-overview-widget',
     type: 'budget-overview',
     size: 'large',
     title: 'Ringkasan Budget',
-    position: 7
+    position: 8
   },
   {
     id: 'top-spending-widget',
     type: 'top-spending',
     size: 'medium',
     title: 'Top Spending',
-    position: 8
-  },
+    position: 9
+  }
 ];
 
 export const DEFAULT_DASHBOARD_VIEW: DashboardView = {

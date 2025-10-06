@@ -8,7 +8,7 @@ import type { Budget } from '@/app/types/budget'
 import type { Category } from '@/app/types/category'
 import type { Wallet } from '@/app/types/wallet'
 import BudgetProgress from '@/components/budget/BudgetProgress'
-import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard'
+import EmergencyFundCard from '@/app/components/dashboard/EmergencyFundCard'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js'
 import { Pie, Bar } from 'react-chartjs-2'
 import TransactionModal from '@/app/components/TransactionModal'
@@ -73,7 +73,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     income: number;
     expense: number;
   }>>([])
-  const [selectedPeriod, setSelectedPeriod] = useState('month')
+  const [selectedPeriod, setSelectedPeriod] = useState('all')
   const [spendingByCategory, setSpendingByCategory] = useState<{ name: string; amount: number; color: string }[]>([])
   const [financialTips, setFinancialTips] = useState<{ id: number; title: string; description: string }[]>([
     { id: 1, title: 'Tabungan Darurat', description: 'Sisihkan 20% penghasilan setiap bulan untuk dana darurat' },
@@ -124,7 +124,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
-        const response = await fetch('/api/transactions');
+        // Use period parameter for server-side filtering
+        const url = selectedPeriod === 'all' 
+          ? '/api/transactions' 
+          : `/api/transactions?period=${selectedPeriod}`;
+        
+        const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
           setAllTransactions(data);
@@ -135,15 +140,56 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     };
 
     fetchTransactions();
-  }, []);
+  }, [selectedPeriod]); // Add selectedPeriod as a dependency
 
   // Calculate totals and filter transactions when wallet or transaction data changes
   useEffect(() => {
     if (selectedWallet && allTransactions.length > 0) {
-      // Hanya filter transaksi untuk wallet yang dipilih
-      const filteredTx = allTransactions.filter(
+      // Filter transaksi untuk wallet yang dipilih
+      let filteredTx = allTransactions.filter(
         (tx) => tx.walletId === selectedWallet.id
       );
+
+      // Filter transaksi berdasarkan periode waktu
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      if (selectedPeriod !== 'all') {
+        filteredTx = filteredTx.filter((tx) => {
+          const txDate = new Date(tx.date);
+          
+          switch (selectedPeriod) {
+            case 'daily':
+              // Hanya transaksi hari ini
+              return txDate.setHours(0, 0, 0, 0) === today.setHours(0, 0, 0, 0);
+            
+            case 'weekly':
+              // Transaksi 7 hari terakhir
+              const weekAgo = new Date(today);
+              weekAgo.setDate(today.getDate() - 7);
+              return txDate >= weekAgo;
+            
+            case 'monthly':
+              // Transaksi bulan ini
+              const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+              return txDate >= startOfMonth;
+            
+            case 'quarterly':
+              // Transaksi 3 bulan terakhir
+              const threeMonthsAgo = new Date(today);
+              threeMonthsAgo.setMonth(today.getMonth() - 3);
+              return txDate >= threeMonthsAgo;
+            
+            case 'yearly':
+              // Transaksi tahun ini
+              const startOfYear = new Date(today.getFullYear(), 0, 1);
+              return txDate >= startOfYear;
+            
+            default:
+              return true;
+          }
+        });
+      }
 
       setFilteredTransactions(filteredTx);
 
@@ -178,27 +224,36 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         expense,
       });
     }
-  }, [selectedWallet, allTransactions]);
+  }, [selectedWallet, allTransactions, selectedPeriod]);
 
   // Fetch savings data
   useEffect(() => {
     const fetchSavingsData = async () => {
       try {
-        const response = await fetch('/api/emergency-fund');
+        setIsLoadingSavings(true);
+        
+        // Construct URL with walletId if a wallet is selected
+        const url = selectedWallet 
+          ? `/api/emergency-fund?walletId=${selectedWallet.id}` 
+          : '/api/emergency-fund';
+        
+        const response = await fetch(url);
+        
         if (response.ok) {
           const data = await response.json();
-          setSavingsData({
-            totalSavings: data.totalSavings || 0,
-            savingsByType: data.savingsByType || {},
-          });
+          setSavingsData(data);
+        } else {
+          console.error('Error fetching emergency fund data:', response.statusText);
         }
       } catch (error) {
         console.error('Error fetching savings data:', error);
+      } finally {
+        setIsLoadingSavings(false);
       }
     };
 
     fetchSavingsData();
-  }, [allTransactions]);
+  }, [selectedWallet]); // Re-fetch when selectedWallet changes
 
   // Get transactions grouped by category for pie chart
   useEffect(() => {
@@ -459,6 +514,21 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         </div>
         
         {/* Quick Stats */}
+        <div className="mb-4">
+          <select 
+            className="bg-white/20 text-white border border-white/40 rounded-md p-2 text-sm [&>option]:text-black"
+            value={selectedPeriod}
+            onChange={(e) => setSelectedPeriod(e.target.value)}
+          >
+            <option value="all">Semua Waktu</option>
+            <option value="daily">Hari Ini</option>
+            <option value="weekly">7 Hari Terakhir</option>
+            <option value="monthly">Bulan Ini</option>
+            <option value="quarterly">3 Bulan Terakhir</option>
+            <option value="yearly">Tahun Ini</option>
+          </select>
+        </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 hover:bg-white/20 transition-all duration-200">
             <div className="flex items-center justify-between">

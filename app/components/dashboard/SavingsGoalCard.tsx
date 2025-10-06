@@ -6,6 +6,11 @@ import { formatCurrency } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
 import { FiChevronRight } from 'react-icons/fi';
+import { Badge } from '@/components/ui/badge';
+
+interface SavingsGoalCardProps {
+  walletId?: string;
+}
 
 interface Goal {
   id: string;
@@ -21,7 +26,7 @@ interface Goal {
   updatedAt: string;
 }
 
-export default function SavingsGoalCard() {
+export default function SavingsGoalCard({ walletId }: SavingsGoalCardProps) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +36,12 @@ export default function SavingsGoalCard() {
       try {
         setIsLoading(true);
         
-        const response = await fetch('/api/goals');
+        // Add walletId to URL if provided
+        const url = walletId 
+          ? `/api/goals?walletId=${walletId}`
+          : '/api/goals';
+          
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error('Failed to fetch goals');
         }
@@ -47,7 +57,7 @@ export default function SavingsGoalCard() {
     };
     
     fetchGoals();
-  }, []);
+  }, [walletId]); // Re-fetch when walletId changes
   
   if (isLoading) {
     return (
@@ -57,6 +67,7 @@ export default function SavingsGoalCard() {
             <Link href="/goals" className="hover:text-blue-500 transition-colors">
               Target Tabungan
             </Link>
+            {walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
@@ -74,6 +85,7 @@ export default function SavingsGoalCard() {
             <Link href="/goals" className="hover:text-blue-500 transition-colors">
               Target Tabungan
             </Link>
+            {walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
@@ -91,6 +103,7 @@ export default function SavingsGoalCard() {
             <Link href="/goals" className="hover:text-blue-500 transition-colors">
               Target Tabungan
             </Link>
+            {walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
@@ -115,6 +128,7 @@ export default function SavingsGoalCard() {
           <Link href="/goals" className="hover:text-blue-500 transition-colors">
             Target Tabungan
           </Link>
+          {walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-0 pt-0">

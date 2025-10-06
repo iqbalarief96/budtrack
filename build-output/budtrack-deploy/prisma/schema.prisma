@@ -1,0 +1,700 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  previewFeatures = ["extendedWhereUnique"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Investment {
+  id                   String   @id @default(cuid())
+  name                 String
+  type                 String
+  tickerSymbol         String?
+  quantity             Float
+  averagePurchasePrice Float
+  purchaseDate         DateTime
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  userId               String
+  walletId             String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet               Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([walletId])
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  name                 String?
+  email                String                 @unique
+  emailVerified        DateTime?
+  image                String?
+  password             String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  riskProfile          String?
+  accounts             Account[]
+  alerts               Alert[]
+  budgets              Budget[]
+  categories           Category[]
+  categoryRules        CategoryRule[]
+  chatMessages         ChatMessage[]
+  dashboardViews       DashboardView[]
+  emergencyFund        EmergencyFund?
+  expenseSplits        ExpenseSplit[]
+  financialAdvice      FinancialAdvice[]
+  goals                Goal[]
+  ownedGroups          Group[]                @relation("OwnedGroups")
+  groupTransactions    GroupTransaction[]
+  investments          Investment[]
+  RecurringTransaction RecurringTransaction[]
+  sessions             Session[]
+  transactions         Transaction[]
+  groupMemberships     UserGroup[]
+  groupSettings        UserGroupSettings[]
+  settings             UserSettings?
+  wallets              Wallet[]
+  weddings             Wedding[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Wallet {
+  id                    String                 @id @default(cuid())
+  name                  String
+  balance               Float                  @default(0)
+  currencyCode          String                 @default("IDR")
+  icon                  String?
+  color                 String?
+  isDefault             Boolean                @default(false)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  userId                String
+  budgets               Budget[]
+  investments           Investment[]
+  recurringTransactions RecurringTransaction[]
+  transactions          Transaction[]
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id                String             @id @default(cuid())
+  name              String
+  type              String
+  icon              String?
+  color             String?
+  isDefault         Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userId            String
+  parentId          String?
+  budgets           Budget[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryRules     CategoryRule[]
+  groupBudgets      GroupBudget[]
+  groupTransactions GroupTransaction[]
+  transactions      Transaction[]
+
+  @@unique([name, userId])
+}
+
+model Transaction {
+  id               String                        @id @default(cuid())
+  amount           Float
+  description      String?
+  date             DateTime
+  type             String
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  userId           String
+  walletId         String
+  categoryId       String?
+  goalId           String?
+  goalActivities   GoalActivity[]
+  recurringHistory RecurringTransactionHistory[]
+  category         Category?                     @relation(fields: [categoryId], references: [id])
+  wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Budget {
+  id         String   @id @default(cuid())
+  amount     Float
+  spent      Float    @default(0)
+  startDate  DateTime
+  endDate    DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     String
+  walletId   String
+  categoryId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet     Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+}
+
+model EmergencyFund {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  targetAmount        Float
+  currentAmount       Float
+  monthlyContribution Float
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model UserSettings {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  currency      String   @default("IDR")
+  language      String   @default("id")
+  theme         String   @default("light")
+  provider      String?
+  apiKey        String?
+  selectedModel String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FinancialAdvice {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  type            String
+  priority        String
+  estimatedImpact Float?
+  walletId        String?
+  timeframe       String
+  createdAt       DateTime @default(now())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model CategoryRule {
+  id         String   @id @default(cuid())
+  name       String
+  pattern    String
+  isRegex    Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  userId     String
+  categoryId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+}
+
+model RecurringTransaction {
+  id              String                        @id @default(cuid())
+  name            String
+  amount          Float
+  category        String?
+  frequency       String
+  startDate       DateTime
+  nextPaymentDate DateTime
+  description     String?
+  isActive        Boolean                       @default(true)
+  type            String                        @default("expense")
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  walletId        String
+  userId          String
+  wallet          Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user            User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  history         RecurringTransactionHistory[]
+}
+
+model RecurringTransactionHistory {
+  id                     String               @id @default(cuid())
+  recurringTransactionId String
+  transactionId          String?
+  processedDate          DateTime             @default(now())
+  targetDate             DateTime
+  amount                 Float
+  status                 String               @default("CREATED")
+  notes                  String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  transaction            Transaction?         @relation(fields: [transactionId], references: [id])
+  recurringTransaction   RecurringTransaction @relation(fields: [recurringTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([recurringTransactionId])
+  @@index([transactionId])
+}
+
+model Group {
+  id           String              @id @default(cuid())
+  name         String
+  description  String?
+  icon         String?
+  color        String?             @default("#6366f1")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  ownerId      String
+  isPrivate    Boolean             @default(false)
+  owner        User                @relation("OwnedGroups", fields: [ownerId], references: [id])
+  budgets      GroupBudget[]
+  invites      GroupInvite[]
+  wallets      GroupWallet[]
+  members      UserGroup[]
+  userSettings UserGroupSettings[]
+}
+
+model UserGroup {
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String
+  role        String   @default("MEMBER")
+  permissions String?
+  joinedAt    DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+}
+
+model UserGroupSettings {
+  id                 String   @id @default(cuid())
+  userId             String
+  groupId            String
+  notificationMethod String   @default("email")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+}
+
+model GroupWallet {
+  id           String             @id @default(cuid())
+  groupId      String
+  name         String
+  balance      Float              @default(0)
+  currencyCode String             @default("IDR")
+  icon         String?
+  color        String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  transactions GroupTransaction[]
+  group        Group              @relation(fields: [groupId], references: [id])
+}
+
+model GroupTransaction {
+  id            String         @id @default(cuid())
+  groupWalletId String
+  amount        Float
+  type          String
+  date          DateTime
+  description   String?
+  notes         String?
+  createdById   String
+  categoryId    String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  splits        ExpenseSplit[]
+  createdBy     User           @relation(fields: [createdById], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  groupWallet   GroupWallet    @relation(fields: [groupWalletId], references: [id])
+}
+
+model ExpenseSplit {
+  id                 String           @id @default(cuid())
+  groupTransactionId String
+  userId             String
+  amount             Float
+  isPaid             Boolean          @default(false)
+  paidDate           DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  transaction        GroupTransaction @relation(fields: [groupTransactionId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id])
+
+  @@unique([groupTransactionId, userId])
+}
+
+model GroupBudget {
+  id         String    @id @default(cuid())
+  groupId    String
+  name       String
+  amount     Float
+  spent      Float     @default(0)
+  startDate  DateTime
+  endDate    DateTime
+  categoryId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  category   Category? @relation(fields: [categoryId], references: [id])
+  group      Group     @relation(fields: [groupId], references: [id])
+}
+
+model GroupInvite {
+  id        String    @id @default(cuid())
+  groupId   String
+  email     String?
+  code      String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  createdBy String
+  isUsed    Boolean   @default(false)
+  usedAt    DateTime?
+  usedById  String?
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id               String   @id @default(cuid())
+  userId           String
+  userMessage      String
+  assistantMessage String
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Alert {
+  id             String   @id @default(cuid())
+  userId         String
+  type           String
+  title          String
+  message        String
+  additionalData String?
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  id          String         @id @default(cuid())
+  userId      String
+  name        String
+  target      Float
+  current     Float          @default(0)
+  deadline    DateTime?
+  category    String?
+  description String?
+  icon        String?
+  color       String?
+  status      String         @default("ONGOING")
+  isArchived  Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities  GoalActivity[]
+
+  @@index([userId])
+}
+
+model GoalActivity {
+  id            String       @id @default(cuid())
+  goalId        String
+  amount        Float
+  date          DateTime     @default(now())
+  description   String?
+  createdAt     DateTime     @default(now())
+  userId        String
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  goal          Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([transactionId])
+  @@index([userId])
+}
+
+model DashboardView {
+  id        String   @id @default(cuid())
+  name      String
+  isDefault Boolean  @default(false)
+  timeframe String?
+  widgets   String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Wedding {
+  id               String                  @id @default(cuid())
+  userId           String
+  title            String
+  date             DateTime
+  location         String?
+  budget           Float                   @default(0)
+  spentBudget      Float                   @default(0)
+  expectedGuests   Int                     @default(0)
+  status           String                  @default("PLANNING")
+  notes            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  documents        Document[]
+  gifts            Gift[]
+  moodboardItems   Moodboard[]
+  playlists        Playlist[]
+  rundownItems     Rundown[]
+  souvenirs        Souvenir[]
+  vendors          Vendor[]
+  venues           Venue[]
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budgetCategories WeddingBudgetCategory[]
+  guests           WeddingGuest[]
+
+  @@index([userId])
+}
+
+model WeddingBudgetCategory {
+  id        String              @id @default(cuid())
+  weddingId String
+  name      String
+  total     Float               @default(0)
+  spent     Float               @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  wedding   Wedding             @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  items     WeddingBudgetItem[]
+
+  @@index([weddingId])
+}
+
+model WeddingBudgetItem {
+  id         String                @id @default(cuid())
+  categoryId String
+  name       String
+  budgeted   Float
+  actual     Float                 @default(0)
+  paid       Boolean               @default(false)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  category   WeddingBudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+}
+
+model Venue {
+  id            String    @id @default(cuid())
+  weddingId     String
+  name          String
+  address       String
+  capacity      Int?
+  priceRange    String?
+  contactPerson String?
+  phone         String?
+  email         String?
+  website       String?
+  notes         String?
+  isBooked      Boolean   @default(false)
+  bookingDate   DateTime?
+  depositAmount Float?
+  imageUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  features      String?
+  wedding       Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Vendor {
+  id              String   @id @default(cuid())
+  weddingId       String
+  name            String
+  category        String
+  description     String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  website         String?
+  address         String?
+  priceRange      String?
+  status          String   @default("pending")
+  rating          Float?
+  imageUrl        String?
+  instagramHandle String?
+  notes           String?
+  features        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  wedding         Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Document {
+  id            String    @id @default(cuid())
+  weddingId     String
+  name          String
+  description   String?
+  deadline      DateTime?
+  location      String?
+  status        String    @default("NOT_STARTED")
+  isMandatory   Boolean   @default(false)
+  notes         String?
+  attachmentUrl String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  wedding       Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Rundown {
+  id          String   @id @default(cuid())
+  weddingId   String
+  title       String
+  startTime   DateTime
+  endTime     DateTime
+  description String?
+  location    String?
+  responsible String?
+  category    String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  wedding     Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Souvenir {
+  id                String    @id @default(cuid())
+  weddingId         String
+  name              String
+  type              String?
+  quantity          Int
+  pricePerUnit      Float
+  totalBudget       Float
+  actualCostPerUnit Float     @default(0)
+  totalActualCost   Float     @default(0)
+  vendor            String?
+  description       String?
+  imageUrl          String?
+  status            String    @default("PLANNING")
+  orderDate         DateTime?
+  deliveryDate      DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  wedding           Wedding   @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Playlist {
+  id         String   @id @default(cuid())
+  weddingId  String
+  title      String
+  artist     String
+  duration   String?
+  category   String?
+  url        String?
+  notes      String?
+  order      Int?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  wedding    Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Moodboard {
+  id            String   @id @default(cuid())
+  weddingId     String
+  title         String
+  description   String?
+  imageUrl      String
+  category      String?
+  isInspiration Boolean  @default(true)
+  isApproved    Boolean  @default(false)
+  source        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tags          String?
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model Gift {
+  id            String   @id @default(cuid())
+  weddingId     String
+  name          String
+  quantity      Int      @default(1)
+  estimatedCost Float    @default(0)
+  actualCost    Float    @default(0)
+  status        String   @default("not-started")
+  responsible   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  wedding       Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}
+
+model WeddingGuest {
+  id                  String   @id @default(cuid())
+  weddingId           String
+  name                String
+  relationship        String?
+  contactNumber       String?
+  email               String?
+  address             String?
+  confirmed           Boolean  @default(false)
+  attended            Boolean  @default(false)
+  group               String?
+  seats               Int      @default(1)
+  dietaryRestrictions String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  wedding             Wedding  @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+}

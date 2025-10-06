@@ -11,11 +11,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
+    // Get walletId from query parameters if it exists
+    const { searchParams } = new URL(request.url);
+    const walletId = searchParams.get('walletId');
+    
+    // Build where clause
+    const whereClause: any = {
+      userId: session.user.id,
+      isArchived: false
+    };
+    
+    // Add walletId filter if provided
+    if (walletId) {
+      whereClause.walletId = walletId;
+    }
+    
     const goals = await prisma.goal.findMany({
-      where: {
-        userId: session.user.id,
-        isArchived: false
-      },
+      where: whereClause,
       orderBy: {
         createdAt: 'desc'
       },

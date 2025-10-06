@@ -156,6 +156,8 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
     fullPrompt += "Focus on practical advice related to budgeting, saving, investing, and general personal finance. ";
     fullPrompt += "Don't recommend specific financial products or services by name unless explicitly asked. ";
     fullPrompt += "Keep answers brief, friendly, and easy to understand.\n\n";
+    fullPrompt += "Use Markdown formatting in your responses: **bold** for emphasis, *italics* for secondary emphasis, ";
+    fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n\n";
     
     // Add user context if available
     if (context) {

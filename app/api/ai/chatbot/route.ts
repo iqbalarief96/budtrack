@@ -76,9 +76,20 @@ export async function POST(request: NextRequest) {
     Data Keuangan Pengguna:
     Nama: ${user.name || 'Pengguna'}
     Total Saldo: ${formatCurrency(financialData.totalBalance)}
+    
     Transaksi Bulan Ini: ${financialData.transactions.length}
     Total Pemasukan Bulan Ini: ${formatCurrency(financialData.monthlyIncome)}
     Total Pengeluaran Bulan Ini: ${formatCurrency(financialData.monthlyExpense)}
+    
+    Transaksi Tahun Ini: ${financialData.allTransactions.filter(t => {
+      const date = new Date(t.date);
+      const now = new Date();
+      return date.getFullYear() === now.getFullYear();
+    }).length}
+    Total Pemasukan Tahun Ini: ${formatCurrency(financialData.yearlyIncome)}
+    Total Pengeluaran Tahun Ini: ${formatCurrency(financialData.yearlyExpense)}
+    
+    Total Semua Transaksi: ${financialData.allTransactions.length}
     
     Detail Transaksi Bulan Ini:
     ${financialData.transactions
@@ -87,7 +98,7 @@ export async function POST(request: NextRequest) {
       .join('\n')
     }
     
-    Kategori Pengeluaran Terbesar: ${financialData.topCategory ? `${financialData.topCategory.name} (${formatCurrency(financialData.topCategory.amount)})` : 'Tidak ada data'}
+    Kategori Pengeluaran Terbesar Tahun Ini: ${financialData.topCategory ? `${financialData.topCategory.name} (${formatCurrency(financialData.topCategory.amount)})` : 'Tidak ada data'}
     Jumlah Budget Aktif: ${financialData.budgets.length}
     
     Detail Dompet (${wallet ? wallet.name : 'Semua Dompet'}):
@@ -99,9 +110,57 @@ export async function POST(request: NextRequest) {
     Transaksi Terbaru:
     ${financialData.recentTransactions.map(t => `${new Date(t.date).toLocaleDateString()}: ${t.description} - ${formatCurrency(t.amount)} (${t.categoryName})`).join('\n')}
     
-    Saat merespons, bersikaplah seperti asisten keuangan santai dan ramah. Gunakan bahasa Indonesia yang santai (campuran bahasa Inggris-Indonesia gaya anak Jaksel, seperti "cash flow kamu", "budget management", "spending habits", dll).
-    Berikan jawaban yang singkat, jelas, dan bermanfaat. Buat analisis berdasarkan data pengguna.
-    Jangan menginventasi data yang tidak tersedia. Jika tidak yakin, minta pengguna untuk menyediakan informasi lebih lanjut.
+    Statistik Bulanan (12 bulan terakhir):
+    ${financialData.monthlyStats.slice(0, 6).map(m => 
+      `${m.month}: Pemasukan ${formatCurrency(m.income)}, Pengeluaran ${formatCurrency(m.expense)}, Tabungan ${formatCurrency(m.savings)}, Jumlah Transaksi ${m.transactionCount}`
+    ).join('\n')}
+    
+    Lu adalah Financial Advisor profesional world-class yang ahli banget dalam personal finance dan wealth management. Berikan analisis data keuangan dengan sangat tajam dan mendalam, insights yang actionable, dan rekomendasi tingkat tinggi.
+    
+    STYLE KOMUNIKASI:
+    1. Gunakan bahasa Jaksel gaul yang konsisten - mix Bahasa Indonesia dengan English terms keuangan.
+    2. PENTING: Pakai "gw/gue" untuk merujuk diri sendiri, JANGAN pernah pakai "aku/saya".
+    3. PENTING: Pakai "lo/lu" untuk merujuk pengguna, JANGAN pernah pakai "kamu/anda".
+    4. Gunakan slang Jaksel seperti: "literally", "basically", "which is", "literally", "kayak", "gimana", "gitu", "so", "anyway", "honestly", "please deh", "parah sih", dll.
+    5. Gunakan financial terms English yang dicampur dengan bahasa Indonesia, seperti: "cash flow lo", "spending habit", "investment portfolio lo", "emergency fund", dll.
+    6. Tone suara: Smart, confident, sedikit witty, tapi tetap profesional.
+    
+    PEDOMAN KONTEN:
+    1. Berikan analisis financial yang sophisticated dan high-level, tapi dijelaskan dengan gaya santai.
+    2. Jadilah konkrit dan specific dalam saran - bukan sekedar generic advice.
+    3. Prioritaskan insight yang actionable dan berbasis data dari history pengguna.
+    4. Kalau diminta saran, berikan langkah-langkah yang clear dan terukur.
+    5. SELALU pakai data historis pengguna untuk memberikan insights yang komprehensif dan personal.
+    6. Jangan ragu highlight red flags atau areas of improvement dalam keuangan pengguna.
+    7. Gunakan financial frameworks dan best practices dari wealth management profesional.
+    
+    STRUKTUR JAWABAN:
+    1. **Bold** untuk judul sections dan key insights
+    2. *Italic* untuk penekanan atau financial terms penting
+    3. Gunakan bullet points dan numbered lists untuk rekomendasi step-by-step
+    4. Gunakan tabel untuk perbandingan data yang kompleks
+    5. Gunakan \`code format\` untuk angka dan persentase penting
+    6. Format jawaban agar mudah dibaca dengan sections, spacing yang baik, dan struktur yang jelas
+    7. PENTING: Pastikan tidak ada spasi/baris kosong yang tidak perlu di antara elemen Markdown (seperti sebelum/sesudah tabel, list, atau blockquote) untuk menjaga layout tetap compact dan rapih.
+    8. SANGAT PENTING: Untuk table heading, gunakan format berikut (JANGAN gunakan newlines sebelum/sesudah table):
+       **📊 Judul Table**
+       | Column1 | Column2 |
+       | ------- | ------- |
+       | Data1   | Data2   |
+    
+    SLANG JAKSEL YANG WAJIB DIPAKAI (gunakan beberapa dalam setiap jawaban):
+    - "Which is..." untuk menjelaskan sesuatu
+    - "I mean..." untuk memberikan penekanan
+    - "So basically..." untuk mengawali penjelasan
+    - "Literally..." untuk menekankan sesuatu
+    - "Honestly..." saat memberikan pendapat pribadi
+    - "In my opinion..." saat memberikan rekomendasi
+    - "Please deh..." untuk ekspresi ketidaksetujuan
+    - "By the way..." untuk transisi topik
+    - "Anyway..." untuk transisi atau kesimpulan
+    - Tambahkan "sih", "dong", "kan", "gitu", "banget" untuk emphasize
+    
+    Harus banget ada satu atau dua emoji yang relevan dalam setiap jawaban untuk membuat conversational.
     `;
     
     // Generate AI response
@@ -153,39 +212,44 @@ async function getFinancialData(userId: string, walletId?: string) {
       return {
         totalBalance: 0,
         transactions: [],
+        allTransactions: [],
         wallets: [],
         monthlyIncome: 0,
         monthlyExpense: 0,
+        yearlyIncome: 0,
+        yearlyExpense: 0,
         topCategory: null,
         recentTransactions: [],
         budgets: [],
+        monthlyStats: []
       };
     }
     
     // Calculate total balance
     const totalBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
     
-    // Get current month transactions
+    // Get date ranges
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const endOfYear = new Date(now.getFullYear(), 11, 31);
     
     console.log('Date filters:', {
       startOfMonth: startOfMonth.toISOString(),
       endOfMonth: endOfMonth.toISOString(),
+      startOfYear: startOfYear.toISOString(),
+      endOfYear: endOfYear.toISOString(),
       currentDate: now.toISOString()
     });
     
-    // Get transactions for this month
-    const transactions = await prisma.transaction.findMany({
+    // Get ALL transactions (not limited to current month)
+    const allTransactions = await prisma.transaction.findMany({
       where: {
         walletId: walletId 
           ? walletId 
           : { in: wallets.map(w => w.id) },
-        date: {
-          gte: startOfMonth,
-          lte: endOfMonth,
-        },
+        userId,
       },
       include: {
         category: true,
@@ -194,11 +258,26 @@ async function getFinancialData(userId: string, walletId?: string) {
         date: 'desc',
       },
     });
+    
+    console.log(`Found ${allTransactions.length} transactions in total`);
+    
+    // Get current month transactions
+    const transactions = allTransactions.filter(t => {
+      const date = new Date(t.date);
+      return date >= startOfMonth && date <= endOfMonth;
+    });
+    
+    // Get year transactions 
+    const yearTransactions = allTransactions.filter(t => {
+      const date = new Date(t.date);
+      return date >= startOfYear && date <= endOfYear;
+    });
 
     console.log(`Found ${transactions.length} transactions for this month`);
+    console.log(`Found ${yearTransactions.length} transactions for this year`);
     
-    // Get recent transactions
-    const recentTransactions = transactions.slice(0, 5).map(t => ({
+    // Get recent transactions from all transactions
+    const recentTransactions = allTransactions.slice(0, 5).map(t => ({
       description: t.description,
       amount: t.amount,
       date: t.date,
@@ -207,6 +286,11 @@ async function getFinancialData(userId: string, walletId?: string) {
     
     // Calculate monthly income and expense
     const monthlyIncome = transactions
+      .filter(t => t.amount > 0)
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    // Calculate yearly income
+    const yearlyIncome = yearTransactions
       .filter(t => t.amount > 0)
       .reduce((sum, t) => sum + t.amount, 0);
     
@@ -222,20 +306,67 @@ async function getFinancialData(userId: string, walletId?: string) {
       return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
     });
     
+    // Identify yearly expenses
+    const yearlyExpenseTransactions = yearTransactions.filter(t => {
+      // Consider as expense if category is in expense list or not income-related (Gaji, Bonus, etc)
+      const isExpenseCategory = t.category?.name && expenseCategories.includes(t.category.name);
+      const isIncomeCategory = t.category?.name && ['Gaji', 'Bonus', 'Income', 'Pendapatan'].includes(t.category.name);
+      
+      return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
+    });
+    
     console.log('Expense transactions count:', expenseTransactions.length);
-    console.log('Expense transactions:', expenseTransactions.map(t => ({
-      description: t.description,
-      amount: t.amount,
-      category: t.category?.name
-    })));
     
     const monthlyExpense = expenseTransactions
       .reduce((sum, t) => sum + t.amount, 0);
     
+    const yearlyExpense = yearlyExpenseTransactions
+      .reduce((sum, t) => sum + t.amount, 0);
+    
     console.log('Calculated monthlyExpense:', monthlyExpense);
+    console.log('Calculated yearlyExpense:', yearlyExpense);
+    
+    // Calculate monthly stats for the last 12 months
+    const lastTwelveMonths = [];
+    for (let i = 0; i < 12; i++) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      lastTwelveMonths.push(monthDate);
+    }
+    
+    const monthlyStats = lastTwelveMonths.map(monthStart => {
+      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+      const monthName = monthStart.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+      
+      const monthTransactions = allTransactions.filter(t => {
+        const date = new Date(t.date);
+        return date >= monthStart && date <= monthEnd;
+      });
+      
+      const income = monthTransactions
+        .filter(t => t.amount > 0)
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const monthExpenseTransactions = monthTransactions.filter(t => {
+        const isExpenseCategory = t.category?.name && expenseCategories.includes(t.category.name);
+        const isIncomeCategory = t.category?.name && ['Gaji', 'Bonus', 'Income', 'Pendapatan'].includes(t.category.name);
+        
+        return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
+      });
+      
+      const expense = monthExpenseTransactions
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      return {
+        month: monthName,
+        income,
+        expense,
+        savings: income - expense,
+        transactionCount: monthTransactions.length
+      };
+    });
     
     // Get top expense category
-    const categoryExpenses = expenseTransactions
+    const categoryExpenses = yearlyExpenseTransactions
       .reduce((acc, t) => {
         const categoryName = t.category?.name || 'Uncategorized';
         if (!acc[categoryName]) {
@@ -268,44 +399,12 @@ async function getFinancialData(userId: string, walletId?: string) {
     const budgetsWithUsage = await Promise.all(
       budgets.map(async (budget) => {
         try {
-          // Get transactions for this budget's category
-          const budgetTransactions = await prisma.transaction.findMany({
-            where: {
-              walletId: walletId 
-                ? walletId 
-                : { in: wallets.map(w => w.id) },
-              categoryId: budget.categoryId,
-              date: {
-                gte: budget.startDate || startOfMonth,
-                lte: budget.endDate || new Date(),
-              },
-              OR: [
-                { 
-                  category: {
-                    name: {
-                      in: ['Makanan', 'Food', 'Transport', 'Transportasi', 'Entertainment', 'Shopping', 'Savings', 'Health']
-                    }
-                  } 
-                },
-                {
-                  AND: [
-                    {
-                      category: {
-                        name: {
-                          notIn: ['Gaji', 'Bonus', 'Income', 'Pendapatan']
-                        }
-                      }
-                    },
-                    {
-                      description: {
-                        notIn: ['Gaji', 'Tunjangan']
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-          });
+          // Get transactions for this budget's category from all transactions
+          const budgetTransactions = allTransactions.filter(t => 
+            t.categoryId === budget.categoryId &&
+            new Date(t.date) >= budget.startDate &&
+            new Date(t.date) <= (budget.endDate || new Date())
+          );
           
           const spent = budgetTransactions.length > 0 
             ? budgetTransactions.reduce((sum, t) => sum + t.amount, 0)
@@ -340,6 +439,7 @@ async function getFinancialData(userId: string, walletId?: string) {
     return {
       totalBalance,
       transactions,
+      allTransactions,
       wallets: wallets.map(w => ({
         id: w.id,
         name: w.name,
@@ -347,9 +447,12 @@ async function getFinancialData(userId: string, walletId?: string) {
       })),
       monthlyIncome,
       monthlyExpense,
+      yearlyIncome,
+      yearlyExpense,
       topCategory,
       recentTransactions,
       budgets: budgetsWithUsage,
+      monthlyStats
     };
   } catch (error) {
     console.error('Error getting financial data:', error);
@@ -357,12 +460,16 @@ async function getFinancialData(userId: string, walletId?: string) {
     return {
       totalBalance: 0,
       transactions: [],
+      allTransactions: [],
       wallets: [],
       monthlyIncome: 0,
       monthlyExpense: 0,
+      yearlyIncome: 0,
+      yearlyExpense: 0,
       topCategory: null,
       recentTransactions: [],
       budgets: [],
+      monthlyStats: []
     };
   }
 }

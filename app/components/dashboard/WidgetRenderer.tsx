@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useTransactionModal } from '@/app/providers/TransactionModalProvider';
 
 // Import widget components
-import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard';
+import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard';
 import BudgetOverview from '@/components/budget/BudgetOverview';
 import ExpenseChart from '@/components/charts/ExpenseChart';
 import IncomeExpenseChart from '@/components/charts/IncomeExpenseChart';
@@ -17,6 +17,7 @@ import { formatCurrency } from '@/lib/utils';
 import SavingsGoalCard from '@/components/dashboard/SavingsGoalCard';
 import InvestmentPerformance from '@/components/dashboard/InvestmentPerformance';
 import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
+import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -247,24 +248,21 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
   
   // Render widget based on type
   switch (widget.type) {
+    case 'summary':
+      return <SummaryWidget walletId={walletId} />;
+      
     case 'balance':
       return (
-        <div className="flex items-center justify-between">
-          {isLoading ? (
-            <div className="animate-pulse flex w-full justify-between">
-              <div className="h-8 w-32 bg-gray-200 rounded"></div>
-              <div className="h-10 w-10 rounded-full bg-gray-200"></div>
+        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Total Saldo</h3>
+              <p className="mt-1 text-xl font-semibold">{formatCurrency(data.balance)}</p>
             </div>
-          ) : (
-            <>
-              <div>
-                <p className="text-2xl font-bold">{formatCurrency(data.balance)}</p>
-              </div>
-              <div className="p-3 bg-blue-100 rounded-full">
-                <FiDollarSign size={24} className="text-blue-600" />
-              </div>
-            </>
-          )}
+            <div className="p-3 bg-blue-100 rounded-full text-blue-600">
+              <FiDollarSign size={24} />
+            </div>
+          </div>
         </div>
       );
       
@@ -311,7 +309,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
       
     case 'emergency-fund':
-      return <EmergencyFundCard />;
+      return <EmergencyFundCard walletId={walletId} />;
       
     case 'expense-chart':
       return <ExpenseChart />;
@@ -347,7 +345,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
             
     case 'savings-goals':
-      return <SavingsGoalCard />;
+      return <SavingsGoalCard walletId={walletId} />;
       
     case 'investment-performance':
       return <InvestmentPerformance />;

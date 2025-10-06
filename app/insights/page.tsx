@@ -21,6 +21,7 @@ import WalletSelector from '../components/WalletSelector'
 import { FaChartLine, FaChartPie, FaChartBar } from 'react-icons/fa'
 import { Pie } from 'react-chartjs-2'
 import ReactMarkdown from 'react-markdown'
+import ComparativeSummaryCard from '../components/ComparativeSummaryCard'
 
 // Register ChartJS components
 ChartJS.register(
@@ -52,6 +53,7 @@ const InsightsPage = () => {
   const [smartAnalysis, setSmartAnalysis] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('month')
   const [analysisResult, setAnalysisResult] = useState<{
     summary: string | null;
     analysis: string | null;
@@ -67,7 +69,7 @@ const InsightsPage = () => {
       // Load saved analysis when wallet is selected
       loadSavedAnalysis()
     }
-  }, [selectedWallet, dateRange])
+  }, [selectedWallet, dateRange, selectedPeriod])
 
   // Load saved analysis from localStorage
   const loadSavedAnalysis = () => {
@@ -205,7 +207,9 @@ const InsightsPage = () => {
   return (
     <div className="p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <WalletSelector />
+        <div className="flex flex-col sm:flex-row gap-4">
+          <WalletSelector />
+        </div>
         <div className="flex gap-4">
           <input
             type="date"
@@ -237,14 +241,12 @@ const InsightsPage = () => {
 
       {chartData && !loading && !error && (
         <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {/* Summary Cards */}
-          <div className="rounded-lg bg-white p-6 shadow-md">
-            <h3 className="mb-4 text-lg font-semibold">Summary</h3>
-            <div className="space-y-2">
-              <p>Total Income: {formatCurrency(chartData.totalIncome)}</p>
-              <p>Total Expenses: {formatCurrency(chartData.totalExpense)}</p>
-              <p>Net Savings: {formatCurrency(chartData.totalIncome - chartData.totalExpense)}</p>
-            </div>
+          {/* Summary Card - Replace with ComparativeSummaryCard */}
+          <div className="rounded-lg">
+            <ComparativeSummaryCard 
+              period={selectedPeriod} 
+              onPeriodChange={setSelectedPeriod} 
+            />
           </div>
 
           {/* Monthly Trend Card */}

@@ -24,6 +24,14 @@ export default function InsightsLayout({
             Basic Insights
           </Link>
           <Link
+            href="/insights/comparative"
+            className={pathname === '/insights/comparative' 
+              ? "text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-4" 
+              : "text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors pb-4"}
+          >
+            Comparative Insights
+          </Link>
+          <Link
             href="/insights/advanced"
             className={pathname === '/insights/advanced' 
               ? "text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-4" 

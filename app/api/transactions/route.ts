@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, NextRequest } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
@@ -6,6 +6,7 @@ import type { Budget } from '@/app/types/budget'
 import type { Category } from '@/app/types/category'
 import type { Wallet } from '@/app/types/wallet'
 import { autoTrackTransactionToGoals } from './auto-track-goals'
+import { Prisma } from '@prisma/client'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -273,66 +274,110 @@ export async function POST(request: Request) {
 }
 
 // GET /api/transactions
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    // Check if user is authenticated
+    const session = await getServerSession(authOptions);
     
-    if (!session?.user?.id) {
-      return new NextResponse('Unauthorized', { status: 401 })
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const { searchParams } = new URL(request.url)
-    const walletId = searchParams.get('walletId')
-
+    
+    // Get query parameters
+    const searchParams = request.nextUrl.searchParams;
+    const walletId = searchParams.get('walletId');
+    const period = searchParams.get('period') || 'all';
+    
+    // Get user ID from the session
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+    
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    
+    // Calculate date filter based on period
+    const now = new Date();
+    let dateFilter = {};
+    
+    if (period !== 'all') {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      switch (period) {
+        case 'daily':
+          // Transactions for today only
+          dateFilter = {
+            gte: today,
+            lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) // Next day
+          };
+          break;
+        
+        case 'weekly':
+          // Transactions for the last 7 days
+          const weekAgo = new Date(today);
+          weekAgo.setDate(today.getDate() - 7);
+          dateFilter = {
+            gte: weekAgo,
+          };
+          break;
+        
+        case 'monthly':
+          // Transactions for the current month
+          const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+          dateFilter = {
+            gte: startOfMonth,
+          };
+          break;
+        
+        case 'quarterly':
+          // Transactions for the last 3 months
+          const threeMonthsAgo = new Date(today);
+          threeMonthsAgo.setMonth(today.getMonth() - 3);
+          dateFilter = {
+            gte: threeMonthsAgo,
+          };
+          break;
+        
+        case 'yearly':
+          // Transactions for the current year
+          const startOfYear = new Date(today.getFullYear(), 0, 1);
+          dateFilter = {
+            gte: startOfYear,
+          };
+          break;
+      }
+    }
+    
+    // Build wallet filter
+    const walletFilter = walletId ? { id: walletId } : {};
+    
+    // Query transactions
     const transactions = await prisma.transaction.findMany({
       where: {
-        userId: session.user.id,
-        ...(walletId ? { walletId } : {}),
-      },
-      include: {
-        category: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-          }
-        },
         wallet: {
-          select: {
-            id: true,
-            name: true,
-          }
+          ...walletFilter,
+          userId: user.id
         },
+        ...(Object.keys(dateFilter).length > 0 && { date: dateFilter }),
       },
       orderBy: {
         date: 'desc',
       },
-    })
-
-    // Transform the data to include properly formatted dates and nested objects
-    const formattedTransactions = transactions.map(tx => ({
-      id: tx.id,
-      date: tx.date.toISOString(),
-      description: tx.description,
-      amount: tx.amount,
-      type: tx.type,
-      category: tx.category ? {
-        id: tx.category.id,
-        name: tx.category.name,
-        type: tx.category.type,
-      } : null,
-      wallet: {
-        id: tx.wallet.id,
-        name: tx.wallet.name,
+      include: {
+        category: true,
+        wallet: true,
       },
-      categoryId: tx.categoryId,
-      walletId: tx.walletId,
-    }))
-
-    return NextResponse.json(formattedTransactions)
+    });
+    
+    return NextResponse.json(transactions);
+    
   } catch (error) {
-    console.error('Error fetching transactions:', error)
-    return new NextResponse('Internal Server Error', { status: 500 })
+    console.error('Error fetching transactions:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch transactions' },
+      { status: 500 }
+    );
   }
 }
 
