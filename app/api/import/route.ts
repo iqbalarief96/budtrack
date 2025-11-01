@@ -184,27 +184,76 @@ export async function POST(request: NextRequest) {
       try {
         // Log the record format before processing
         console.log('Processing record:', JSON.stringify(record, null, 2));
-        
-        // CSV format: user_id,wallet_id,category_id,amount,type,description,date
-        const [oldUserId, oldWalletId, oldCategoryId, amountStr, type, description, dateStr] = record;
-        
-        console.log('Extracted data:', {
-          oldUserId,
-          oldWalletId,
-          oldCategoryId,
-          amountStr,
-          type,
-          description,
-          dateStr
-        });
-        
+        const trimmedRecord = record.map((value) => (typeof value === 'string' ? value.trim() : value));
+
+        // Skip header rows if present
+        if (
+          trimmedRecord.length >= 2 &&
+          trimmedRecord[0]?.toLowerCase?.() === 'date' &&
+          trimmedRecord[1]?.toLowerCase?.() === 'type'
+        ) {
+          console.log('Skipping header row');
+          continue;
+        }
+
+        let rawAmount: string | undefined;
+        let transactionTypeRaw: string | undefined;
+        let description: string | undefined;
+        let dateStr: string | undefined;
+        let categoryNameFromRecord: string | undefined;
+        let oldCategoryId: string | undefined;
+
+        if (trimmedRecord.length === 6) {
+          // New export format: Date,Type,Amount,Description,Category,Wallet
+          const [dateValue, typeValue, amountValue, descriptionValue, categoryValue, walletValue] = trimmedRecord;
+
+          dateStr = dateValue;
+          transactionTypeRaw = typeValue;
+          rawAmount = amountValue;
+          description = descriptionValue;
+          categoryNameFromRecord = categoryValue;
+
+          console.log('Detected new export format:', {
+            dateStr,
+            transactionTypeRaw,
+            rawAmount,
+            description,
+            categoryNameFromRecord,
+            walletValue,
+          });
+        } else {
+          // Legacy format: user_id,wallet_id,category_id,amount,type,description,date
+          const [oldUserId, oldWalletId, legacyCategoryId, amountValue, typeValue, descriptionValue, legacyDate] =
+            trimmedRecord;
+
+          rawAmount = amountValue;
+          transactionTypeRaw = typeValue;
+          description = descriptionValue;
+          dateStr = legacyDate;
+          oldCategoryId = legacyCategoryId;
+
+          console.log('Extracted legacy data:', {
+            oldUserId,
+            oldWalletId,
+            oldCategoryId,
+            rawAmount,
+            transactionTypeRaw,
+            description,
+            dateStr,
+          });
+        }
+
+        if (!rawAmount) {
+          throw new Error('Amount is required');
+        }
+
         // Clean and parse amount - handle both .00 and , formats
-        const cleanAmount = amountStr.replace('.00', '').replace(',', '.');
+        const cleanAmount = rawAmount.replace(/[^\d.,-]/g, '').replace(/\.(?=.*\.)/g, '').replace(',', '.');
         const amount = parseFloat(cleanAmount);
         
         if (isNaN(amount)) {
           console.error('Amount parsing failed:', {
-            original: amountStr,
+            original: rawAmount,
             cleaned: cleanAmount,
             parsed: amount
           });
@@ -212,6 +261,10 @@ export async function POST(request: NextRequest) {
         }
         
         // Parse date - handle multiple formats
+        if (!dateStr) {
+          throw new Error('Date is required');
+        }
+
         let date;
         try {
           // Try parsing as ISO date first
@@ -243,13 +296,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Get transaction type
-        const transactionType = type.toUpperCase() as 'INCOME' | 'EXPENSE';
+        if (!transactionTypeRaw) {
+          throw new Error('Transaction type is required');
+        }
+        const transactionType = transactionTypeRaw.toUpperCase() as 'INCOME' | 'EXPENSE';
         
         // Try to find a category match
         // 1. First try using the original category ID mapping
         // 2. If not found, try mapping based on description
         // 3. If all fails, use default category for the transaction type
-        let categoryName = oldCategoryIdMapping[oldCategoryId];
+        let categoryName = categoryNameFromRecord || (oldCategoryId ? oldCategoryIdMapping[oldCategoryId] : undefined);
         
         if (!categoryName) {
           categoryName = descriptionMapping[description];
@@ -332,14 +388,28 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    return NextResponse.json({ 
-      message: 'Import completed',
+    const message =
+      errors.length > 0
+        ? `Import selesai: ${created.length} baris berhasil, ${errors.length} baris gagal.`
+        : 'Import selesai.';
+
+    return NextResponse.json({
+      success: true,
+      message,
+      count: created.length,
       created: created.length,
       errors: errors.length,
       errorDetails: errors,
     });
   } catch (error: any) {
     console.error('Import error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message,
+        message: error.message,
+      },
+      { status: 500 }
+    );
   }
-} 
+}

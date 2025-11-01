@@ -3,8 +3,9 @@
 import React from 'react';
 import { DashboardWidget } from '@/app/components/dashboard/WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
-import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle } from 'react-icons/fi';
+import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle, FiZap } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
+import { useTransactionModal } from '@/app/providers/TransactionModalProvider';
 
 // Import widget components
 import EmergencyFundCard from '@/components/dashboard/EmergencyFundCard';
@@ -27,6 +28,43 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
   const { selectedWallet, setSelectedWalletAndPersist, wallets } = useWallet();
   const walletId = selectedWalletId || (selectedWallet?.id || '');
   const router = useRouter();
+  let transactionModal: ReturnType<typeof useTransactionModal> | null = null;
+
+  try {
+    transactionModal = useTransactionModal();
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        'TransactionModalProvider is not available. Falling back to navigation for quick actions.',
+        error
+      );
+    }
+  }
+
+  const openTransactionModal = React.useCallback(
+    (
+      options?:
+        | 'INCOME'
+        | 'EXPENSE'
+        | {
+            type?: 'INCOME' | 'EXPENSE';
+            quick?: boolean;
+          }
+    ) => {
+      if (transactionModal) {
+        transactionModal.openTransactionModal(options);
+        return;
+      }
+
+      const resolvedType =
+        typeof options === 'string'
+          ? options
+          : options?.type ?? 'EXPENSE';
+
+      router.push('/transactions/new?type=' + resolvedType);
+    },
+    [transactionModal, router]
+  );
   
   // For demo purposes, placeholder data
   const [isLoading, setIsLoading] = React.useState(false);
@@ -56,14 +94,6 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     }
   }, [selectedWalletId, selectedWallet?.id, wallets, setSelectedWalletAndPersist]);
   
-  // Function to open transaction modal - in production this would be handled by a global state manager
-  const openTransactionModal = (type: 'INCOME' | 'EXPENSE') => {
-    console.log(`Opening transaction modal for ${type}`);
-    // In real implementation, this would trigger a modal via a state manager
-    // For demo, we'll just redirect to the transactions page
-    router.push('/transactions/new?type=' + type);
-  };
-
   // Render widget based on type
   switch (widget.type) {
     case 'balance':
@@ -220,7 +250,16 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return (
         <div className="bg-gray-50 rounded-lg border border-gray-100 p-4">
           <h3 className="font-medium text-gray-700 mb-3">Aksi Cepat</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+            <button
+              onClick={() => openTransactionModal({ quick: true })}
+              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
+            >
+              <div className="flex flex-col items-center">
+                <FiZap className="h-6 w-6 text-blue-500 mb-1" />
+                <span className="text-sm">Transaksi Cepat</span>
+              </div>
+            </button>
             <button
               onClick={() => openTransactionModal('EXPENSE')}
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"

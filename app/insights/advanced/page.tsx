@@ -43,6 +43,126 @@ interface AnomalyTransaction extends Transaction {
   percentAboveAverage: number;
 }
 
+type MonthlyExpensePoint = {
+  date: Date;
+  amount: number;
+};
+
+function monthKey(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth() + 1}`;
+}
+
+function keyToMonthDate(key: string) {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(year, (month ?? 1) - 1, 1);
+}
+
+function addMonths(date: Date, count: number) {
+  return new Date(date.getFullYear(), date.getMonth() + count, 1);
+}
+
+function clampPrediction(value: number, baseline: number) {
+  if (!Number.isFinite(value)) {
+    return Math.max(baseline, 0);
+  }
+  if (baseline <= 0) {
+    return Math.max(value, 0);
+  }
+  const lowerBound = baseline * 0.5;
+  const upperBound = baseline * 1.6;
+  return Math.min(Math.max(value, lowerBound), upperBound);
+}
+
+function getMonthlyExpenseSeries(transactions: Transaction[]): MonthlyExpensePoint[] {
+  const expenseTransactions = transactions.filter(tx => tx.type === 'EXPENSE');
+  if (expenseTransactions.length === 0) {
+    return [];
+  }
+
+  const monthlyTotals = expenseTransactions.reduce<Map<string, number>>((acc, tx) => {
+    const txDate = new Date(tx.date);
+    if (Number.isNaN(txDate.getTime())) {
+      return acc;
+    }
+    const key = monthKey(txDate);
+    acc.set(key, (acc.get(key) || 0) + tx.amount);
+    return acc;
+  }, new Map());
+
+  if (monthlyTotals.size === 0) {
+    return [];
+  }
+
+  const sortedKeys = Array.from(monthlyTotals.keys()).sort(
+    (a, b) => keyToMonthDate(a).getTime() - keyToMonthDate(b).getTime()
+  );
+
+  const series: MonthlyExpensePoint[] = [];
+  const startDate = keyToMonthDate(sortedKeys[0]);
+  const endDate = keyToMonthDate(sortedKeys[sortedKeys.length - 1]);
+
+  for (let cursor = new Date(startDate); cursor <= endDate; cursor = addMonths(cursor, 1)) {
+    const key = monthKey(cursor);
+    series.push({
+      date: new Date(cursor),
+      amount: monthlyTotals.get(key) || 0,
+    });
+  }
+
+  return series;
+}
+
+function forecastNextMonth(amounts: number[]): number {
+  if (amounts.length === 0) {
+    return 0;
+  }
+
+  const recent = amounts.slice(-6);
+  const n = recent.length;
+
+  if (n >= 4) {
+    const xValues = Array.from({ length: n }, (_, idx) => idx);
+    const sumX = xValues.reduce((sum, x) => sum + x, 0);
+    const sumY = recent.reduce((sum, y) => sum + y, 0);
+    const sumXY = xValues.reduce((sum, x, idx) => sum + x * recent[idx], 0);
+    const sumX2 = xValues.reduce((sum, x) => sum + x * x, 0);
+
+    const denominator = n * sumX2 - sumX * sumX;
+    const slope = Math.abs(denominator) < 1e-6
+      ? 0
+      : (n * sumXY - sumX * sumY) / denominator;
+    const intercept = (sumY - slope * sumX) / n;
+
+    let forecast = intercept + slope * n;
+    if (!Number.isFinite(forecast)) {
+      forecast = recent[n - 1];
+    }
+
+    const recentAverage = recent.reduce((sum, value) => sum + value, 0) / n;
+    const blended = (forecast * 0.7) + (recentAverage * 0.3);
+    const baseline = recentAverage > 0 ? recentAverage : forecast;
+
+    return Math.max(clampPrediction(blended, baseline), 0);
+  }
+
+  if (n === 3) {
+    const weighted =
+      recent[0] * 0.1 +
+      recent[1] * 0.3 +
+      recent[2] * 0.6;
+    const baseline = recent.reduce((sum, value) => sum + value, 0) / n;
+    return Math.max(clampPrediction(weighted, baseline), 0);
+  }
+
+  if (n === 2) {
+    const weighted = recent[0] * 0.35 + recent[1] * 0.65;
+    const baseline = (recent[0] + recent[1]) / 2;
+    return Math.max(clampPrediction(weighted, baseline), 0);
+  }
+
+  return Math.max(recent[0], 0);
+}
+
 export default function AdvancedAnalyticsPage() {
   const { selectedWallet } = useWallet();
   const [activeTab, setActiveTab] = useState('prediction');
@@ -88,31 +208,19 @@ export default function AdvancedAnalyticsPage() {
   };
 
   const calculatePredictions = (data: Transaction[]) => {
-    // Group transactions by month
-    const expensesByMonth = data
-      .filter(tx => tx.type === 'EXPENSE')
-      .reduce<Record<string, number>>((acc, tx) => {
-        const month = new Date(tx.date).getMonth();
-        const year = new Date(tx.date).getFullYear();
-        const key = `${year}-${month}`;
-        if (!acc[key]) acc[key] = 0;
-        acc[key] += tx.amount;
-        return acc;
-      }, {});
-    
-    // Convert to array and sort by date
-    const monthlyExpenses = Object.entries(expensesByMonth)
-      .map(([date, amount]) => ({ date, amount }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-    
-    // Simple prediction based on average of last 3 months
-    if (monthlyExpenses.length >= 3) {
-      const lastThreeMonths = monthlyExpenses.slice(-3);
-      const average = lastThreeMonths.reduce((sum, item) => sum + item.amount, 0) / 3;
-      setPredictedExpense(average);
-    } else if (monthlyExpenses.length > 0) {
-      setPredictedExpense(monthlyExpenses[monthlyExpenses.length - 1].amount);
+    const monthlySeries = getMonthlyExpenseSeries(data);
+
+    if (monthlySeries.length === 0) {
+      setPredictedExpense(0);
+      return;
     }
+
+    const recentAmounts = monthlySeries
+      .slice(-6)
+      .map(point => point.amount);
+
+    const prediction = forecastNextMonth(recentAmounts);
+    setPredictedExpense(prediction);
   };
 
   const detectAnomalies = (data: Transaction[]) => {

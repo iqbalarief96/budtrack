@@ -33,6 +33,7 @@ export default function BudgetDashboard({ initialBudgets, categories, wallets }:
       if (response.ok) {
         const updatedBudgets = await response.json();
         setBudgets(updatedBudgets);
+        console.log('[DEBUG] Budgets refreshed with monthly reset logic');
       }
     } catch (error) {
       console.error('Failed to refresh budgets:', error);

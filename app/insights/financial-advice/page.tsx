@@ -25,6 +25,7 @@ interface FinancialAdvice {
   estimatedImpact?: number
   timeframe: string
   createdAt: string
+  source?: 'ai' | 'fallback' | null
 }
 
 // Types for Product Recommendations
@@ -53,6 +54,7 @@ export default function PersonalizedAdvicePage() {
   const [productsRefreshing, setProductsRefreshing] = useState(false)
   const [contentType, setContentType] = useState<'advice' | 'products'>('advice')
   const [productSource, setProductSource] = useState<'ai' | 'fallback' | null>(null)
+  const [adviceSource, setAdviceSource] = useState<'ai' | 'fallback' | null>(null)
   const { toast } = useToast()
   const router = useRouter()
   
@@ -85,8 +87,22 @@ export default function PersonalizedAdvicePage() {
       const savedAdvice = localStorage.getItem(storageKey)
       
       if (savedAdvice) {
-        // We have stored advice, use it
-        setAdvice(JSON.parse(savedAdvice))
+        try {
+          const parsed = JSON.parse(savedAdvice)
+          if (Array.isArray(parsed)) {
+            setAdvice(parsed)
+            setAdviceSource(null)
+            setIsAiConfigured(true)
+          } else {
+            setAdvice(Array.isArray(parsed.items) ? parsed.items : [])
+            setAdviceSource(parsed.source ?? null)
+            setIsAiConfigured(parsed.source !== 'fallback')
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse stored advice, refetching...', parseError)
+          fetchAdvice()
+          return
+        }
         setLoading(false)
       } else {
         // No stored advice yet, fetch it for the first time
@@ -100,26 +116,54 @@ export default function PersonalizedAdvicePage() {
   }
   
   // Function to fetch financial advice from API
-  const fetchAdvice = async () => {
+  const fetchAdvice = async (options: { skipAutoGenerate?: boolean; sourceOverride?: 'ai' | 'fallback' | null } = {}) => {
     setLoading(true)
     setError(null)
-    setIsAiConfigured(true)
     setIsTimeout(false)
     setSuggestedTimeframe(null)
     
     try {
-      const response = await fetch(`/api/financial-advice?timeframe=${timeframe}`)
+      const params = new URLSearchParams({ timeframe })
+      if (selectedWallet?.id) {
+        params.append('walletId', selectedWallet.id)
+      }
+      
+      const response = await fetch(`/api/financial-advice?${params.toString()}`)
       
       if (!response.ok) {
         throw new Error('Failed to fetch advice')
       }
       
-      const data = await response.json()
-      setAdvice(data)
+      const raw = await response.json()
+      const normalized: FinancialAdvice[] = Array.isArray(raw)
+        ? raw.map((item: any) => ({
+            id: item.id,
+            title: item.title ?? 'Financial Advice',
+            description: item.description ?? '',
+            type: item.type ?? 'general',
+            priority: item.priority ?? 'medium',
+            estimatedImpact: typeof item.estimatedImpact === 'number' ? item.estimatedImpact : undefined,
+            timeframe: item.timeframe ?? timeframe,
+            createdAt: item.createdAt ?? new Date().toISOString(),
+            source: item.source ?? options.sourceOverride ?? adviceSource ?? null
+          }))
+        : []
       
-      // Save to localStorage for this wallet and timeframe
+      setAdvice(normalized)
+      const effectiveSource = options.sourceOverride ?? adviceSource ?? null
+      setAdviceSource(effectiveSource)
+      setIsAiConfigured(effectiveSource !== 'fallback')
+      
+      if (normalized.length === 0 && !options.skipAutoGenerate) {
+        const generated = await refreshAdvice({ silent: true })
+        if (!generated) {
+          setSuggestedTimeframe(timeframe === 'month' ? 'quarter' : timeframe === 'quarter' ? 'year' : null)
+        }
+        return
+      }
+      
       const storageKey = `financial-advice-${selectedWallet?.id}-${timeframe}`
-      localStorage.setItem(storageKey, JSON.stringify(data))
+      localStorage.setItem(storageKey, JSON.stringify({ items: normalized, source: effectiveSource }))
     } catch (err) {
       console.error('Error fetching financial advice:', err)
       setError('Failed to load advice. Please try again.')
@@ -331,35 +375,71 @@ export default function PersonalizedAdvicePage() {
     setTimeframe(value as 'month' | 'quarter' | 'year' | 'all')
   }
   
-  const refreshAdvice = async () => {
-    try {
+  const refreshAdvice = async (options: { silent?: boolean } = {}) => {
+    const { silent = false } = options
+    if (!silent) {
       setRefreshing(true)
       setError(null)
+    }
+    
+    try {
+      const params = new URLSearchParams({ timeframe })
+      if (selectedWallet?.id) {
+        params.append('walletId', selectedWallet.id)
+      }
       
-      const response = await fetch(`/api/financial-advice/generate?timeframe=${timeframe}`, {
+      const response = await fetch(`/api/financial-advice/generate?${params.toString()}`, {
         method: 'POST'
       })
       
+      const payload = await response.json().catch(() => null)
+      
       if (!response.ok) {
-        throw new Error('Failed to generate new advice')
+        if (payload?.error?.includes('AI settings not configured')) {
+          setIsAiConfigured(false)
+        }
+        if (!silent) {
+          setError(payload?.error || 'Failed to generate new advice')
+          toast({
+            title: 'Error',
+            description: payload?.error || 'Failed to refresh advice. Please try again.',
+            variant: 'destructive',
+          })
+        }
+        return false
       }
       
-      await fetchAdvice()
+      const source = payload?.source === 'fallback' ? 'fallback' : 'ai'
+      setAdviceSource(source)
+      setIsAiConfigured(source !== 'fallback')
       
-      toast({
-        title: 'Advice Refreshed',
-        description: 'New financial recommendations have been generated for you.',
-      })
+      await fetchAdvice({ skipAutoGenerate: true, sourceOverride: source })
+      
+      if (!silent) {
+        toast({
+          title: source === 'ai' ? 'Advice Refreshed' : 'Advice Updated',
+          description: source === 'ai'
+            ? 'New AI-powered recommendations have been generated.'
+            : 'Using smart fallback recommendations based on your spending.',
+        })
+      }
+      
+      return true
     } catch (error) {
       console.error('Error refreshing advice:', error)
-      setError('Failed to refresh advice. Please try again.')
-      toast({
-        title: 'Error',
-        description: 'Failed to refresh advice. Please try again.',
-        variant: 'destructive',
-      })
+      if (!silent) {
+        setError('Failed to refresh advice. Please try again.')
+        toast({
+          title: 'Error',
+          description: 'Failed to refresh advice. Please try again.',
+          variant: 'destructive',
+        })
+      }
+      return false
     } finally {
-      setRefreshing(false)
+      if (!silent) {
+        setRefreshing(false)
+      }
     }
   }
   
@@ -408,7 +488,16 @@ export default function PersonalizedAdvicePage() {
           <p className="text-muted-foreground mb-6 max-w-md mx-auto">
             We haven't generated any financial advice for this time period yet.
           </p>
-          <Button onClick={refreshAdvice} disabled={refreshing}>
+          {suggestedTimeframe && (
+            <p className="text-xs text-gray-500 mb-6">
+              Tip: coba ganti ke{' '}
+              <span className="font-semibold">
+                {suggestedTimeframe === 'quarter' ? 'Quarterly' : suggestedTimeframe === 'year' ? 'Yearly' : 'Monthly'}
+              </span>{' '}
+              untuk lihat insight yang lebih kaya.
+            </p>
+          )}
+          <Button onClick={() => refreshAdvice()} disabled={refreshing}>
             <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Generate Advice
           </Button>
@@ -422,8 +511,25 @@ export default function PersonalizedAdvicePage() {
       return priorityOrder[a.priority.toLowerCase()] - priorityOrder[b.priority.toLowerCase()];
     });
     
+    const statusHeader = (
+      <div className="flex justify-between items-center mb-3">
+        {adviceSource && (
+          <Badge variant={adviceSource === 'ai' ? 'default' : 'outline'} className={adviceSource === 'ai' ? 'bg-blue-500' : 'bg-gray-100 text-gray-700'}>
+            {adviceSource === 'ai' ? 'AI Generated' : 'Smart Recommendations'}
+          </Badge>
+        )}
+        {refreshing && (
+          <div className="flex items-center text-sm text-blue-600">
+            <RefreshCw className="h-3 w-3 mr-2 animate-spin" />
+            Updating advice...
+          </div>
+        )}
+      </div>
+    );
+    
     return (
       <div className="space-y-4">
+        {statusHeader}
         {sortedAdvice.map((item) => (
           <AdviceCard key={item.id} advice={item} />
         ))}
@@ -541,15 +647,30 @@ export default function PersonalizedAdvicePage() {
           </p>
         </div>
         
-        <Button 
-          variant="outline"
-          onClick={contentType === 'advice' ? refreshAdvice : refreshProductRecommendations}
-          disabled={contentType === 'advice' ? refreshing : productsRefreshing}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${(contentType === 'advice' ? refreshing : productsRefreshing) ? 'animate-spin' : ''}`} />
-          Refresh {contentType === 'advice' ? 'Advice' : 'Recommendations'}
-        </Button>
-      </div>
+      <Button 
+        variant="outline"
+        onClick={() => (contentType === 'advice' ? refreshAdvice() : refreshProductRecommendations())}
+        disabled={contentType === 'advice' ? refreshing : productsRefreshing}
+      >
+        <RefreshCw className={`h-4 w-4 mr-2 ${(contentType === 'advice' ? refreshing : productsRefreshing) ? 'animate-spin' : ''}`} />
+        Refresh {contentType === 'advice' ? 'Advice' : 'Recommendations'}
+      </Button>
+    </div>
+
+      {!isAiConfigured && contentType === 'advice' && (
+        <Card className="mb-6 border-amber-200 bg-amber-50">
+          <CardContent className="py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <p className="text-amber-800 text-sm">
+                AI settings belum dikonfigurasi, jadi kita lagi pakai rekomendasi standar. Sambungkan provider AI kamu biar insight lebih personal.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="border-amber-300 text-amber-800">
+              <Link href="/settings">Configure AI</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       
       {error && contentType === 'advice' && (
         <Card className="mb-6 bg-red-50 border-red-200">

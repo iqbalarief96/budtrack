@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
-import { FiPlusCircle, FiCreditCard, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign, 
+import React, { useEffect, useMemo, useState } from 'react'
+import { FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign, 
   FiCreditCard as FiCreditCardIcon, FiGift, FiHeart, FiSmile, FiTruck, FiBookmark,
   FiShoppingCart, FiMusic, FiMonitor, FiActivity } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
+import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard'
 
 // Define Icon mapping
 const AVAILABLE_ICONS = [
@@ -23,6 +24,40 @@ const AVAILABLE_ICONS = [
   { name: 'FiMonitor', component: FiMonitor },
   { name: 'FiShoppingCart', component: FiShoppingCart }
 ]
+
+type BudgetSummary = {
+  id: string
+  name: string
+  amount: number
+  spent: number
+  percentage: number
+  walletId: string
+  category?: {
+    name: string
+  }
+}
+
+type WalletEmergencyFundSummary = {
+  walletId: string
+  walletName: string
+  currentAmount: number
+  walletBalance: number
+  targetRemaining: number
+  percentageOfTarget: number
+  totalSavings: number
+  savingsByType: Record<string, number>
+  currencyCode?: string
+}
+
+type EmergencyFundResponse = {
+  targetAmount: number
+  currentAmount: number
+  monthlyContribution: number
+  isActive: boolean
+  totalSavings: number
+  savingsByType: Record<string, number>
+  walletBreakdown?: WalletEmergencyFundSummary[]
+}
 
 // Define Wallet type
 type Wallet = {
@@ -47,9 +82,75 @@ const WalletsPage = () => {
   })
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  
+  const [budgets, setBudgets] = useState<BudgetSummary[]>([])
+  const [isBudgetsLoading, setIsBudgetsLoading] = useState(false)
+  const [budgetsError, setBudgetsError] = useState<string | null>(null)
+  const [emergencyFundData, setEmergencyFundData] = useState<EmergencyFundResponse | null>(null)
+  const [isEmergencyFundLoading, setIsEmergencyFundLoading] = useState(false)
+  const [emergencyFundError, setEmergencyFundError] = useState<string | null>(null)
+  const [walletEmergencyData, setWalletEmergencyData] = useState<Record<string, EmergencyFundResponse>>({})
+  const [walletEmergencyLoading, setWalletEmergencyLoading] = useState(false)
+  const [walletEmergencyErrors, setWalletEmergencyErrors] = useState<Record<string, string>>({})
+
   // Calculate total balance
-  const totalBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0)
+  const totalBalance = useMemo(
+    () => wallets.reduce((sum, wallet) => sum + wallet.balance, 0),
+    [wallets]
+  )
+
+  const walletCount = wallets.length
+  const largestWallet = useMemo(
+    () => wallets.slice().sort((a, b) => b.balance - a.balance)[0] || null,
+    [wallets]
+  )
+
+  const averageBalance = useMemo(() => {
+    if (!wallets.length) return 0
+    return totalBalance / wallets.length
+  }, [totalBalance, wallets.length])
+
+  const defaultWallet = useMemo(
+    () => wallets.find((wallet) => wallet.isDefault) || null,
+    [wallets]
+  )
+
+  const walletShares = useMemo(() => {
+    if (totalBalance <= 0) {
+      return wallets.map((wallet) => ({
+        id: wallet.id,
+        name: wallet.name,
+        balance: wallet.balance,
+        percentage: 0,
+        color: wallet.color,
+        currencyCode: wallet.currencyCode
+      }))
+    }
+
+    return wallets.map((wallet) => ({
+      id: wallet.id,
+      name: wallet.name,
+      balance: wallet.balance,
+      percentage: Math.round((wallet.balance / totalBalance) * 100),
+      color: wallet.color,
+      currencyCode: wallet.currencyCode
+    }))
+  }, [wallets, totalBalance])
+
+  const emergencyTargetAmount = emergencyFundData?.targetAmount ?? 0
+  const emergencyCurrentAmount = emergencyFundData?.currentAmount ?? 0
+  const emergencyRemainingAmount = Math.max(0, emergencyTargetAmount - emergencyCurrentAmount)
+  const emergencyProgress =
+    emergencyTargetAmount > 0
+      ? Math.min(100, Math.round((emergencyCurrentAmount / emergencyTargetAmount) * 100))
+      : 0
+  const emergencySavingsEntries = Object.entries(emergencyFundData?.savingsByType ?? {})
+    .filter(([, amount]) => amount > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+  const totalEmergencyCategories = emergencyFundData ? Object.keys(emergencyFundData.savingsByType ?? {}).length : 0
+  const emergencyExtraCount = Math.max(0, totalEmergencyCategories - emergencySavingsEntries.length)
+  const showEmergencyOverview =
+    Boolean(emergencyFundData?.isActive && emergencyTargetAmount > 0 && emergencyCurrentAmount >= 0)
 
   // Reset form
   const resetForm = () => {
@@ -141,6 +242,139 @@ const WalletsPage = () => {
     return IconComponent;
   }
 
+  useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchBudgets = async () => {
+      setIsBudgetsLoading(true)
+      setBudgetsError(null)
+      try {
+        const response = await fetch('/api/budgets', { signal: controller.signal })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || 'Failed to fetch budgets')
+        }
+        const data: BudgetSummary[] = await response.json()
+        if (!controller.signal.aborted) {
+          setBudgets(data)
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return
+        console.error('Error fetching budgets:', err)
+        setBudgetsError(err instanceof Error ? err.message : 'Gagal memuat anggaran')
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsBudgetsLoading(false)
+        }
+      }
+    }
+
+    fetchBudgets()
+
+    return () => {
+      controller.abort()
+    }
+  }, [wallets])
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    const fetchEmergencyFund = async () => {
+      setIsEmergencyFundLoading(true)
+      setEmergencyFundError(null)
+      try {
+        const response = await fetch('/api/emergency-fund', { signal: controller.signal })
+        const data: EmergencyFundResponse = await response.json()
+
+        if (!response.ok) {
+          throw new Error((data as any)?.error || 'Failed to fetch emergency fund data')
+        }
+
+        if (!controller.signal.aborted) {
+          setEmergencyFundData(data)
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return
+        console.error('Error fetching emergency fund data:', err)
+        setEmergencyFundError(err instanceof Error ? err.message : 'Gagal memuat data dana darurat')
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsEmergencyFundLoading(false)
+        }
+      }
+    }
+
+    fetchEmergencyFund()
+
+    return () => {
+      controller.abort()
+    }
+  }, [wallets.length])
+
+  useEffect(() => {
+    if (!wallets.length) {
+      setWalletEmergencyData({})
+      setWalletEmergencyErrors({})
+      setWalletEmergencyLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+
+    const fetchWalletEmergency = async () => {
+      setWalletEmergencyLoading(true)
+      setWalletEmergencyErrors({})
+      try {
+        const results = await Promise.all(
+          wallets.map(async (wallet) => {
+            try {
+              const response = await fetch(`/api/emergency-fund?walletId=${wallet.id}`, {
+                signal: controller.signal,
+              })
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}))
+                throw new Error((data as any).error || 'Failed to fetch emergency fund data')
+              }
+              const data: EmergencyFundResponse = await response.json()
+              return { id: wallet.id, data }
+            } catch (err) {
+              if (controller.signal.aborted) return null
+              console.error(`Error fetching emergency fund for wallet ${wallet.id}:`, err)
+              return { id: wallet.id, error: err instanceof Error ? err.message : 'Unknown error' }
+            }
+          })
+        )
+
+        if (controller.signal.aborted) return
+
+        const dataMap: Record<string, EmergencyFundResponse> = {}
+        const errorMap: Record<string, string> = {}
+
+        for (const result of results) {
+          if (!result) continue
+          if ('data' in result) {
+            dataMap[result.id] = result.data
+          } else if ('error' in result) {
+            errorMap[result.id] = result.error
+          }
+        }
+
+        setWalletEmergencyData(dataMap)
+        setWalletEmergencyErrors(errorMap)
+      } finally {
+        if (!controller.signal.aborted) {
+          setWalletEmergencyLoading(false)
+        }
+      }
+    }
+
+    fetchWalletEmergency()
+
+    return () => {
+      controller.abort()
+    }
+  }, [wallets])
+
   if (isLoading) {
     return <div>Loading...</div>
   }
@@ -163,13 +397,153 @@ const WalletsPage = () => {
         <h2 className="text-lg font-medium text-gray-700 mb-1">Total Saldo</h2>
         <p className="text-3xl font-bold">{formatCurrency(totalBalance)}</p>
       </div>
+
+      {/* Quick stats */}
+      {walletCount > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="card">
+            <p className="text-sm text-gray-500 mb-1">Jumlah Dompet</p>
+            <p className="text-2xl font-semibold">{walletCount}</p>
+            {defaultWallet && (
+              <p className="text-xs text-gray-500 mt-1">
+                Default: <span className="font-medium text-gray-700">{defaultWallet.name}</span>
+              </p>
+            )}
+          </div>
+          <div className="card">
+            <p className="text-sm text-gray-500 mb-1">Dompet Terbesar</p>
+            {largestWallet ? (
+              <>
+                <p className="text-lg font-semibold">{largestWallet.name}</p>
+                <p className="text-sm text-gray-500">
+                  {formatCurrency(largestWallet.balance, largestWallet.currencyCode)}
+                </p>
+              </>
+            ) : (
+              <p className="text-base text-gray-400">Belum ada dompet</p>
+            )}
+          </div>
+          <div className="card">
+            <p className="text-sm text-gray-500 mb-1">Saldo Rata-rata</p>
+            <p className="text-lg font-semibold">{formatCurrency(averageBalance)}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Menggunakan semua dompet aktif
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency fund & balance distribution */}
+      <div className={`grid grid-cols-1 gap-4 ${showEmergencyOverview ? 'lg:grid-cols-2' : ''}`}>
+        {showEmergencyOverview && (
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium text-gray-700">Dana Darurat</h2>
+              {isEmergencyFundLoading && <span className="text-xs text-gray-400">memuat…</span>}
+            </div>
+
+            {emergencyFundError ? (
+              <p className="text-sm text-red-500">{emergencyFundError}</p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-2xl font-semibold">{formatCurrency(emergencyCurrentAmount)}</p>
+                  <p className="text-xs text-gray-500">
+                    dari target {formatCurrency(emergencyTargetAmount)}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Progress</span>
+                    <span>{emergencyProgress}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-2 rounded-full bg-blue-500 transition-all"
+                      style={{ width: `${emergencyProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Sisa target {formatCurrency(emergencyRemainingAmount)}
+                  </p>
+                </div>
+
+                {emergencySavingsEntries.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                      Tabungan Teratas
+                    </p>
+                    <div className="space-y-1">
+                      {emergencySavingsEntries.map(([label, amount]) => (
+                        <div key={label} className="flex justify-between text-xs text-gray-600">
+                          <span>{label}</span>
+                          <span>{formatCurrency(amount)}</span>
+                        </div>
+                      ))}
+                      {emergencyExtraCount > 0 && (
+                        <p className="text-[11px] text-gray-400">
+                          +{emergencyExtraCount} kategori tabungan lainnya
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {walletShares.length > 0 && (
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium text-gray-700">Distribusi Saldo</h2>
+              <span className="text-xs text-gray-400">Persentase dari total saldo</span>
+            </div>
+            <div className="space-y-4">
+              {walletShares.map((walletShare) => (
+                <div key={walletShare.id} className="space-y-1">
+                  <div className="flex justify-between text-sm font-medium text-gray-700">
+                    <span>{walletShare.name}</span>
+                    <span>{walletShare.percentage}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-2 rounded-full transition-all"
+                      style={{
+                        width: `${walletShare.percentage}%`,
+                        backgroundColor: walletShare.color || '#2563EB'
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {formatCurrency(walletShare.balance, walletShare.currencyCode)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Budgets fetch error */}
+      {budgetsError && (
+        <div className="card border border-red-100 bg-red-50 text-red-700">
+          <p className="text-sm font-medium">Gagal memuat data anggaran</p>
+          <p className="text-xs mt-1">{budgetsError}</p>
+        </div>
+      )}
       
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {wallets.map((wallet) => {
           const WalletIcon = getWalletIcon(wallet.icon);
+          const walletBudgets = budgets.filter((budget) => budget.walletId === wallet.id);
+          const displayedBudgets = walletBudgets.slice(0, 3);
+          const hasMoreBudgets = walletBudgets.length > displayedBudgets.length;
           return (
-            <div key={wallet.id} className="card">
+            <div key={wallet.id} className="space-y-4">
+              <div className="card">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center">
                   <div 
@@ -206,6 +580,53 @@ const WalletsPage = () => {
                 <p className="text-gray-500 text-sm">Saldo</p>
                 <p className="text-xl font-bold">{formatCurrency(wallet.balance, wallet.currencyCode)}</p>
               </div>
+
+              <div className="mt-4 border-t pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700">Anggaran Aktif</p>
+                  {isBudgetsLoading && (
+                    <span className="text-xs text-gray-400">memuat…</span>
+                  )}
+                </div>
+                {displayedBudgets.length === 0 && !isBudgetsLoading ? (
+                  <p className="text-xs text-gray-500">
+                    Belum ada anggaran yang dikaitkan dengan dompet ini.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {displayedBudgets.map((budget) => (
+                      <div key={budget.id} className="space-y-1">
+                        <div className="flex justify-between text-xs font-medium text-gray-600">
+                          <span>{budget.name}</span>
+                          <span>{budget.percentage}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-1.5 rounded-full bg-blue-500 transition-all"
+                            style={{ width: `${Math.min(budget.percentage, 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[11px] text-gray-500">
+                          {formatCurrency(budget.spent)} dari {formatCurrency(budget.amount)}
+                          {budget.category?.name ? ` • ${budget.category.name}` : ''}
+                        </p>
+                      </div>
+                    ))}
+                    {hasMoreBudgets && (
+                      <p className="text-[11px] text-blue-600">
+                        +{walletBudgets.length - displayedBudgets.length} anggaran lainnya
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              </div>
+
+              <EmergencyFundCard
+                walletId={wallet.id}
+                className="shadow-none border border-gray-200 bg-white"
+              />
             </div>
           );
         })}

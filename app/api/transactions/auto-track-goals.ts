@@ -23,18 +23,52 @@ export async function autoTrackTransactionToGoals(
     
     if (!category) return;
     
-    // Cari goals yang melacak kategori ini dengan cara yang lebih aman
-    // Menggunakan raw query karena model mungkin belum ter-generate dengan baik
-    const results = await prisma.$queryRaw`
-      SELECT g.id as goalId, g.name, g.current, g.target, g.status, g.type as goalType
-      FROM "Goal" g
-      JOIN "GoalCategory" gc ON g.id = gc."goalId"
-      WHERE gc."categoryId" = ${categoryId}
-        AND g."userId" = ${userId}
-        AND g.status = 'ONGOING'
-    `;
-    
-    const goalCategories = Array.isArray(results) ? results : [];
+    // Cari goals yang melacak kategori ini.
+    // Catatan: beberapa environment belum memiliki tabel GoalCategory.
+    let goalCategories: Array<{
+      goalId: string;
+      goalType?: string | null;
+      name?: string | null;
+      current?: number | null;
+      target?: number | null;
+      status?: string | null;
+    }> = [];
+
+    try {
+      const results = await prisma.$queryRaw<
+        Array<{
+          goalId: string;
+          goalType?: string | null;
+          name?: string | null;
+          current?: number | null;
+          target?: number | null;
+          status?: string | null;
+        }>
+      >`
+        SELECT g.id as goalId, g.name, g.current, g.target, g.status, g.type as goalType
+        FROM "Goal" g
+        JOIN "GoalCategory" gc ON g.id = gc."goalId"
+        WHERE gc."categoryId" = ${categoryId}
+          AND g."userId" = ${userId}
+          AND g.status = 'ONGOING'
+      `;
+
+      goalCategories = Array.isArray(results) ? results : [];
+    } catch (rawError: any) {
+      const isMissingJoinTable =
+        rawError?.code === 'P2010' &&
+        typeof rawError?.meta?.message === 'string' &&
+        rawError.meta.message.includes('GoalCategory');
+
+      if (isMissingJoinTable) {
+        console.warn(
+          '[autoTrackTransactionToGoals] GoalCategory table tidak ditemukan. Melewati auto tracking untuk kategori ini.'
+        );
+        return;
+      }
+
+      throw rawError;
+    }
     if (goalCategories.length === 0) {
       return; // Tidak ada goal yang melacak kategori ini
     }

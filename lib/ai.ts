@@ -30,7 +30,7 @@ async function generateDeepseekResponse(params: AIRequestParams) {
           }
         ],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 2000
       }),
       signal: controller.signal
     })
@@ -44,11 +44,18 @@ async function generateDeepseekResponse(params: AIRequestParams) {
     }
 
     const data = await response.json();
-    if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+    const choice = data.choices?.[0];
+    const message = choice?.message?.content;
+
+    if (!message) {
       throw new Error('Invalid response format from DeepSeek API');
     }
     
-    return data.choices[0].message.content;
+    if (choice?.finish_reason === 'length') {
+      console.warn('DeepSeek response truncated because max_tokens was hit. Consider increasing the limit.');
+    }
+    
+    return message;
   } catch (error: unknown) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('Request to DeepSeek API timed out after 30 seconds');
@@ -97,7 +104,7 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
           }
         ],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 2000
       }),
       signal: controller.signal
     })
@@ -111,11 +118,18 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
     }
 
     const data = await response.json();
-    if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+    const choice = data.choices?.[0];
+    const message = choice?.message?.content;
+
+    if (!message) {
       throw new Error('Invalid response format from OpenRouter API');
     }
     
-    return data.choices[0].message.content;
+    if (choice?.finish_reason === 'length') {
+      console.warn('OpenRouter response truncated because max_tokens was hit. Consider increasing the limit or reducing prompt size.');
+    }
+
+    return message;
   } catch (error: unknown) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('Request to OpenRouter API timed out. For "All Time" data, try using a more specific timeframe like Month, Quarter, or Year.');

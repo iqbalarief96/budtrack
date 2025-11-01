@@ -2,6 +2,159 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import type { Wallet } from '@prisma/client';
+
+const DEFAULT_SAVINGS_LABEL = 'Tabungan Lainnya';
+
+const SAVINGS_KEYWORD_MAPPINGS = [
+  { label: 'Tabungan Darurat', keywords: ['darurat', 'emergency'] },
+  { label: 'Tabungan Pendidikan', keywords: ['pendidikan', 'school', 'kuliah', 'education'] },
+  { label: 'Tabungan Liburan', keywords: ['liburan', 'travel', 'traveling', 'vacation', 'holiday', 'umroh', 'haji'] },
+  { label: 'Tabungan Pensiun', keywords: ['pensiun', 'retirement'] },
+  { label: 'Tabungan Properti', keywords: ['rumah', 'properti', 'property', 'kpr', 'house', 'apartemen', 'apartment'] },
+  { label: 'Tabungan Kendaraan', keywords: ['kendaraan', 'mobil', 'motor', 'car', 'bike'] },
+  { label: 'Tabungan Bank', keywords: ['bank', 'rekening', 'account'] },
+  { label: 'Tabungan Emas', keywords: ['emas', 'gold', 'logam mulia'] },
+  { label: 'Tabungan Crypto', keywords: ['crypto', 'kripto', 'btc', 'bitcoin', 'eth', 'ethereum'] },
+  { label: 'Tabungan Investasi', keywords: ['investasi', 'investment', 'reksa', 'reksadana', 'saham', 'stock', 'obligasi', 'bond'] },
+  { label: 'Tabungan Deposito', keywords: ['deposito', 'deposit', 'term deposit'] },
+];
+
+type TransactionWithRelations = Awaited<ReturnType<typeof prisma.transaction.findMany>>[number];
+
+type WalletEmergencySummary = {
+  walletId: string;
+  walletName: string;
+  currentAmount: number;
+  walletBalance: number;
+  targetRemaining: number;
+  percentageOfTarget: number;
+  totalSavings: number;
+  savingsByType: Record<string, number>;
+  currencyCode: string;
+};
+
+function normalizeSpace(value: string) {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function toTitleCase(value: string) {
+  return normalizeSpace(value)
+    .split(' ')
+    .map(word => (word ? `${word[0].toUpperCase()}${word.slice(1)}` : ''))
+    .join(' ')
+    .trim();
+}
+
+function determineSavingsLabel(tx: TransactionWithRelations): string | null {
+  const description = (tx.description ?? '').toLowerCase();
+  // @ts-ignore - tx.category is available from the join
+  const categoryName = (tx.category?.name ?? '').toLowerCase();
+  const walletName = (tx as any)?.wallet?.name ? String((tx as any).wallet.name).toLowerCase() : '';
+
+  // @ts-ignore - tx.category is available from the join
+  const categoryType = tx.category?.type?.toUpperCase();
+
+  const sources = [description, categoryName, walletName].filter(Boolean);
+
+  const keywordMapping = SAVINGS_KEYWORD_MAPPINGS.find(mapping =>
+    mapping.keywords.some(keyword => sources.some(source => source.includes(keyword)))
+  );
+
+  const hasTabunganPrefix = sources.some(source => source.includes('tabungan'));
+  const explicitSavings = categoryType === 'SAVINGS';
+  const hasSavingsKeyword =
+    keywordMapping ||
+    sources.some(source => source.includes('saving')) ||
+    sources.some(source => source.includes('menabung'));
+
+  if (!explicitSavings && !hasTabunganPrefix && !keywordMapping && !hasSavingsKeyword) {
+    return null;
+  }
+
+  if (keywordMapping) {
+    return keywordMapping.label;
+  }
+
+  const tabunganMatch = sources
+    .map(source => source.match(/tabungan\s+([a-z0-9\s]+)/i))
+    .find(Boolean);
+
+  if (tabunganMatch && tabunganMatch[1]) {
+    return `Tabungan ${toTitleCase(tabunganMatch[1])}`;
+  }
+
+  if (categoryName.includes('tabungan')) {
+    const cleaned = categoryName.replace(/tabungan/gi, '').trim();
+    return `Tabungan ${cleaned ? toTitleCase(cleaned) : 'Lainnya'}`;
+  }
+
+  if (walletName.includes('tabungan')) {
+    const cleaned = walletName.replace(/tabungan/gi, '').trim();
+    return `Tabungan ${cleaned ? toTitleCase(cleaned) : 'Lainnya'}`;
+  }
+
+  if (explicitSavings && categoryName) {
+    return `Tabungan ${toTitleCase(categoryName)}`;
+  }
+
+  if (hasSavingsKeyword) {
+    return DEFAULT_SAVINGS_LABEL;
+  }
+
+  return null;
+}
+
+async function calculateSavingsSummary(userId: string, walletId?: string | null) {
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      userId,
+      type: 'EXPENSE',
+      ...(walletId ? { walletId } : {})
+    },
+    include: {
+      category: true,
+      wallet: true
+    },
+    orderBy: {
+      date: 'desc'
+    }
+  });
+
+  const summary = {
+    total: 0,
+    byType: {} as Record<string, number>,
+    debug: [] as Array<{ id: string; label: string; amount: number; error?: string }>
+  };
+
+  for (const tx of transactions) {
+    const label = determineSavingsLabel(tx);
+    if (!label) {
+      continue;
+    }
+
+    const rawAmount = Number(tx.amount);
+    if (!Number.isFinite(rawAmount)) {
+      continue;
+    }
+
+    const amount = Math.abs(rawAmount);
+
+    if (!summary.byType[label]) {
+      summary.byType[label] = 0;
+    }
+
+    summary.byType[label] += amount;
+    summary.total += amount;
+    summary.debug.push({
+      id: tx.id,
+      label,
+      amount
+    });
+  }
+
+  return summary;
+}
 
 export async function GET(req: Request) {
   try {
@@ -49,6 +202,8 @@ export async function GET(req: Request) {
       targetAmount = 5000000;
     }
     
+    let selectedWallet: Wallet | null = null;
+
     // If walletId is specified, filter the emergency fund amount by wallet
     if (walletId) {
       try {
@@ -60,6 +215,7 @@ export async function GET(req: Request) {
         });
         
         if (wallet) {
+          selectedWallet = wallet;
           // We're assuming the wallet balance represents the emergency fund
           currentAmount = wallet.balance;
         }
@@ -75,161 +231,91 @@ export async function GET(req: Request) {
     // Fetch savings transactions using simpler, more reliable logic
     let savingsByType: Record<string, number> = {};
     let totalSavings = 0;
-    
+    let savingsDebug: Array<{ id: string; label: string; amount: number }> | undefined;
+    let baseSavingsSummary: Awaited<ReturnType<typeof calculateSavingsSummary>> | null = null;
+
     try {
-      // First simple attempt - get all transactions
-      const transactions = await prisma.transaction.findMany({
-        where: {
-          userId: user.id,
-          type: 'EXPENSE',
-          ...(walletId ? { walletId } : {})
-        },
-        include: {
-          category: true
-        },
-        orderBy: {
-          date: 'desc'
-        }
-      });
-      
-      console.log(`Found ${transactions.length} total transactions`);
-      
-      // Debug output sample transactions
-      if (transactions.length > 0) {
-        console.log('Sample transactions:', transactions.slice(0, 3).map(tx => ({
-          id: tx.id,
-          description: tx.description,
-          amount: tx.amount,
-          category: tx.category ? {
-            id: tx.category.id,
-            name: tx.category.name,
-            type: tx.category.type
-          } : null
-        })));
+      baseSavingsSummary = await calculateSavingsSummary(user.id, walletId);
+      savingsByType = baseSavingsSummary.byType;
+      totalSavings = baseSavingsSummary.total;
+      if (process.env.NODE_ENV !== 'production' && url.searchParams.get('debug') === 'true') {
+        savingsDebug = baseSavingsSummary.debug;
       }
-      
-      // Filter savings transactions in JavaScript for more reliability
-      const savingsTransactions = transactions.filter(tx => {
-        // Check if description contains "tabungan" case insensitive
-        const hasTabunganInDesc = tx.description && 
-          tx.description.toLowerCase().includes('tabungan');
-          
-        // Check if category is of type SAVINGS
-        const hasSavingsCategory = tx.category && 
-          tx.category.type && 
-          tx.category.type.toUpperCase() === 'SAVINGS';
-          
-        return hasTabunganInDesc || hasSavingsCategory;
-      });
-      
-      console.log(`Filtered to ${savingsTransactions.length} savings transactions`);
-      
-      // Debug output sample savings transactions
-      if (savingsTransactions.length > 0) {
-        console.log('Sample savings transactions:', savingsTransactions.slice(0, 3).map(tx => ({
-          id: tx.id,
-          description: tx.description,
-          amount: tx.amount,
-          category: tx.category ? {
-            id: tx.category.id,
-            name: tx.category.name,
-            type: tx.category.type
-          } : null
-        })));
-      }
-      
-      // Helper function to process description and identify savings type
-      function identifySavingsType(description: string) {
-        if (!description) return 'Tabungan Lainnya';
-        
-        const desc = description.toLowerCase();
-        let savingsType = 'Tabungan Lainnya';
-        
-        console.log(`Processing description: "${desc}"`);
-        
-        // Special case for Bank Bandung
-        if (desc.includes('bank bandung')) {
-          console.log('MATCH: Found "Bank Bandung"');
-          return 'Tabungan Bank Bandung';
-        }
-        
-        // Try to extract full name after "Tabungan "
-        const fullMatchRegex = /tabungan\s+(.*?)(\s*$|\/)/i;
-        const fullMatch = desc.match(fullMatchRegex);
-        
-        if (fullMatch && fullMatch[1]) {
-          const extractedType = fullMatch[1].trim();
-          console.log(`MATCH: Extracted "${extractedType}" from "${desc}"`);
-          
-          // For multi-word types, capitalize each word
-          if (extractedType.includes(' ')) {
-            savingsType = 'Tabungan ' + extractedType.split(' ')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
-          } else {
-            // For single word, just capitalize first letter
-            savingsType = 'Tabungan ' + extractedType.charAt(0).toUpperCase() + extractedType.slice(1);
-          }
-          
-          console.log(`Final savings type: "${savingsType}"`);
-          return savingsType;
-        }
-        
-        // Keyword matching if regex extraction didn't work
-        if (desc.includes('pendidikan')) {
-          return 'Tabungan Pendidikan';
-        } else if (desc.includes('liburan') || desc.includes('traveling') || desc.includes('travel')) {
-          return 'Tabungan Liburan';
-        } else if (desc.includes('darurat') || desc.includes('emergency')) {
-          return 'Tabungan Darurat';
-        } else if (desc.includes('pensiun') || desc.includes('retirement')) {
-          return 'Tabungan Pensiun';
-        } else if (desc.includes('rumah') || desc.includes('properti')) {
-          return 'Tabungan Properti';
-        } else if (desc.includes('mobil') || desc.includes('motor') || desc.includes('kendaraan')) {
-          return 'Tabungan Kendaraan';
-        } else if (desc.includes('bank')) {
-          return 'Tabungan Bank';
-        } else if (desc.includes('emas')) {
-          return 'Tabungan Emas';
-        } else if (desc.includes('btc') || desc.includes('bitcoin')) {
-          return 'Tabungan Btc';
-        }
-        
-        // Default fallback
-        return 'Tabungan Lainnya';
-      }
-      
-      // Process savings transactions
-      for (const tx of savingsTransactions) {
-        // Use the helper function to identify savings type
-        const savingsType = identifySavingsType(tx.description || '');
-        console.log(`Transaction "${tx.description}" categorized as "${savingsType}"`);
-        
-        // Add to the appropriate savings type
-        if (!savingsByType[savingsType]) {
-          savingsByType[savingsType] = 0;
-        }
-        
-        savingsByType[savingsType] += tx.amount;
-        totalSavings += tx.amount;
-      }
-      
-      console.log('Final savings categories:', Object.keys(savingsByType));
-      console.log('Final savings data:', savingsByType);
-      console.log('Successfully processed savings data');
-      
     } catch (txError) {
       console.error('Error processing transactions, using fallback:', txError);
-      
-      // Fallback to empty data if error occurs - don't break the API
       savingsByType = {};
       totalSavings = 0;
+      if (process.env.NODE_ENV !== 'production' && url.searchParams.get('debug') === 'true') {
+          savingsDebug = [{
+            id: 'error',
+            label: 'ERROR: ' + (txError instanceof Error ? txError.message : 'Unknown error'),
+            amount: 0
+          }];
+      }
     }
+    
+    totalSavings = Math.max(totalSavings, 0);
+
+    // IMPORTANT: If walletId is provided, ALWAYS use wallet balance, never use totalSavings
+    if (walletId) {
+      // Keep currentAmount as wallet.balance (set earlier)
+      console.log('[DEBUG] Using wallet balance only:', currentAmount);
+    } else {
+      // Only use totalSavings when no wallet is selected
+      currentAmount = totalSavings;
+      console.log('[DEBUG] No walletId, using totalSavings:', currentAmount);
+    }
+
+    // Make sure currentAmount is never negative
+    currentAmount = Math.max(currentAmount, 0);
     
     // If no savings were found or error occurred, provide empty object
     if (Object.keys(savingsByType).length === 0) {
       console.log('No savings found, using empty object');
+    }
+    
+    const mapWalletSummary = (
+      wallet: Wallet,
+      summary: Awaited<ReturnType<typeof calculateSavingsSummary>>
+    ): WalletEmergencySummary => {
+      const summaryTotal = Math.max(summary.total, 0);
+      const currentAmountForWallet = summaryTotal > 0 ? summaryTotal : wallet.balance;
+      const targetRemaining = Math.max(0, targetAmount - currentAmountForWallet);
+      const percentageOfTarget =
+        targetAmount > 0 ? Math.min(100, Math.round((currentAmountForWallet / targetAmount) * 100)) : 0;
+
+      return {
+        walletId: wallet.id,
+        walletName: wallet.name,
+        currentAmount: currentAmountForWallet,
+        walletBalance: wallet.balance,
+        targetRemaining,
+        percentageOfTarget,
+        totalSavings: summaryTotal,
+        savingsByType: summary.byType,
+        currencyCode: wallet.currencyCode,
+      };
+    };
+
+    let walletBreakdown: WalletEmergencySummary[] = [];
+
+    if (walletId && selectedWallet) {
+      const summary = baseSavingsSummary ?? (await calculateSavingsSummary(user.id, selectedWallet.id));
+      walletBreakdown = [mapWalletSummary(selectedWallet, summary)];
+    }
+
+    if (!walletId) {
+      const userWallets = await prisma.wallet.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      walletBreakdown = await Promise.all(
+        userWallets.map(async (wallet) => {
+          const summary = await calculateSavingsSummary(user.id, wallet.id);
+          return mapWalletSummary(wallet, summary);
+        })
+      );
     }
     
     // If no emergency fund exists, return default values
@@ -240,7 +326,9 @@ export async function GET(req: Request) {
         monthlyContribution: 500000, // Reasonable default
         isActive: false,
         totalSavings: totalSavings,
-        savingsByType: savingsByType
+        savingsByType: savingsByType,
+        walletBreakdown,
+        ...(savingsDebug ? { debug: savingsDebug } : {})
       }, {
         headers: {
           'Cache-Control': 'no-store, max-age=0',
@@ -255,7 +343,9 @@ export async function GET(req: Request) {
       monthlyContribution: user.emergencyFund.monthlyContribution,
       isActive: user.emergencyFund.isActive,
       totalSavings: totalSavings,
-      savingsByType: savingsByType
+      savingsByType: savingsByType,
+      walletBreakdown,
+      ...(savingsDebug ? { debug: savingsDebug } : {})
     }, {
       headers: {
         'Cache-Control': 'no-store, max-age=0',
@@ -320,129 +410,24 @@ export async function POST(request: NextRequest) {
       currentAmount = user.emergencyFund.currentAmount;
     }
     
-    // Fetch savings transactions using simpler, more reliable logic
+    // Fetch savings transactions using the shared helper for consistent classification
     let savingsByType: Record<string, number> = {};
     let totalSavings = 0;
-    
-    try {
-      // First simple attempt - get all transactions
-      const transactions = await prisma.transaction.findMany({
-        where: {
-          userId: user.id,
-          type: 'EXPENSE',
-          ...(walletId ? { walletId } : {})
-        },
-        include: {
-          category: true
-        },
-        orderBy: {
-          date: 'desc'
-        }
-      });
-      
-      // Filter savings transactions in JavaScript for more reliability
-      const savingsTransactions = transactions.filter(tx => {
-        // Check if description contains "tabungan" case insensitive
-        const hasTabunganInDesc = tx.description && 
-          tx.description.toLowerCase().includes('tabungan');
-          
-        // Check if category is of type SAVINGS
-        const hasSavingsCategory = tx.category && 
-          tx.category.type && 
-          tx.category.type.toUpperCase() === 'SAVINGS';
-          
-        return hasTabunganInDesc || hasSavingsCategory;
-      });
-      
-      // Debug output sample savings transactions
-      if (savingsTransactions.length > 0) {
-        console.log('Sample savings transactions:', savingsTransactions.slice(0, 3).map(tx => ({
-          id: tx.id,
-          description: tx.description,
-          amount: tx.amount,
-          category: tx.category ? {
-            id: tx.category.id,
-            name: tx.category.name,
-            type: tx.category.type
-          } : null
-        })));
-      }
 
-      // Helper function to process description and identify savings type
-      function identifySavingsType(description: string) {
-        if (!description) return 'Tabungan Lainnya';
-        
-        const desc = description.toLowerCase();
-        let savingsType = 'Tabungan Lainnya';
-        
-        // Special case for Bank Bandung
-        if (desc.includes('bank bandung')) {
-          return 'Tabungan Bank Bandung';
-        }
-        
-        // Try to extract full name after "Tabungan "
-        const fullMatchRegex = /tabungan\s+(.*?)(\s*$|\/)/i;
-        const fullMatch = desc.match(fullMatchRegex);
-        
-        if (fullMatch && fullMatch[1]) {
-          const extractedType = fullMatch[1].trim();
-          
-          // For multi-word types, capitalize each word
-          if (extractedType.includes(' ')) {
-            savingsType = 'Tabungan ' + extractedType.split(' ')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
-          } else {
-            // For single word, just capitalize first letter
-            savingsType = 'Tabungan ' + extractedType.charAt(0).toUpperCase() + extractedType.slice(1);
-          }
-          
-          return savingsType;
-        }
-        
-        // Keyword matching if regex extraction didn't work
-        if (desc.includes('pendidikan')) {
-          return 'Tabungan Pendidikan';
-        } else if (desc.includes('liburan') || desc.includes('traveling') || desc.includes('travel')) {
-          return 'Tabungan Liburan';
-        } else if (desc.includes('darurat') || desc.includes('emergency')) {
-          return 'Tabungan Darurat';
-        } else if (desc.includes('pensiun') || desc.includes('retirement')) {
-          return 'Tabungan Pensiun';
-        } else if (desc.includes('rumah') || desc.includes('properti')) {
-          return 'Tabungan Properti';
-        } else if (desc.includes('mobil') || desc.includes('motor') || desc.includes('kendaraan')) {
-          return 'Tabungan Kendaraan';
-        } else if (desc.includes('bank')) {
-          return 'Tabungan Bank';
-        } else if (desc.includes('emas')) {
-          return 'Tabungan Emas';
-        } else if (desc.includes('btc') || desc.includes('bitcoin')) {
-          return 'Tabungan Btc';
-        }
-        
-        // Default fallback
-        return 'Tabungan Lainnya';
-      }
+    try {
+      const savingsSummary = await calculateSavingsSummary(user.id, walletId);
+      savingsByType = savingsSummary.byType;
+      totalSavings = savingsSummary.total;
       
-      // Process savings transactions
-      for (const tx of savingsTransactions) {
-        // Use the helper function to identify savings type
-        const savingsType = identifySavingsType(tx.description || '');
-        
-        // Add to the appropriate savings type
-        if (!savingsByType[savingsType]) {
-          savingsByType[savingsType] = 0;
-        }
-        
-        savingsByType[savingsType] += tx.amount;
-        totalSavings += tx.amount;
+      // Only use totalSavings if walletId is not specified
+      if (!walletId) {
+        console.log('[DEBUG] POST: No walletId, using totalSavings for currentAmount:', totalSavings);
+        currentAmount = Math.max(0, totalSavings);
+      } else {
+        console.log('[DEBUG] POST: Using wallet balance, not overriding with totalSavings');
       }
-      
     } catch (txError) {
       console.error('Error processing transactions, using fallback:', txError);
-      
-      // Fallback to empty data if error occurs - don't break the API
       savingsByType = {};
       totalSavings = 0;
     }

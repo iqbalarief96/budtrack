@@ -44,101 +44,181 @@ interface PredictionChartProps {
   predictedExpense: number;
 }
 
+function formatMonthLabel(date: Date) {
+  return new Intl.DateTimeFormat('id-ID', {
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function parseKeyToDate(key: string) {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(year, (month ?? 1) - 1, 1);
+}
+
+function buildKeyFromDate(date: Date) {
+  return `${date.getFullYear()}-${date.getMonth() + 1}`;
+}
+
 export default function PredictionChart({ transactionsData, predictedExpense }: PredictionChartProps) {
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   
   // Process data for chart
   const processData = () => {
     // Group by month
-    const monthlyData: Record<string, number> = {};
-    
-    transactionsData
+    const monthlyTotals = transactionsData
       .filter(tx => tx.type === 'EXPENSE')
-      .forEach(tx => {
+      .reduce<Map<string, number>>((acc, tx) => {
         const date = new Date(tx.date);
-        const month = date.getMonth();
-        const year = date.getFullYear();
-        const key = `${year}-${month + 1}`;
-        
-        if (!monthlyData[key]) {
-          monthlyData[key] = 0;
+        if (Number.isNaN(date.getTime())) {
+          return acc;
         }
-        
-        monthlyData[key] += tx.amount;
-      });
+        const key = buildKeyFromDate(date);
+        acc.set(key, (acc.get(key) || 0) + tx.amount);
+        return acc;
+      }, new Map());
     
-    // Sort by date
-    const sortedData = Object.entries(monthlyData)
-      .map(([date, amount]) => ({ date, amount }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-    
-    // Get last 6 months + prediction
-    const last6Months = sortedData.slice(-6);
-    
-    // Format dates for display
-    const labels = last6Months.map(item => {
-      const [year, month] = item.date.split('-');
-      return `${parseInt(month)}/${year}`;
+    const sortedKeys = Array.from(monthlyTotals.keys()).sort((a, b) => {
+      return parseKeyToDate(a).getTime() - parseKeyToDate(b).getTime();
     });
-    
-    // Add next month for prediction
-    let nextMonthDate = '';
-    if (labels.length > 0) {
-      const lastDate = labels[labels.length - 1];
-      const [lastMonth, lastYear] = lastDate.split('/');
-      const nextMonth = parseInt(lastMonth) % 12 + 1;
-      const nextYear = nextMonth === 1 ? parseInt(lastYear) + 1 : lastYear;
-      nextMonthDate = `${nextMonth}/${nextYear}`;
+
+    let filledMonths: { date: Date; amount: number }[] = [];
+
+    if (sortedKeys.length > 0) {
+      const startDate = parseKeyToDate(sortedKeys[0]);
+      const endDate = parseKeyToDate(sortedKeys[sortedKeys.length - 1]);
+
+      let cursor = new Date(startDate);
+      while (cursor <= endDate) {
+        const key = buildKeyFromDate(cursor);
+        filledMonths.push({
+          date: new Date(cursor),
+          amount: monthlyTotals.get(key) || 0,
+        });
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      }
     } else {
       const now = new Date();
-      const nextMonth = now.getMonth() + 2; // +1 for 0-based index, +1 for next month
-      const nextYear = nextMonth > 12 ? now.getFullYear() + 1 : now.getFullYear();
-      nextMonthDate = `${nextMonth % 12 || 12}/${nextYear}`;
+      for (let i = 5; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        filledMonths.push({ date, amount: 0 });
+      }
     }
-    
-    labels.push(nextMonthDate);
-    
-    // Prepare datasets
-    const expenses = last6Months.map(item => item.amount);
-    expenses.push(predictedExpense);
-    
+
+    if (filledMonths.length > 6) {
+      filledMonths = filledMonths.slice(-6);
+    }
+
+    const labels = filledMonths.map(item => formatMonthLabel(item.date));
+    const actualValues = filledMonths.map(item => item.amount);
+
+    const lastActualDate = filledMonths.length > 0
+      ? filledMonths[filledMonths.length - 1].date
+      : new Date();
+
+    const predictedLabelDate = new Date(
+      lastActualDate.getFullYear(),
+      lastActualDate.getMonth() + 1,
+      1
+    );
+
+    const predictedLabel = formatMonthLabel(predictedLabelDate);
+
     return {
-      labels,
-      expenses,
+      labels: [...labels, predictedLabel],
+      actualValues,
+      lastActualValue: actualValues[actualValues.length - 1] || 0
     };
   };
   
-  const { labels, expenses } = processData();
-  
-  const chartData = {
+  const { labels, actualValues, lastActualValue } = processData();
+  const predictedValue = predictedExpense;
+
+  const baseActualDataset = labels.map((_, idx) =>
+    idx < actualValues.length ? actualValues[idx] : null
+  );
+
+  const predictedLineDataset = labels.map((_, idx) => {
+    if (actualValues.length === 0) {
+      return idx === labels.length - 1 ? predictedValue : null;
+    }
+
+    if (idx === actualValues.length - 1) {
+      return lastActualValue;
+    }
+    if (idx === labels.length - 1) {
+      return predictedValue;
+    }
+    return null;
+  });
+
+  const predictedBarDataset = labels.map((_, idx) =>
+    idx === labels.length - 1 ? predictedValue : null
+  );
+
+  const lineChartData = {
     labels,
     datasets: [
       {
         label: 'Pengeluaran Bulanan',
-        data: expenses.slice(0, -1),
+        data: baseActualDataset,
         borderColor: 'rgb(53, 162, 235)',
-        backgroundColor: 'rgba(53, 162, 235, 0.5)',
-        tension: 0.3,
+        backgroundColor: 'rgba(53, 162, 235, 0.15)',
+        tension: 0.2,
+        cubicInterpolationMode: 'monotone' as const,
+        spanGaps: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: true,
       },
       {
         label: 'Prediksi Bulan Depan',
-        data: [...Array(expenses.length - 1).fill(null), expenses[expenses.length - 1]],
+        data: predictedLineDataset,
         borderColor: 'rgb(255, 99, 132)',
         backgroundColor: 'rgba(255, 99, 132, 0.5)',
         borderDash: [5, 5],
-        tension: 0.3,
+        tension: 0.2,
+        cubicInterpolationMode: 'monotone' as const,
+        spanGaps: true,
+        pointRadius: (ctx: any) =>
+          ctx.dataIndex === labels.length - 1 ? 5 : 0,
+        pointHoverRadius: (ctx: any) =>
+          ctx.dataIndex === labels.length - 1 ? 7 : 0,
+        fill: false,
       }
     ],
   };
-  
-  const options = {
+
+  const barChartData = {
+    labels,
+    datasets: [
+      {
+        label: 'Pengeluaran Bulanan',
+        data: baseActualDataset,
+        backgroundColor: 'rgba(53, 162, 235, 0.7)',
+        borderRadius: 6,
+      },
+      {
+        label: 'Prediksi Bulan Depan',
+        data: predictedBarDataset,
+        backgroundColor: 'rgba(255, 99, 132, 0.7)',
+        borderRadius: 6,
+      }
+    ]
+  };
+
+  const commonOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
         position: 'top' as const,
       },
       tooltip: {
         callbacks: {
+          title: function(context: any) {
+            return context[0]?.label || '';
+          },
           label: function(context: any) {
             let label = context.dataset.label || '';
             if (label) {
@@ -154,10 +234,18 @@ export default function PredictionChart({ transactionsData, predictedExpense }: 
     },
     scales: {
       y: {
+        grid: {
+          color: 'rgba(148, 163, 184, 0.2)',
+        },
         ticks: {
           callback: function(value: any) {
             return formatCurrency(value);
           }
+        }
+      },
+      x: {
+        grid: {
+          display: false,
         }
       }
     }
@@ -207,9 +295,9 @@ export default function PredictionChart({ transactionsData, predictedExpense }: 
         
         <div className="h-80">
           {chartType === 'line' ? (
-            <Line options={options} data={chartData} />
+            <Line options={commonOptions} data={lineChartData} />
           ) : (
-            <Bar options={options} data={chartData} />
+            <Bar options={commonOptions} data={barChartData} />
           )}
         </div>
         

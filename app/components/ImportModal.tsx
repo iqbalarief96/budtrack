@@ -52,7 +52,7 @@ export default function ImportModal({ wallets, isOpen, onClose, onImportComplete
       if (data.success) {
         toast({
           title: "Success!",
-          description: `${data.count} transaksi berhasil diimport`,
+          description: data.message ?? `${data.count ?? 0} transaksi berhasil diimport`,
         });
         // Reset form after successful import
         setFile(null);
@@ -112,7 +112,9 @@ export default function ImportModal({ wallets, isOpen, onClose, onImportComplete
               className="flex w-full"
               required
             />
-            <p className="text-xs text-muted-foreground">Format: CSV dengan header (ID, user_id, wallet_id, category_id, amount, type, description, date)</p>
+            <p className="text-xs text-muted-foreground">
+              Format: CSV dengan header (Date,Type,Amount,Description,Category,Wallet) atau format lama
+            </p>
           </div>
           
           <DialogFooter className="mt-6">

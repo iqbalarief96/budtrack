@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiCreditCard, FiTarget } from 'react-icons/fi'
+import React, { useState, useEffect, useRef } from 'react'
+import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiCreditCard, FiTarget, FiRefreshCw, FiZap, FiAlertCircle } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency, parseCurrency } from '../lib/utils'
 
@@ -36,41 +36,44 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     goalId: '',
     updateGoalProgress: true,
   })
+  const isEditing = Boolean(initialData?.id)
+  const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
+  const [suggestedCategorySource, setSuggestedCategorySource] = useState<'ai' | 'fallback' | 'none' | null>(null)
+  const [isSuggestingCategory, setIsSuggestingCategory] = useState(false)
+  const suggestionControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    if (initialData) {
+    if (!isOpen) return;
+
+    setSuggestedCategory(null)
+    setSuggestedCategorySource(null)
+    setIsSuggestingCategory(false)
+
+    if (initialData?.id) {
       console.log('Initializing form with data:', initialData);
-      if (initialData.id) {
-        // Full transaction object for editing
-        setFormData({
-          type: initialData.type,
-          amount: initialData.amount.toString(),
-          description: initialData.description || '',
-          date: new Date(initialData.date).toISOString().split('T')[0],
-          categoryId: initialData.categoryId || initialData.category?.id || '',
-          walletId: initialData.walletId || initialData.wallet?.id || '',
-          goalId: initialData.goalId || initialData.goal?.id || '',
-          updateGoalProgress: initialData.updateGoalProgress !== false, // Default to true unless explicitly false
-        });
-      } else if (initialData.type) {
-        // Only type provided, for new transaction with predetermined type
-        setFormData(prev => ({
-          ...prev,
-          type: initialData.type,
-          walletId: selectedWallet?.id || '',
-          goalId: initialData.goal?.id || '',
-          updateGoalProgress: initialData.updateGoalProgress !== false,
-        }));
-      }
+      setFormData({
+        type: initialData.type,
+        amount: initialData.amount?.toString() || '',
+        description: initialData.description || '',
+        date: new Date(initialData.date).toISOString().split('T')[0],
+        categoryId: initialData.categoryId || initialData.category?.id || '',
+        walletId: initialData.walletId || initialData.wallet?.id || selectedWallet?.id || '',
+        goalId: initialData.goalId || initialData.goal?.id || '',
+        updateGoalProgress: initialData.updateGoalProgress !== false,
+      });
     } else {
-      setFormData(prev => ({
-        ...prev,
-        walletId: selectedWallet?.id || '',
-        goalId: '',
-        updateGoalProgress: true,
-      }));
+      setFormData({
+        type: initialData?.type ?? 'EXPENSE',
+        amount: '',
+        description: '',
+        date: new Date().toISOString().split('T')[0],
+        categoryId: initialData?.categoryId || initialData?.category?.id || '',
+        walletId: initialData?.walletId || initialData?.wallet?.id || selectedWallet?.id || '',
+        goalId: initialData?.goalId || initialData?.goal?.id || '',
+        updateGoalProgress: initialData?.updateGoalProgress !== false,
+      });
     }
-  }, [initialData, selectedWallet]);
+  }, [initialData, selectedWallet, isOpen]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -87,6 +90,94 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
     fetchCategories()
   }, [formData.type])
+
+  useEffect(() => {
+    if (!isQuickAction || isEditing) {
+      return
+    }
+
+    const description = formData.description.trim()
+    if (!description) {
+      suggestionControllerRef.current?.abort()
+      setSuggestedCategory(null)
+      setSuggestedCategorySource(null)
+      setIsSuggestingCategory(false)
+      return
+    }
+
+    setIsSuggestingCategory(true)
+    setSuggestedCategory(null)
+    setSuggestedCategorySource(null)
+    suggestionControllerRef.current?.abort()
+    const controller = new AbortController()
+    suggestionControllerRef.current = controller
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/transactions/category-suggest', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            description,
+            type: formData.type as 'INCOME' | 'EXPENSE',
+            walletId: formData.walletId || selectedWallet?.id || null,
+          }),
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || 'Failed to suggest category')
+        }
+
+        const data = await response.json()
+        if (controller.signal.aborted) return
+
+        if (data?.suggestion?.id) {
+          const suggestion = data.suggestion as Category
+          setSuggestedCategory(suggestion)
+          setSuggestedCategorySource(data.source ?? 'ai')
+          if (suggestion.type === formData.type || suggestion.type === 'BOTH') {
+            setCategories(prev =>
+              prev.some(cat => cat.id === suggestion.id) ? prev : [...prev, suggestion]
+            )
+            if (!formData.categoryId) {
+              setFormData(prev => ({ ...prev, categoryId: suggestion.id }))
+            }
+          }
+        } else {
+          setSuggestedCategory(null)
+          setSuggestedCategorySource(data?.source ?? 'none')
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error('Failed to suggest category:', err)
+          setSuggestedCategory(null)
+          setSuggestedCategorySource('none')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSuggestingCategory(false)
+        }
+      }
+    }, 600)
+
+    return () => {
+      clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [formData.description, formData.type, formData.walletId, isQuickAction, isEditing, selectedWallet])
+
+  useEffect(() => {
+    if (!isOpen) {
+      suggestionControllerRef.current?.abort()
+      setSuggestedCategory(null)
+      setSuggestedCategorySource(null)
+      setIsSuggestingCategory(false)
+    }
+  }, [isOpen])
   
   // Fetch goals for dropdown when modal opens
   useEffect(() => {
@@ -226,7 +317,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         </button>
 
         <h2 className="text-xl font-bold mb-6">
-          {initialData ? 'Edit Transaksi' : 'Tambah Transaksi'}
+          {isEditing ? 'Edit Transaksi' : 'Tambah Transaksi'}
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -306,18 +397,56 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
             </div>
             <select
               value={formData.categoryId}
-              onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value
+                setFormData(prev => ({ ...prev, categoryId: value }))
+              }}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
               required={!isQuickAction}
             >
               <option value="">Pilih Kategori {isQuickAction ? '(Opsional)' : ''}</option>
-              {Array.isArray(categories) && categories
-                .map(cat => (
+              {Array.isArray(categories) &&
+                categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.name}
                   </option>
                 ))}
             </select>
+            {isQuickAction && (
+              <div className="mt-1 text-xs text-gray-500 flex items-center gap-2">
+                {isSuggestingCategory ? (
+                  <>
+                    <FiRefreshCw className="h-3 w-3 animate-spin" />
+                    <span>Menganalisis deskripsi untuk saran kategori...</span>
+                  </>
+                ) : suggestedCategory ? (
+                  <>
+                    <FiZap className="h-3 w-3 text-blue-500" />
+                    <span>
+                      {formData.categoryId === suggestedCategory.id
+                        ? `Kategori dipilih otomatis (${suggestedCategorySource === 'ai' ? 'AI' : 'aturan'})`
+                        : `Rekomendasi ${suggestedCategorySource === 'ai' ? 'AI' : 'aturan'}: ${suggestedCategory.name}`}
+                    </span>
+                    {formData.categoryId !== suggestedCategory.id && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({ ...prev, categoryId: suggestedCategory.id }))
+                        }
+                        className="text-blue-600 hover:underline"
+                      >
+                        Gunakan
+                      </button>
+                    )}
+                  </>
+                ) : suggestedCategorySource === 'none' ? (
+                  <>
+                    <FiAlertCircle className="h-3 w-3 text-gray-400" />
+                    <span>Tidak ada saran kategori otomatis.</span>
+                  </>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {/* Goal Selection */}
@@ -396,7 +525,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? 'Menyimpan...' : initialData ? 'Simpan' : 'Tambah'}
+              {loading ? 'Menyimpan...' : isEditing ? 'Simpan' : 'Tambah'}
             </button>
           </div>
         </form>

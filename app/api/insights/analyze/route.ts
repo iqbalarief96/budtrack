@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 
-// Custom interface for transactions
 interface Transaction {
   type: string
   amount: number
@@ -14,16 +13,233 @@ interface Transaction {
   date: Date
 }
 
-function generateSummaryPrompt(data: {
-  totalIncome: number,
-  totalExpense: number,
-  netSavings: number,
-  topExpenses: Array<{category: string, amount: number, percentage: number}>,
-  monthlyTrend: {
-    incomeChange: number,
-    expenseChange: number
+type PeriodKey = 'month' | 'quarter' | 'year'
+
+const PERIOD_CONFIG: Record<PeriodKey, {
+  displayName: string
+  summaryTitle: string
+  previousLabel: string
+  labelSingular: string
+  periodCount: number
+  monthsPerPeriod: number
+}> = {
+  month: {
+    displayName: 'Bulanan',
+    summaryTitle: 'Bulan Ini',
+    previousLabel: 'Bulan Sebelumnya',
+    labelSingular: 'bulan',
+    periodCount: 6,
+    monthsPerPeriod: 1
+  },
+  quarter: {
+    displayName: 'Kuartalan',
+    summaryTitle: 'Kuartal Ini',
+    previousLabel: 'Kuartal Sebelumnya',
+    labelSingular: 'kuartal',
+    periodCount: 6,
+    monthsPerPeriod: 3
+  },
+  year: {
+    displayName: 'Tahunan',
+    summaryTitle: 'Tahun Ini',
+    previousLabel: 'Tahun Sebelumnya',
+    labelSingular: 'tahun',
+    periodCount: 5,
+    monthsPerPeriod: 12
   }
-}) {
+}
+
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+const endOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1)
+const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999)
+const startOfQuarter = (date: Date) => {
+  const quarter = Math.floor(date.getMonth() / 3) * 3
+  return new Date(date.getFullYear(), quarter, 1)
+}
+const endOfQuarter = (date: Date) => new Date(startOfQuarter(date).getFullYear(), startOfQuarter(date).getMonth() + 3, 0, 23, 59, 59, 999)
+const startOfYear = (date: Date) => new Date(date.getFullYear(), 0, 1)
+const endOfYear = (date: Date) => new Date(date.getFullYear(), 11, 31, 23, 59, 59, 999)
+const addMonths = (date: Date, months: number) => new Date(date.getFullYear(), date.getMonth() + months, 1)
+const addYears = (date: Date, years: number) => new Date(date.getFullYear() + years, 0, 1)
+const getQuarter = (date: Date) => Math.floor(date.getMonth() / 3) + 1
+
+const formatMonthLabel = (date: Date) =>
+  new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(date)
+const formatQuarterLabel = (date: Date) => `Q${getQuarter(date)} ${date.getFullYear()}`
+const formatYearLabel = (date: Date) => `${date.getFullYear()}`
+
+const startOfPeriod = (date: Date, period: PeriodKey) => {
+  if (period === 'quarter') return startOfQuarter(date)
+  if (period === 'year') return startOfYear(date)
+  return startOfMonth(date)
+}
+
+function sumMonthsData(
+  monthlyMap: Map<string, { income: number; expense: number }>,
+  periodStart: Date,
+  months: number,
+  summaryEnd: Date
+) {
+  let income = 0
+  let expense = 0
+  for (let offset = 0; offset < months; offset++) {
+    const currentMonth = addMonths(periodStart, offset)
+    if (currentMonth > summaryEnd) break
+    const data = monthlyMap.get(monthKey(currentMonth))
+    if (data) {
+      income += data.income
+      expense += data.expense
+    }
+  }
+  return { income, expense }
+}
+
+function buildTrendSeries(
+  monthlyMap: Map<string, { income: number; expense: number }>,
+  trendStart: Date,
+  summaryEnd: Date,
+  period: PeriodKey
+) {
+  const config = PERIOD_CONFIG[period]
+  const labels: string[] = []
+  const incomeSeries: number[] = []
+  const expenseSeries: number[] = []
+  const netSeries: number[] = []
+
+  const startBoundary = startOfPeriod(trendStart, period)
+  const endPeriodStart = startOfPeriod(summaryEnd, period)
+  const monthsBack = config.monthsPerPeriod * (config.periodCount - 1)
+  let currentStart = addMonths(endPeriodStart, -monthsBack)
+  if (currentStart < startBoundary) {
+    currentStart = startBoundary
+  }
+
+  const maxIterations = config.periodCount + 3
+  let iterations = 0
+
+  while (currentStart <= summaryEnd && labels.length < config.periodCount && iterations < maxIterations) {
+    const { income, expense } = sumMonthsData(
+      monthlyMap,
+      currentStart,
+      config.monthsPerPeriod,
+      summaryEnd
+    )
+
+    let label: string
+    if (period === 'quarter') {
+      label = formatQuarterLabel(currentStart)
+    } else if (period === 'year') {
+      label = formatYearLabel(currentStart)
+    } else {
+      label = formatMonthLabel(currentStart)
+    }
+
+    labels.push(label)
+    incomeSeries.push(income)
+    expenseSeries.push(expense)
+    netSeries.push(income - expense)
+
+    currentStart = addMonths(currentStart, config.monthsPerPeriod)
+    iterations += 1
+  }
+
+  // Trim leading zero periods if there is data in later periods
+  while (
+    labels.length > 1 &&
+    incomeSeries[0] === 0 &&
+    expenseSeries[0] === 0 &&
+    (incomeSeries.slice(1).some(value => value !== 0) || expenseSeries.slice(1).some(value => value !== 0))
+  ) {
+    labels.shift()
+    incomeSeries.shift()
+    expenseSeries.shift()
+    netSeries.shift()
+  }
+
+  return {
+    labels,
+    income: incomeSeries,
+    expense: expenseSeries,
+    net: netSeries,
+    grouping: period
+  }
+}
+
+const getPeriodConfig = (period?: string): PeriodKey => {
+  if (period === 'quarter' || period === 'year') return period
+  return 'month'
+}
+
+function resolveDateRanges(
+  period: PeriodKey,
+  startDate?: string,
+  endDate?: string
+) {
+  const now = new Date()
+  const config = PERIOD_CONFIG[period]
+  const hasCustomRange = Boolean(startDate && endDate)
+
+  let summaryStart: Date
+  let summaryEnd: Date
+
+  if (hasCustomRange) {
+    summaryStart = startOfDay(new Date(startDate!))
+    summaryEnd = endOfDay(new Date(endDate!))
+  } else {
+    if (period === 'quarter') {
+      summaryStart = startOfQuarter(now)
+      summaryEnd = endOfQuarter(now)
+    } else if (period === 'year') {
+      summaryStart = startOfYear(now)
+      summaryEnd = endOfYear(now)
+    } else {
+      summaryStart = startOfMonth(now)
+      summaryEnd = endOfMonth(now)
+    }
+  }
+
+  if (summaryEnd > now) {
+    summaryEnd = endOfDay(now)
+  }
+
+  const endPeriodStart = startOfPeriod(summaryEnd, period)
+  const monthsBack = config.monthsPerPeriod * (config.periodCount - 1)
+  let trendStart = addMonths(endPeriodStart, -monthsBack)
+  if (trendStart > summaryStart) {
+    trendStart = summaryStart
+  }
+  if (trendStart < startOfPeriod(summaryStart, period)) {
+    trendStart = startOfPeriod(summaryStart, period)
+  }
+
+  return {
+    summaryStart,
+    summaryEnd,
+    trendStart
+  }
+}
+
+function generateSummaryPrompt(
+  data: {
+    totalIncome: number
+    totalExpense: number
+    netSavings: number
+    topExpenses: Array<{ category: string; amount: number; percentage: number }>
+    periodTrend: {
+      incomeChange: number
+      expenseChange: number
+    }
+  },
+  context: {
+    summaryTitle: string
+    previousLabel: string
+    displayName: string
+    labelSingular: string
+  }
+) {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -34,9 +250,9 @@ function generateSummaryPrompt(data: {
 
   return `Sebagai seorang financial advisor profesional, buatkan ringkasan keuangan singkat dan informatif berdasarkan data berikut:
 
-# Ringkasan Keuangan Bulan Ini
+# Ringkasan Keuangan ${context.summaryTitle}
 
-## Data Keuangan
+## Data Keuangan (${context.displayName})
 - Total Pemasukan: ${formatCurrency(data.totalIncome)}
 - Total Pengeluaran: ${formatCurrency(data.totalExpense)}
 - Total Tabungan: ${formatCurrency(data.netSavings)}
@@ -44,9 +260,9 @@ function generateSummaryPrompt(data: {
 ## Top 3 Pengeluaran Terbesar
 ${data.topExpenses.map(exp => `- ${exp.category}: ${formatCurrency(exp.amount)} (${exp.percentage.toFixed(1)}%)`).join('\n')}
 
-## Perubahan dari Bulan Sebelumnya
-- Pemasukan: ${data.monthlyTrend.incomeChange.toFixed(1)}%
-- Pengeluaran: ${data.monthlyTrend.expenseChange.toFixed(1)}%
+## Perubahan dari ${context.previousLabel}
+- Pemasukan: ${data.periodTrend.incomeChange.toFixed(1)}%
+- Pengeluaran: ${data.periodTrend.expenseChange.toFixed(1)}%
 
 Berikan ringkasan dalam format berikut:
 
@@ -57,16 +273,22 @@ Berikan ringkasan dalam format berikut:
 *Gunakan bahasa Jaksel Gaul, tapi jangan ada kata jaksel/kata kata yg norak. Fokus pada insight yang paling relevan.*`
 }
 
-function generateSmartAnalysisPrompt(data: {
-  transactions: Transaction[],
-  monthlyData: Record<string, { income: number; expense: number }>,
-  categories: Record<string, number>,
-  yearlyTotals: {
-    income: number,
-    expense: number,
-    savings: number
+function generateSmartAnalysisPrompt(
+  data: {
+    transactions: Transaction[]
+    monthlyData: Record<string, { income: number; expense: number }>
+    categories: Record<string, number>
+    periodTotals: {
+      income: number
+      expense: number
+      savings: number
+    }
+  },
+  context: {
+    displayName: string
+    labelSingular: string
   }
-}) {
+) {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -75,29 +297,32 @@ function generateSmartAnalysisPrompt(data: {
     }).format(amount)
   }
 
-  // Calculate monthly averages
   const months = Object.keys(data.monthlyData)
-  const avgIncome = months.reduce((sum, month) => sum + data.monthlyData[month].income, 0) / months.length
-  const avgExpense = months.reduce((sum, month) => sum + data.monthlyData[month].expense, 0) / months.length
+  const avgIncome = months.length > 0
+    ? months.reduce((sum, month) => sum + data.monthlyData[month].income, 0) / months.length
+    : 0
+  const avgExpense = months.length > 0
+    ? months.reduce((sum, month) => sum + data.monthlyData[month].expense, 0) / months.length
+    : 0
 
-  // Get spending patterns
+  const totalExpense = data.periodTotals.expense || 1
   const categoryPercentages = Object.entries(data.categories)
     .map(([category, amount]) => ({
       category,
-      percentage: ((amount / data.yearlyTotals.expense) * 100).toFixed(1)
+      percentage: ((amount / totalExpense) * 100).toFixed(1)
     }))
     .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage))
 
   return `Sebagai seorang financial analyst profesional, lakukan analisis mendalam terhadap data keuangan berikut:
 
-# ANALISIS KEUANGAN MENDALAM
+# ANALISIS KEUANGAN MENDALAM (${context.displayName.toUpperCase()})
 
-## RINGKASAN TAHUNAN
-- Total Pemasukan: ${formatCurrency(data.yearlyTotals.income)}
-- Total Pengeluaran: ${formatCurrency(data.yearlyTotals.expense)}
-- Total Tabungan: ${formatCurrency(data.yearlyTotals.savings)}
+## RINGKASAN PERIODE
+- Total Pemasukan: ${formatCurrency(data.periodTotals.income)}
+- Total Pengeluaran: ${formatCurrency(data.periodTotals.expense)}
+- Total Tabungan: ${formatCurrency(data.periodTotals.savings)}
 
-## RATA-RATA BULANAN
+## RATA-RATA PER ${context.labelSingular.toUpperCase()}
 - Pemasukan: ${formatCurrency(avgIncome)}
 - Pengeluaran: ${formatCurrency(avgExpense)}
 
@@ -133,7 +358,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const { walletId, startDate, endDate } = await request.json()
+    const body = await request.json()
+    const walletId = body.walletId as string | undefined
+    const selectedPeriod = getPeriodConfig(body.period)
+    const startDate = body.startDate as string | undefined
+    const endDate = body.endDate as string | undefined
 
     if (!walletId) {
       return NextResponse.json(
@@ -142,146 +371,184 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get transactions for the period
-    const transactions = await prisma.transaction.findMany({
+    const { summaryStart, summaryEnd, trendStart } = resolveDateRanges(selectedPeriod, startDate, endDate)
+
+    const transactionsRaw = await prisma.transaction.findMany({
       where: {
         walletId,
         userId: session.user.id,
         date: {
-          gte: startDate ? new Date(startDate) : undefined,
-          lte: endDate ? new Date(endDate) : undefined,
+          gte: trendStart,
+          lte: summaryEnd,
         }
       },
       include: {
-        category: true
+        category: {
+          select: {
+            name: true
+          }
+        }
       }
     })
 
-    // Calculate insights
-    const totalIncome = transactions
-      .filter((t: Transaction) => t.type === 'INCOME')
-      .reduce((sum: number, t: Transaction) => sum + t.amount, 0)
+    const transactions: Transaction[] = transactionsRaw.map(t => ({
+      type: t.type,
+      amount: t.amount,
+      category: t.category ? { name: t.category.name } : undefined,
+      description: t.description || undefined,
+      date: t.date
+    }))
 
-    const totalExpense = transactions
-      .filter((t: Transaction) => t.type === 'EXPENSE')
-      .reduce((sum: number, t: Transaction) => sum + t.amount, 0)
+    const summaryTransactions = transactions.filter(t => t.date >= summaryStart && t.date <= summaryEnd)
+
+    const totalIncome = summaryTransactions
+      .filter(t => t.type === 'INCOME')
+      .reduce((sum, t) => sum + t.amount, 0)
+
+    const totalExpense = summaryTransactions
+      .filter(t => t.type === 'EXPENSE')
+      .reduce((sum, t) => sum + t.amount, 0)
 
     const netSavings = totalIncome - totalExpense
 
-    // Calculate monthly data
-    const monthlyData: Record<string, { income: number; expense: number }> = {}
-    
-    transactions.forEach((t: Transaction) => {
-      const monthKey = t.date.toISOString().slice(0, 7) // Format: YYYY-MM
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { income: 0, expense: 0 }
+    // Build monthly data map for trend calculations
+    const monthlyMap = new Map<string, { income: number; expense: number }>()
+    transactions.forEach(t => {
+      if (t.date < trendStart || t.date > summaryEnd) return
+      const key = monthKey(t.date)
+      if (!monthlyMap.has(key)) {
+        monthlyMap.set(key, { income: 0, expense: 0 })
       }
+      const item = monthlyMap.get(key)!
       if (t.type === 'INCOME') {
-        monthlyData[monthKey].income += t.amount
-      } else {
-        monthlyData[monthKey].expense += t.amount
+        item.income += t.amount
+      } else if (t.type === 'EXPENSE') {
+        item.expense += t.amount
       }
+      monthlyMap.set(key, item)
     })
 
-    // Sort monthly data by date
     const sortedMonthlyData: Record<string, { income: number; expense: number }> = {}
-    Object.keys(monthlyData)
-      .sort()
-      .forEach(key => {
-        sortedMonthlyData[key] = monthlyData[key]
+    Array.from(monthlyMap.entries())
+      .sort(([a], [b]) => (a > b ? 1 : -1))
+      .forEach(([key, value]) => {
+        sortedMonthlyData[key] = value
       })
 
-    // Calculate expenses by category
-    const expensesByCategory = transactions
-      .filter((t: Transaction) => t.type === 'EXPENSE' && t.category)
-      .reduce((acc: Record<string, number>, t: Transaction) => {
+    // Build trend series
+    const trendSeries = buildTrendSeries(monthlyMap, trendStart, summaryEnd, selectedPeriod)
+
+    const incomeChange = trendSeries.income.length >= 2
+      ? (() => {
+          const prev = trendSeries.income[trendSeries.income.length - 2]
+          const curr = trendSeries.income[trendSeries.income.length - 1]
+          if (prev === 0) return curr > 0 ? 100 : 0
+          return ((curr - prev) / Math.abs(prev)) * 100
+        })()
+      : 0
+
+    const expenseChange = trendSeries.expense.length >= 2
+      ? (() => {
+          const prev = trendSeries.expense[trendSeries.expense.length - 2]
+          const curr = trendSeries.expense[trendSeries.expense.length - 1]
+          if (prev === 0) return curr > 0 ? 100 : 0
+          return ((curr - prev) / Math.abs(prev)) * 100
+        })()
+      : 0
+
+    const summaryCategoryTotals = summaryTransactions
+      .filter(t => t.type === 'EXPENSE' && t.category)
+      .reduce<Record<string, number>>((acc, t) => {
         const categoryName = t.category?.name || 'Uncategorized'
         acc[categoryName] = (acc[categoryName] || 0) + t.amount
         return acc
       }, {})
 
-    // Calculate income by category
-    const incomeByCategory = transactions
-      .filter((t: Transaction) => t.type === 'INCOME' && t.category)
-      .reduce((acc: Record<string, number>, t: Transaction) => {
-        const categoryName = t.category?.name || 'Uncategorized'
-        acc[categoryName] = (acc[categoryName] || 0) + t.amount
-        return acc
-      }, {})
+    const totalExpenseSafe = totalExpense === 0 ? 1 : totalExpense
 
-    // Get settings to check if AI is configured
-    const settings = await prisma.userSettings.findUnique({
-      where: {
-        userId: session.user.id
-      }
-    })
-
-    // Prepare data for summary prompt
-    const months = Object.keys(sortedMonthlyData)
-    const lastMonth = months[months.length - 1]
-    const previousMonth = months[months.length - 2]
-    
-    let monthlyTrend = {
-      incomeChange: 0,
-      expenseChange: 0
-    }
-
-    if (lastMonth && previousMonth) {
-      const currentData = sortedMonthlyData[lastMonth]
-      const previousData = sortedMonthlyData[previousMonth]
-      
-      monthlyTrend = {
-        incomeChange: ((currentData.income - previousData.income) / previousData.income * 100),
-        expenseChange: ((currentData.expense - previousData.expense) / previousData.expense * 100)
-      }
-    }
-
-    // Get top expenses
-    const topExpenses = Object.entries(expensesByCategory)
-      .map(([category, amount]) => ({
-        category,
-        amount: amount as number,
-        percentage: ((amount as number / totalExpense) * 100)
+    const categoriesOrdered = Object.entries(summaryCategoryTotals)
+      .map(([name, amount]) => ({
+        name,
+        amount,
+        percentage: (amount / totalExpenseSafe) * 100
       }))
       .sort((a, b) => b.amount - a.amount)
-      .slice(0, 3)
 
-    // Generate prompts
+    let categoryBreakdown = categoriesOrdered
+    if (categoriesOrdered.length > 8) {
+      const topCategories = categoriesOrdered.slice(0, 7)
+      const others = categoriesOrdered.slice(7)
+      const othersAmount = others.reduce((sum, cat) => sum + cat.amount, 0)
+      if (othersAmount > 0) {
+        topCategories.push({
+          name: 'Lainnya',
+          amount: othersAmount,
+          percentage: (othersAmount / totalExpenseSafe) * 100
+        })
+      }
+      categoryBreakdown = topCategories
+    }
+
+    const incomeByCategory = summaryTransactions
+      .filter(t => t.type === 'INCOME' && t.category)
+      .reduce((acc: Record<string, number>, t: Transaction) => {
+        const categoryName = t.category?.name || 'Uncategorized'
+        acc[categoryName] = (acc[categoryName] || 0) + t.amount
+        return acc
+      }, {})
+
+    const topExpenses = categoryBreakdown
+      .slice(0, 3)
+      .map(cat => ({
+        category: cat.name,
+        amount: cat.amount,
+        percentage: cat.percentage
+      }))
+
+    const periodContext = PERIOD_CONFIG[selectedPeriod]
+
     const summaryPrompt = generateSummaryPrompt({
       totalIncome,
       totalExpense,
       netSavings,
       topExpenses,
-      monthlyTrend
-    })
+      periodTrend: {
+        incomeChange,
+        expenseChange
+      }
+    }, periodContext)
 
     const smartAnalysisPrompt = generateSmartAnalysisPrompt({
       transactions,
       monthlyData: sortedMonthlyData,
-      categories: expensesByCategory,
-      yearlyTotals: {
+      categories: summaryCategoryTotals,
+      periodTotals: {
         income: totalIncome,
         expense: totalExpense,
         savings: netSavings
       }
-    })
+    }, periodContext)
 
-    // For now, we'll use the summary as the analysis
-    // In a real implementation, you would send these prompts to an AI service
-    // and get back the generated text
-    const analysis = summaryPrompt
-
-    // Return the data and analysis
     return NextResponse.json({
       data: {
         totalIncome,
         totalExpense,
         netSavings,
-        expensesByCategory,
+        period: selectedPeriod,
+        summaryRange: {
+          start: summaryStart,
+          end: summaryEnd
+        },
+        trend: trendSeries,
+        categoryBreakdown: categoryBreakdown.map(cat => ({
+          name: cat.name,
+          amount: Number(cat.amount.toFixed(2)),
+          percentage: Number(cat.percentage.toFixed(1))
+        })),
         incomeByCategory,
+        expensesByCategory: summaryCategoryTotals,
         monthlyData: sortedMonthlyData
       },
-      analysis,
       summaryPrompt,
       smartAnalysisPrompt
     })

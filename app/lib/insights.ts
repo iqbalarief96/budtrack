@@ -29,29 +29,38 @@ export type Insight = {
 export function analyzeTransactions(transactions: Transaction[]): Insight[] {
   const insights: Insight[] = [];
   
-  // Skip if no transactions
   if (!transactions || transactions.length === 0) {
     return [];
   }
 
-  // Get current date and first day of current and previous month
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const currentMonthStart = new Date(currentYear, currentMonth, 1);
-  const previousMonthStart = new Date(currentYear, currentMonth - 1, 1);
-  
+  // Determine the most recent month that actually has transactions
+  const transactionDates = transactions
+    .map(tx => new Date(tx.date))
+    .filter(date => !Number.isNaN(date.getTime()));
+
+  if (transactionDates.length === 0) {
+    return [];
+  }
+
+  const latestTxDate = transactionDates.reduce((latest, current) =>
+    current > latest ? current : latest
+  , transactionDates[0]);
+
+  const analysisMonthStart = new Date(latestTxDate.getFullYear(), latestTxDate.getMonth(), 1);
+  const nextMonthStart = new Date(latestTxDate.getFullYear(), latestTxDate.getMonth() + 1, 1);
+  const previousMonthStart = new Date(latestTxDate.getFullYear(), latestTxDate.getMonth() - 1, 1);
+
   // Group expenses by category for current and previous month
   const categorySpendings = new Map<string, { current: number; previous: number }>();
   
-  // Process all transactions
   transactions.forEach(tx => {
     if (tx.type !== 'EXPENSE' || !tx.category) return;
-    
+
     const txDate = new Date(tx.date);
+    if (Number.isNaN(txDate.getTime())) return;
+    
     const categoryName = tx.category.name;
     
-    // Initialize category if not exists
     if (!categorySpendings.has(categoryName)) {
       categorySpendings.set(categoryName, { current: 0, previous: 0 });
     }
@@ -59,17 +68,18 @@ export function analyzeTransactions(transactions: Transaction[]): Insight[] {
     const spending = categorySpendings.get(categoryName)!;
     
     // Categorize by month
-    if (txDate >= currentMonthStart) {
+    if (txDate >= analysisMonthStart && txDate < nextMonthStart) {
       spending.current += tx.amount;
-    } else if (txDate >= previousMonthStart && txDate < currentMonthStart) {
+    } else if (txDate >= previousMonthStart && txDate < analysisMonthStart) {
       spending.previous += tx.amount;
     }
   });
   
-  // Get current month transactions
-  const currentMonthTransactions = transactions.filter(tx => 
-    new Date(tx.date) >= currentMonthStart
-  );
+  // Get transactions within the latest month
+  const currentMonthTransactions = transactions.filter(tx => {
+    const txDate = new Date(tx.date);
+    return !Number.isNaN(txDate.getTime()) && txDate >= analysisMonthStart && txDate < nextMonthStart;
+  });
   
   // Calculate income and expenses for current month
   const totalIncome = currentMonthTransactions
@@ -81,24 +91,52 @@ export function analyzeTransactions(transactions: Transaction[]): Insight[] {
     .reduce((sum, tx) => sum + tx.amount, 0);
   
   // 1. Monthly spending insights
-  if (totalIncome > 0 && totalExpense > 0) {
-    const savingsRate = ((totalIncome - totalExpense) / totalIncome) * 100;
+  if (totalIncome === 0 && totalExpense > 0) {
+    insights.push({
+      type: 'warning',
+      message: `Bulan ini belum ada income masuk tapi spending sudah ${formatCurrency(totalExpense)}. Coba cek lagi sumber pemasukan lo ya.`
+    });
+  } else if (totalIncome > 0) {
+    const netDifference = totalIncome - totalExpense;
+    const savingsRate = totalExpense === 0 ? 100 : ((totalIncome - totalExpense) / totalIncome) * 100;
     
     if (savingsRate < 0) {
       insights.push({
         type: 'warning',
-        message: `Bulan ini pengeluaran lo lebih gede ${formatCurrency(Math.abs(totalIncome - totalExpense))} dari pemasukan. Coba review budget lo lagi bro.`
+        message: `Bulan ini pengeluaran lo lebih gede ${formatCurrency(Math.abs(netDifference))} dari pemasukan. Saatnya rem dikit biar cashflow gak bocor.`
       });
     } else if (savingsRate < 15) {
       insights.push({
         type: 'warning',
-        message: `Savings rate lo cuma ${savingsRate.toFixed(1)}%. Idealnya 20% dari penghasilan ditabung, jaga-jaga buat masa depan.`
+        message: `Savings rate lo cuma ${savingsRate.toFixed(1)}%. Idealnya 20% dari penghasilan ditabung, let's push a bit more buat masa depan.`
       });
     } else if (savingsRate > 30) {
       insights.push({
         type: 'success',
-        message: `Keren! Savings rate lo ${savingsRate.toFixed(1)}%, jauh di atas rata-rata. Keep it up! 💪`
+        message: `Keren! Savings rate lo ${savingsRate.toFixed(1)}%, jauh di atas rata-rata. Keep it up, vibes-nya kece banget!`
       });
+    }
+
+    if (totalExpense === 0) {
+      insights.push({
+        type: 'success',
+        message: `Spending lo nol bulan ini, semuanya masuk kantong. Mantap, lanjutkan disiplin kaya gini!`
+      });
+    } else {
+      const absoluteNet = Math.abs(netDifference);
+      const significantNet = absoluteNet >= Math.max(200000, totalIncome * 0.15, totalExpense * 0.15);
+  
+      if (significantNet && netDifference > 0) {
+        insights.push({
+          type: 'success',
+          message: `Cashflow lo positif ${formatCurrency(netDifference)} bulan ini. Cocok banget buat dialihin ke tabungan atau investasi.`
+        });
+      } else if (significantNet && netDifference < 0) {
+        insights.push({
+          type: 'warning',
+          message: `Cashflow bulan ini minus ${formatCurrency(absoluteNet)}. Coba cek kategori yang paling bikin jebol.`
+        });
+      }
     }
   }
   
@@ -131,16 +169,38 @@ export function analyzeTransactions(transactions: Transaction[]): Insight[] {
       });
     }
   });
+
+  // Highlight the most dominant spending category
+  if (totalExpense > 0) {
+    const rankedCategories = Array.from(categorySpendings.entries())
+      .map(([name, spending]) => ({ name, amount: spending.current }))
+      .filter(entry => entry.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  
+    if (rankedCategories.length > 0) {
+      const topCategory = rankedCategories[0];
+      const share = (topCategory.amount / totalExpense) * 100;
+      const messageType: Insight['type'] = share >= 40 ? 'warning' : 'info';
+      
+      insights.push({
+        type: messageType,
+        message: `Kategori ${topCategory.name} nyedot ${share.toFixed(0)}% dari total spending bulan ini (${formatCurrency(topCategory.amount)}). Worth it nggak?`
+      });
+    }
+  }
   
   // 3. Find repeated merchants/descriptions for subscription detection
   const merchantFrequency = findFrequentMerchants(transactions);
   const potentialSubscriptions = [];
   
   for (const [merchant, count] of Object.entries(merchantFrequency)) {
-    if (count >= 2 && merchant.toLowerCase().includes("subscription") || 
-        merchant.toLowerCase().includes("langganan") ||
-        merchant.toLowerCase().includes("netflix") ||
-        merchant.toLowerCase().includes("spotify")) {
+    const normalized = merchant.toLowerCase();
+    const subscriptionKeywords = ['subscription', 'langganan', 'netflix', 'spotify', 'youtube', 'disney', 'patreon', 'prime', 'iflix'];
+    
+    if (
+      count >= 2 &&
+      subscriptionKeywords.some(keyword => normalized.includes(keyword))
+    ) {
       potentialSubscriptions.push(merchant);
     }
   }
@@ -154,11 +214,13 @@ export function analyzeTransactions(transactions: Transaction[]): Insight[] {
   
   // 4. Overall spending trend
   const previousMonthExpenses = transactions
-    .filter(tx => 
-      tx.type === 'EXPENSE' && 
-      new Date(tx.date) >= previousMonthStart && 
-      new Date(tx.date) < currentMonthStart
-    )
+    .filter(tx => {
+      const txDate = new Date(tx.date);
+      return tx.type === 'EXPENSE' &&
+        !Number.isNaN(txDate.getTime()) &&
+        txDate >= previousMonthStart &&
+        txDate < analysisMonthStart;
+    })
     .reduce((sum, tx) => sum + tx.amount, 0);
   
   if (previousMonthExpenses > 0 && totalExpense > 0) {
@@ -204,4 +266,4 @@ function formatCurrency(amount: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(amount);
-} 
+}

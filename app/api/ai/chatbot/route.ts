@@ -4,6 +4,11 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { generateChatbotResponse } from '@/lib/ai';
 
+type ChatHistoryItem = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Get user session
@@ -18,9 +23,22 @@ export async function POST(request: NextRequest) {
     
     // Parse request body
     const body = await request.json();
-    const { prompt, walletId, history } = body;
+
+    if (body?.walletId && typeof body.walletId !== 'string') {
+      return new NextResponse(
+        JSON.stringify({ error: 'Invalid walletId' }),
+        { status: 400 }
+      );
+    }
     
-    if (!prompt) {
+    const rawPrompt = typeof body?.prompt === 'string' ? body.prompt : '';
+    const trimmedPrompt = rawPrompt.trim();
+    const walletId = typeof body?.walletId === 'string' && body.walletId.trim().length > 0
+      ? body.walletId.trim()
+      : undefined;
+    const safeHistory = sanitizeHistory(body?.history);
+    
+    if (!trimmedPrompt) {
       return new NextResponse(
         JSON.stringify({ error: 'Prompt is required' }),
         { status: 400 }
@@ -51,12 +69,17 @@ export async function POST(request: NextRequest) {
     }
     
     // Get wallet data if walletId is provided
-    let wallet = null;
+    let wallet: { id: string; name: string; balance: number } | null = null;
     if (walletId) {
-      wallet = await prisma.wallet.findUnique({
+      wallet = await prisma.wallet.findFirst({
         where: {
           id: walletId,
-          userId: user.id
+          userId: user.id,
+        },
+        select: {
+          id: true,
+          name: true,
+          balance: true,
         },
       });
       
@@ -76,6 +99,7 @@ export async function POST(request: NextRequest) {
     Data Keuangan Pengguna:
     Nama: ${user.name || 'Pengguna'}
     Total Saldo: ${formatCurrency(financialData.totalBalance)}
+    Dompet Terpilih: ${wallet ? `${wallet.name} (${formatCurrency(wallet.balance)})` : 'Semua dompet'}
     
     Transaksi Bulan Ini: ${financialData.transactions.length}
     Total Pemasukan Bulan Ini: ${formatCurrency(financialData.monthlyIncome)}
@@ -93,8 +117,9 @@ export async function POST(request: NextRequest) {
     
     Detail Transaksi Bulan Ini:
     ${financialData.transactions
-      .filter(t => t.amount < 0)
-      .map(t => `- ${t.description}: ${formatCurrency(t.amount)} (${t.category?.name || 'Tanpa Kategori'})`)
+      .filter(t => t.type === 'EXPENSE')
+      .slice(0, 10)
+      .map(t => `- ${t.description}: ${formatCurrency(Math.abs(t.amount))} (${t.category?.name || 'Tanpa Kategori'})`)
       .join('\n')
     }
     
@@ -102,7 +127,9 @@ export async function POST(request: NextRequest) {
     Jumlah Budget Aktif: ${financialData.budgets.length}
     
     Detail Dompet (${wallet ? wallet.name : 'Semua Dompet'}):
-    ${wallet ? `Saldo: ${formatCurrency(wallet.balance)}` : financialData.wallets.map(w => `${w.name}: ${formatCurrency(w.balance)}`).join('\n')}
+    ${wallet
+      ? `Saldo: ${formatCurrency(wallet.balance)}`
+      : financialData.wallets.slice(0, 5).map(w => `${w.name}: ${formatCurrency(w.balance)}`).join('\n')}
     
     Budgets:
     ${financialData.budgets.map(b => `${b.title}: ${formatCurrency(b.amount)} (Terpakai: ${formatCurrency(b.spent)} - ${b.percentUsed}%)`).join('\n')}
@@ -165,12 +192,12 @@ export async function POST(request: NextRequest) {
     
     // Generate AI response
     const aiResponse = await generateChatbotResponse({
-      prompt,
+      prompt: trimmedPrompt,
       provider: user.settings.provider,
       apiKey: user.settings.apiKey,
       model: user.settings.selectedModel,
       context,
-      history: history || [],
+      history: safeHistory,
     });
     
     return NextResponse.json({ response: aiResponse });
@@ -195,6 +222,28 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function sanitizeHistory(history: unknown): ChatHistoryItem[] {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  const cleaned: ChatHistoryItem[] = [];
+
+  for (const entry of history) {
+    if (!entry || typeof entry !== 'object') continue;
+    const roleValue = (entry as any).role;
+    const contentValue = (entry as any).content;
+
+    const role = roleValue === 'assistant' ? 'assistant' : roleValue === 'user' ? 'user' : null;
+    const content = typeof contentValue === 'string' ? contentValue.trim() : '';
+
+    if (!role || !content) continue;
+    cleaned.push({ role, content });
+  }
+
+  return cleaned.slice(-10);
 }
 
 // Helper function to get user's financial data
@@ -235,21 +284,18 @@ async function getFinancialData(userId: string, walletId?: string) {
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const endOfYear = new Date(now.getFullYear(), 11, 31);
     
-    console.log('Date filters:', {
-      startOfMonth: startOfMonth.toISOString(),
-      endOfMonth: endOfMonth.toISOString(),
-      startOfYear: startOfYear.toISOString(),
-      endOfYear: endOfYear.toISOString(),
-      currentDate: now.toISOString()
-    });
+    const lookbackStart = new Date(now.getFullYear(), now.getMonth() - 12, 1);
     
-    // Get ALL transactions (not limited to current month)
+    // Get transactions within the last 12 months (capped to 500 records for prompt size)
     const allTransactions = await prisma.transaction.findMany({
       where: {
-        walletId: walletId 
-          ? walletId 
-          : { in: wallets.map(w => w.id) },
         userId,
+        ...(walletId
+          ? { walletId }
+          : { walletId: { in: wallets.map(w => w.id) } }),
+        date: {
+          gte: lookbackStart,
+        },
       },
       include: {
         category: true,
@@ -257,9 +303,8 @@ async function getFinancialData(userId: string, walletId?: string) {
       orderBy: {
         date: 'desc',
       },
+      take: 500,
     });
-    
-    console.log(`Found ${allTransactions.length} transactions in total`);
     
     // Get current month transactions
     const transactions = allTransactions.filter(t => {
@@ -273,9 +318,6 @@ async function getFinancialData(userId: string, walletId?: string) {
       return date >= startOfYear && date <= endOfYear;
     });
 
-    console.log(`Found ${transactions.length} transactions for this month`);
-    console.log(`Found ${yearTransactions.length} transactions for this year`);
-    
     // Get recent transactions from all transactions
     const recentTransactions = allTransactions.slice(0, 5).map(t => ({
       description: t.description,
@@ -286,45 +328,23 @@ async function getFinancialData(userId: string, walletId?: string) {
     
     // Calculate monthly income and expense
     const monthlyIncome = transactions
-      .filter(t => t.amount > 0)
-      .reduce((sum, t) => sum + t.amount, 0);
+      .filter(t => t.type === 'INCOME')
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     
     // Calculate yearly income
     const yearlyIncome = yearTransactions
-      .filter(t => t.amount > 0)
-      .reduce((sum, t) => sum + t.amount, 0);
+      .filter(t => t.type === 'INCOME')
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     
-    // Check which categories are expenses based on name
-    const expenseCategories = ['Makanan', 'Food', 'Transport', 'Transportasi', 'Entertainment', 'Shopping', 'Savings', 'Health'];
-    
-    // Identify expenses by category name, not just by negative amount
-    const expenseTransactions = transactions.filter(t => {
-      // Consider as expense if category is in expense list or not income-related (Gaji, Bonus, etc)
-      const isExpenseCategory = t.category?.name && expenseCategories.includes(t.category.name);
-      const isIncomeCategory = t.category?.name && ['Gaji', 'Bonus', 'Income', 'Pendapatan'].includes(t.category.name);
-      
-      return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
-    });
-    
-    // Identify yearly expenses
-    const yearlyExpenseTransactions = yearTransactions.filter(t => {
-      // Consider as expense if category is in expense list or not income-related (Gaji, Bonus, etc)
-      const isExpenseCategory = t.category?.name && expenseCategories.includes(t.category.name);
-      const isIncomeCategory = t.category?.name && ['Gaji', 'Bonus', 'Income', 'Pendapatan'].includes(t.category.name);
-      
-      return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
-    });
-    
-    console.log('Expense transactions count:', expenseTransactions.length);
+    // Identify expenses by transaction type
+    const expenseTransactions = transactions.filter(t => t.type === 'EXPENSE');
+    const yearlyExpenseTransactions = yearTransactions.filter(t => t.type === 'EXPENSE');
     
     const monthlyExpense = expenseTransactions
       .reduce((sum, t) => sum + t.amount, 0);
     
     const yearlyExpense = yearlyExpenseTransactions
       .reduce((sum, t) => sum + t.amount, 0);
-    
-    console.log('Calculated monthlyExpense:', monthlyExpense);
-    console.log('Calculated yearlyExpense:', yearlyExpense);
     
     // Calculate monthly stats for the last 12 months
     const lastTwelveMonths = [];
@@ -343,18 +363,12 @@ async function getFinancialData(userId: string, walletId?: string) {
       });
       
       const income = monthTransactions
-        .filter(t => t.amount > 0)
-        .reduce((sum, t) => sum + t.amount, 0);
+        .filter(t => t.type === 'INCOME')
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
       
-      const monthExpenseTransactions = monthTransactions.filter(t => {
-        const isExpenseCategory = t.category?.name && expenseCategories.includes(t.category.name);
-        const isIncomeCategory = t.category?.name && ['Gaji', 'Bonus', 'Income', 'Pendapatan'].includes(t.category.name);
-        
-        return isExpenseCategory || (!isIncomeCategory && t.description !== 'Gaji' && t.description !== 'Tunjangan');
-      });
-      
-      const expense = monthExpenseTransactions
-        .reduce((sum, t) => sum + t.amount, 0);
+      const expense = monthTransactions
+        .filter(t => t.type === 'EXPENSE')
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
       
       return {
         month: monthName,
@@ -372,7 +386,7 @@ async function getFinancialData(userId: string, walletId?: string) {
         if (!acc[categoryName]) {
           acc[categoryName] = 0;
         }
-        acc[categoryName] += t.amount;
+        acc[categoryName] += Math.abs(t.amount);
         return acc;
       }, {} as Record<string, number>);
     
@@ -393,6 +407,10 @@ async function getFinancialData(userId: string, walletId?: string) {
       include: {
         category: true,
       },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 5,
     });
     
     // Calculate budget usage
@@ -400,15 +418,17 @@ async function getFinancialData(userId: string, walletId?: string) {
       budgets.map(async (budget) => {
         try {
           // Get transactions for this budget's category from all transactions
-          const budgetTransactions = allTransactions.filter(t => 
-            t.categoryId === budget.categoryId &&
-            new Date(t.date) >= budget.startDate &&
-            new Date(t.date) <= (budget.endDate || new Date())
-          );
+          const budgetTransactions = allTransactions.filter(t => {
+            if (t.type !== 'EXPENSE') return false;
+            if (budget.categoryId && t.categoryId !== budget.categoryId) return false;
+            if (budget.walletId && t.walletId !== budget.walletId) return false;
+            
+            const txDate = new Date(t.date);
+            const endDate = budget.endDate || now;
+            return txDate >= budget.startDate && txDate <= endDate;
+          });
           
-          const spent = budgetTransactions.length > 0 
-            ? budgetTransactions.reduce((sum, t) => sum + t.amount, 0)
-            : 0;
+          const spent = budgetTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
           const percentUsed = budget.amount > 0 
             ? Math.round((spent / budget.amount) * 100)
             : 0;

@@ -196,17 +196,36 @@ export async function POST(request: Request) {
     const savingsData: number[] = []
     const savingsRateData: number[] = []
     
-    for (const range of dateRanges) {
-      // Get transactions for this period
-      const transactions = await prisma.transaction.findMany({
-        where: {
-          walletId,
-          userId: session.user.id,
-          date: {
-            gte: range.startDate,
-            lte: range.endDate,
-          }
+    const earliestStart = dateRanges.reduce(
+      (earliest, range) => (range.startDate < earliest ? range.startDate : earliest),
+      dateRanges[0].startDate
+    )
+    const latestEnd = dateRanges.reduce(
+      (latest, range) => (range.endDate > latest ? range.endDate : latest),
+      dateRanges[0].endDate
+    )
+
+    const allTransactions = await prisma.transaction.findMany({
+      where: {
+        walletId,
+        userId: session.user.id,
+        date: {
+          gte: earliestStart,
+          lte: latestEnd,
         }
+      }
+    })
+
+    const now = new Date()
+
+    for (const range of dateRanges) {
+      const periodStart = new Date(range.startDate.getFullYear(), range.startDate.getMonth(), range.startDate.getDate(), 0, 0, 0, 0)
+      const rawEnd = new Date(range.endDate.getFullYear(), range.endDate.getMonth(), range.endDate.getDate(), 23, 59, 59, 999)
+      const periodEnd = rawEnd > now ? now : rawEnd
+
+      const transactions = allTransactions.filter(tx => {
+        const txDate = new Date(tx.date)
+        return txDate >= periodStart && txDate <= periodEnd
       })
       
       // Calculate totals
@@ -227,9 +246,9 @@ export async function POST(request: Request) {
       
       // Add to datasets
       periodLabels.push(range.label)
-      incomeData.push(totalIncome)
-      expenseData.push(totalExpense)
-      savingsData.push(netSavings)
+      incomeData.push(Number(totalIncome.toFixed(2)))
+      expenseData.push(Number(totalExpense.toFixed(2)))
+      savingsData.push(Number(netSavings.toFixed(2)))
       savingsRateData.push(parseFloat(savingsRate.toFixed(1)))
     }
     

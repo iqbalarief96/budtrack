@@ -616,6 +616,85 @@ export async function DELETE(request: Request) {
     // Get ID from search params instead of request body
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
+    const idsParam = searchParams.get('ids')
+
+    // Handle bulk delete with comma-separated ids
+    if (!id && idsParam) {
+      const ids = idsParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+
+      if (ids.length === 0) {
+        return NextResponse.json({ error: 'No transaction IDs provided' }, { status: 400 })
+      }
+
+      // Fetch all transactions to be deleted and validate ownership
+      const transactions = await prisma.transaction.findMany({
+        where: {
+          id: { in: ids },
+          userId: session.user.id,
+        },
+        include: {
+          wallet: true,
+        },
+      })
+
+      if (transactions.length === 0) {
+        return NextResponse.json({ error: 'Transactions not found' }, { status: 404 })
+      }
+
+      // Process deletions in a single DB transaction
+      await prisma.$transaction(async (tx) => {
+        for (const t of transactions) {
+          // Adjust wallet balance reversal
+          await tx.wallet.update({
+            where: { id: t.walletId },
+            data: {
+              balance: {
+                [t.type === 'INCOME' ? 'decrement' : 'increment']: t.amount,
+              },
+            },
+          })
+
+          // If this was an expense tied to a budget window, recompute spent for accuracy
+          if (t.type === 'EXPENSE' && t.categoryId) {
+            const budget = await tx.budget.findFirst({
+              where: {
+                userId: session.user.id,
+                categoryId: t.categoryId,
+                walletId: t.walletId,
+                startDate: { lte: t.date },
+                endDate: { gte: t.date },
+              },
+            })
+
+            if (budget) {
+              const spending = await tx.transaction.aggregate({
+                where: {
+                  userId: session.user.id,
+                  categoryId: budget.categoryId,
+                  walletId: budget.walletId,
+                  type: 'EXPENSE',
+                  date: { gte: budget.startDate, lte: budget.endDate },
+                },
+                _sum: { amount: true },
+              })
+
+              await tx.budget.update({
+                where: { id: budget.id },
+                data: { spent: spending._sum.amount || 0 },
+              })
+            }
+          }
+
+          // Finally delete the transaction
+          await tx.transaction.delete({ where: { id: t.id } })
+        }
+      })
+
+      return NextResponse.json({ success: true, deleted: transactions.length })
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'Transaction ID is required' }, { status: 400 })

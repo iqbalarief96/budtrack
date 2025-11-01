@@ -48,6 +48,7 @@ export default function BudgetProgress({ budget, onUpdate }: Props) {
             {formatCurrency(budget.spent)}
           </p>
           <p className="text-sm text-gray-500">/ {formatCurrency(budget.amount)}</p>
+          <p className="text-xs text-gray-400 mt-1">Bulan ini</p>
         </div>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-3 mt-4">
@@ -57,7 +58,7 @@ export default function BudgetProgress({ budget, onUpdate }: Props) {
         />
       </div>
       <div className="mt-2 flex justify-between items-center">
-        <p className="text-xs font-medium text-gray-500">Progress</p>
+        <p className="text-xs font-medium text-gray-500">Progress bulan ini</p>
         <p className={`text-sm font-bold ${getProgressTextColor(budget.percentage)}`}>{budget.percentage.toFixed(1)}%</p>
       </div>
     </div>

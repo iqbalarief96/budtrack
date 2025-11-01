@@ -2,78 +2,98 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { generateAIResponse } from '@/lib/ai'
 
-// Calculate start and end dates for periods
-function getDateRange(period: string) {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  
+function getPeriodContext(period?: string) {
   switch (period) {
-    case 'month': {
-      // Current month
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      
-      // Previous month
-      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-      
-      return {
-        current: { start: currentMonthStart, end: currentMonthEnd },
-        previous: { start: previousMonthStart, end: previousMonthEnd }
-      }
-    }
-    
-    case 'week': {
-      // Current week (starting Sunday)
-      const currentWeekStart = new Date(today)
-      currentWeekStart.setDate(today.getDate() - today.getDay())
-      const currentWeekEnd = new Date(today)
-      
-      // Previous week
-      const previousWeekStart = new Date(currentWeekStart)
-      previousWeekStart.setDate(currentWeekStart.getDate() - 7)
-      const previousWeekEnd = new Date(currentWeekStart)
-      previousWeekEnd.setDate(previousWeekEnd.getDate() - 1)
-      
-      return {
-        current: { start: currentWeekStart, end: currentWeekEnd },
-        previous: { start: previousWeekStart, end: previousWeekEnd }
-      }
-    }
-    
-    case '30days': {
-      // Last 30 days
-      const currentPeriodStart = new Date(today)
-      currentPeriodStart.setDate(today.getDate() - 30)
-      
-      // Previous 30 days before that
-      const previousPeriodStart = new Date(currentPeriodStart)
-      previousPeriodStart.setDate(currentPeriodStart.getDate() - 30)
-      const previousPeriodEnd = new Date(currentPeriodStart)
-      previousPeriodEnd.setDate(previousPeriodEnd.getDate() - 1)
-      
-      return {
-        current: { start: currentPeriodStart, end: today },
-        previous: { start: previousPeriodStart, end: previousPeriodEnd }
-      }
-    }
-    
-    default: {
-      // Default to month
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      
-      // Previous month
-      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-      
-      return {
-        current: { start: currentMonthStart, end: currentMonthEnd },
-        previous: { start: previousMonthStart, end: previousMonthEnd }
-      }
+    case 'month':
+      return { summaryTitle: 'Bulan Ini', previousLabel: 'bulan lalu', displayName: 'Bulanan', labelSingular: 'bulan' }
+    case 'quarter':
+      return { summaryTitle: 'Kuartal Ini', previousLabel: 'kuartal lalu', displayName: 'Kuartalan', labelSingular: 'kuartal' }
+    case 'year':
+    default:
+      return { summaryTitle: 'Tahun Ini', previousLabel: 'tahun lalu', displayName: 'Tahunan', labelSingular: 'tahun' }
+  }
+}
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
+
+const buildFallbackInsight = (
+  currentIncome: number,
+  currentExpense: number,
+  currentSavings: number,
+  incomeChangePct: number,
+  expenseChangePct: number
+) => {
+  if (currentSavings > 0) {
+    const savingsRate = currentIncome > 0 ? (currentSavings / currentIncome) * 100 : 0
+    return {
+      tone: savingsRate >= 20 ? 'positive' : 'neutral',
+      text:
+        savingsRate >= 20
+          ? `Cashflow kamu surplus ${formatCurrency(currentSavings)} dengan savings rate ${savingsRate.toFixed(1)}%. Pertahankan strategi ini!`
+          : `Kamu berhasil catat surplus ${formatCurrency(currentSavings)}. Coba boost tabungan sedikit lagi supaya savings rate makin cakep.`
     }
   }
+
+  if (currentSavings < 0) {
+    return {
+      tone: 'negative',
+      text: `Cashflow defisit ${formatCurrency(Math.abs(currentSavings))}. Tinjau pos pengeluaran yang naik ${expenseChangePct.toFixed(1)}% dari periode lalu.`
+    }
+  }
+
+  if (incomeChangePct < -10) {
+    return {
+      tone: 'warning',
+      text: `Income turun ${Math.abs(incomeChangePct).toFixed(1)}%. Pastikan pemasukan rutin sudah tercatat atau cari peluang income tambahan.`
+    }
+  }
+
+  if (expenseChangePct > 15) {
+    return {
+      tone: 'warning',
+      text: `Pengeluaran naik ${expenseChangePct.toFixed(1)}%. Cek kategori terbesar dan coba rem biaya yang nggak urgent.`
+    }
+  }
+
+  return {
+    tone: 'neutral',
+    text: 'Cashflow kamu stabil. Kalau mau meningkatkan tabungan, targetkan surplus kecil secara konsisten tiap periode.'
+  }
+}
+
+function generateMiniSummaryPrompt(
+  data: {
+    totalIncome: number
+    totalExpense: number
+    netSavings: number
+    periodTrend: {
+      incomeChange: number
+      expenseChange: number
+    }
+  },
+  context: {
+    summaryTitle: string
+    previousLabel: string
+    displayName: string
+  }
+) {
+  return `Buat ringkasan keuangan singkat (maks 2 kalimat) untuk pengguna Budtrack. Gaya bahasa profesional santai, campuran Indo dan sedikit English yang natural. Fokuskan pada highlight utama dan perbandingan dari ${context.previousLabel}.
+
+Data:
+- Periode: ${context.summaryTitle} (${context.displayName})
+- Total Pemasukan: ${formatCurrency(data.totalIncome)}
+- Total Pengeluaran: ${formatCurrency(data.totalExpense)}
+- Tabungan Bersih: ${formatCurrency(data.netSavings)}
+- Perubahan pemasukan: ${data.periodTrend.incomeChange.toFixed(1)}%
+- Perubahan pengeluaran: ${data.periodTrend.expenseChange.toFixed(1)}%
+
+Output:
+- Jangan pakai bullet atau heading
+- Panjang maksimal 220 karakter
+- Jangan sebut 'AI' atau 'asisten'`
 }
 
 export async function POST(req: Request) {
@@ -89,7 +109,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Wallet ID is required' }, { status: 400 })
     }
 
-    // Determine current and previous period dates
     const now = new Date()
     let currentPeriodStart: Date
     let currentPeriodEnd: Date = now
@@ -97,19 +116,13 @@ export async function POST(req: Request) {
     let previousPeriodEnd: Date
 
     if (period === 'month') {
-      // Current period: this month
       currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      
-      // Previous period: last month
       previousPeriodEnd = new Date(currentPeriodStart)
       previousPeriodEnd.setDate(previousPeriodEnd.getDate() - 1)
       previousPeriodStart = new Date(previousPeriodEnd.getFullYear(), previousPeriodEnd.getMonth(), 1)
     } else if (period === 'quarter') {
-      // Current period: this quarter
       const currentQuarter = Math.floor(now.getMonth() / 3)
       currentPeriodStart = new Date(now.getFullYear(), currentQuarter * 3, 1)
-      
-      // Previous period: last quarter
       previousPeriodEnd = new Date(currentPeriodStart)
       previousPeriodEnd.setDate(previousPeriodEnd.getDate() - 1)
       const previousQuarter = previousPeriodEnd.getMonth() < 3 
@@ -121,16 +134,11 @@ export async function POST(req: Request) {
         1
       )
     } else {
-      // Default to 'year'
-      // Current period: this year
       currentPeriodStart = new Date(now.getFullYear(), 0, 1)
-      
-      // Previous period: last year
       previousPeriodStart = new Date(now.getFullYear() - 1, 0, 1)
       previousPeriodEnd = new Date(now.getFullYear() - 1, 11, 31)
     }
 
-    // Get current period data
     const currentPeriodIncome = await prisma.transaction.aggregate({
       where: {
         walletId,
@@ -141,9 +149,7 @@ export async function POST(req: Request) {
           lte: currentPeriodEnd
         }
       },
-      _sum: {
-        amount: true
-      }
+      _sum: { amount: true }
     })
 
     const currentPeriodExpense = await prisma.transaction.aggregate({
@@ -156,12 +162,9 @@ export async function POST(req: Request) {
           lte: currentPeriodEnd
         }
       },
-      _sum: {
-        amount: true
-      }
+      _sum: { amount: true }
     })
 
-    // Get previous period data
     const previousPeriodIncome = await prisma.transaction.aggregate({
       where: {
         walletId,
@@ -172,9 +175,7 @@ export async function POST(req: Request) {
           lte: previousPeriodEnd
         }
       },
-      _sum: {
-        amount: true
-      }
+      _sum: { amount: true }
     })
 
     const previousPeriodExpense = await prisma.transaction.aggregate({
@@ -187,27 +188,85 @@ export async function POST(req: Request) {
           lte: previousPeriodEnd
         }
       },
-      _sum: {
-        amount: true
-      }
+      _sum: { amount: true }
     })
 
-    // Calculate totals and savings
     const currentIncome = currentPeriodIncome._sum.amount || 0
     const currentExpense = currentPeriodExpense._sum.amount || 0
+    const currentSavings = currentIncome - currentExpense
+
     const previousIncome = previousPeriodIncome._sum.amount || 0
     const previousExpense = previousPeriodExpense._sum.amount || 0
+    const previousSavings = previousIncome - previousExpense
+
+    const incomeChange = previousIncome !== 0 ? ((currentIncome - previousIncome) / Math.abs(previousIncome)) * 100 : currentIncome > 0 ? 100 : 0
+    const expenseChange = previousExpense !== 0 ? ((currentExpense - previousExpense) / Math.abs(previousExpense)) * 100 : currentExpense > 0 ? 100 : 0
+
+    let summaryInsight: { text: string; tone: 'positive' | 'negative' | 'warning' | 'neutral'; source: 'fallback' | 'ai' } | null = null
+
+    try {
+      const userSettings = await prisma.userSettings.findUnique({
+        where: { userId: session.user.id }
+      })
+
+      if (userSettings?.provider && userSettings?.apiKey && userSettings?.selectedModel) {
+        const periodContext = getPeriodContext(period)
+        const miniPrompt = generateMiniSummaryPrompt(
+          {
+            totalIncome: currentIncome,
+            totalExpense: currentExpense,
+            netSavings: currentSavings,
+            periodTrend: {
+              incomeChange,
+              expenseChange
+            }
+          },
+          periodContext
+        )
+
+        const aiResponse = await generateAIResponse({
+          prompt: miniPrompt,
+          provider: userSettings.provider,
+          apiKey: userSettings.apiKey,
+          model: userSettings.selectedModel
+        })
+
+        const trimmed = aiResponse.trim().replace(/^[\s"'`]+|[\s"'`]+$/g, '')
+        if (trimmed.length > 0) {
+          summaryInsight = {
+            text: trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed,
+            tone: currentSavings >= 0 ? (currentSavings > 0 ? 'positive' : 'neutral') : 'negative',
+            source: 'ai'
+          }
+        }
+      }
+    } catch (aiError) {
+      console.warn('Failed to generate AI summary insight:', aiError)
+      summaryInsight = null
+    }
+
+    if (!summaryInsight) {
+      const fallback = buildFallbackInsight(currentIncome, currentExpense, currentSavings, incomeChange, expenseChange)
+      summaryInsight = { ...fallback, source: 'fallback' }
+    }
 
     const response = {
       currentPeriod: {
         income: currentIncome,
         expense: currentExpense,
-        savings: currentIncome - currentExpense
+        savings: currentSavings
       },
       previousPeriod: {
         income: previousIncome,
         expense: previousExpense,
-        savings: previousIncome - previousExpense
+        savings: previousSavings
+      },
+      meta: {
+        insight: summaryInsight,
+        comparison: {
+          incomeChangePct: incomeChange,
+          expenseChangePct: expenseChange
+        }
       }
     }
 

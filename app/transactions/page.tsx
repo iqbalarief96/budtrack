@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { FiPlus, FiFilter, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown, FiUpload, FiRefreshCw } from 'react-icons/fi'
+import React, { useState, useEffect, useRef } from 'react'
+import { FiPlus, FiFilter, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown, FiUpload, FiRefreshCw, FiDownload } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import TransactionModal from '../components/TransactionModal'
 import FilterModal from '../components/FilterModal'
@@ -14,6 +14,7 @@ import { MicrophoneIcon } from '@heroicons/react/24/solid';
 import { VoiceTransactionModal } from '../components/VoiceTransactionModal';
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { toast } from 'sonner';
 
 // Define Transaction type
 type Transaction = {
@@ -67,6 +68,9 @@ const TransactionsPage = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [activeFilters, setActiveFilters] = useState<FilterValues>({})
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(() => new Set())
+  const [isExporting, setIsExporting] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   const [initialType, setInitialType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' })
   const [insights, setInsights] = useState<Insight[]>([])
@@ -78,6 +82,7 @@ const TransactionsPage = () => {
   
   // Hydration-safe localStorage init
   const [isClientSide, setIsClientSide] = useState(false)
+  const selectAllRef = useRef<HTMLInputElement>(null)
   
   // Check if we're on client-side
   useEffect(() => {
@@ -176,6 +181,21 @@ const TransactionsPage = () => {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    setSelectedTransactions(prev => {
+      if (prev.size === 0) {
+        return prev
+      }
+      const next = new Set<string>()
+      transactions.forEach(tx => {
+        if (prev.has(tx.id)) {
+          next.add(tx.id)
+        }
+      })
+      return next
+    })
+  }, [transactions])
 
   // Fetch insights
   const fetchInsights = async () => {
@@ -355,6 +375,16 @@ const TransactionsPage = () => {
     sortConfig
   )
 
+  const selectedCount = selectedTransactions.size
+  const isAllSelected = filteredTransactions.length > 0 && filteredTransactions.every(tx => selectedTransactions.has(tx.id))
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        selectedTransactions.size > 0 && selectedTransactions.size < filteredTransactions.length
+    }
+  }, [selectedTransactions, filteredTransactions.length])
+
   // Handle transaction save
   const handleSaveTransaction = async (transactionData: any) => {
     try {
@@ -370,35 +400,101 @@ const TransactionsPage = () => {
       // Close modal and reset editing state
       setIsModalOpen(false);
       setEditingTransaction(null);
-      
-      // Force refresh page to ensure all data is updated correctly
-      window.location.reload();
+
+      toast.success('Transaksi berhasil disimpan');
     } catch (error) {
       console.error('Error handling transaction save:', error);
+      toast.error(error instanceof Error ? error.message : 'Gagal menyimpan transaksi');
     }
   }
 
   // Handle transaction delete
-  const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) return
-    
+  const deleteTransactionsBatch = async (ids: string[], confirmMessage: string) => {
+    if (ids.length === 0) return
+    if (!confirm(confirmMessage)) return
+
+    setIsBulkDeleting(true)
+
     try {
-      const response = await fetch(`/api/transactions?id=${id}`, {
-        method: 'DELETE'
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete transaction')
+      const params = new URLSearchParams()
+      if (ids.length === 1) {
+        params.append('id', ids[0])
+      } else {
+        params.append('ids', ids.join(','))
       }
 
-      await fetchTransactions()
+      const response = await fetch(`/api/transactions?${params.toString()}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete transaction')
+      }
+
+      const result = await response.json().catch(() => null)
+
+      await fetchTransactions(activeFilters)
       await refreshWallets()
-      
-      // Force refresh halaman untuk memastikan saldo diperbarui
-      window.location.reload()
+      setSelectedTransactions(new Set())
+
+      const successMessage =
+        (result && typeof result === 'object' && 'message' in result && typeof result.message === 'string')
+          ? result.message
+          : ids.length > 1
+            ? `${ids.length} transaksi berhasil dihapus`
+            : 'Transaksi berhasil dihapus'
+
+      toast.success(successMessage)
     } catch (error) {
-      console.error('Error deleting transaction:', error)
+      console.error('Error deleting transactions:', error)
+      toast.error(error instanceof Error ? error.message : 'Terjadi kesalahan saat menghapus transaksi')
+    } finally {
+      setIsBulkDeleting(false)
     }
+  }
+
+  const handleDeleteTransaction = async (id: string) => {
+    await deleteTransactionsBatch([id], 'Apakah Anda yakin ingin menghapus transaksi ini?')
+  }
+
+  const handleDeleteSelected = async () => {
+    const ids = Array.from(selectedTransactions)
+    if (ids.length === 0) return
+    await deleteTransactionsBatch(ids, `Apakah Anda yakin ingin menghapus ${ids.length} transaksi terpilih?`)
+  }
+
+  const handleDeleteAll = async () => {
+    const ids = filteredTransactions.map(tx => tx.id)
+    if (ids.length === 0) return
+    await deleteTransactionsBatch(ids, `Apakah Anda yakin ingin menghapus semua ${ids.length} transaksi yang sedang ditampilkan?`)
+  }
+
+  const toggleTransactionSelection = (transactionId: string) => {
+    setSelectedTransactions(prev => {
+      const next = new Set(prev)
+      if (next.has(transactionId)) {
+        next.delete(transactionId)
+      } else {
+        next.add(transactionId)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedTransactions(prev => {
+      const next = new Set(prev)
+      const allSelected = filteredTransactions.every(tx => next.has(tx.id))
+
+      if (allSelected) {
+        filteredTransactions.forEach(tx => next.delete(tx.id))
+      } else {
+        filteredTransactions.forEach(tx => next.add(tx.id))
+      }
+
+      return next
+    })
   }
 
   const handleFilter = (filters: FilterValues) => {
@@ -411,9 +507,79 @@ const TransactionsPage = () => {
     // Refresh transactions after import
     await fetchTransactions(activeFilters)
     await refreshWallets()
-    
-    // Force refresh page to ensure all data is updated correctly
-    window.location.reload()
+
+    toast.success('Import transaksi selesai')
+  }
+
+  const handleExport = async () => {
+    if (!selectedWallet) {
+      toast.error('Pilih dompet terlebih dahulu sebelum mengekspor')
+      return
+    }
+
+    setIsExporting(true)
+
+    try {
+      const params = new URLSearchParams()
+      params.append('walletId', selectedWallet.id)
+
+      if (activeFilters.type) {
+        params.append('type', activeFilters.type)
+      }
+
+      if (activeFilters.categoryId) {
+        params.append('categoryId', activeFilters.categoryId)
+      }
+
+      if (activeFilters.dateRange?.start) {
+        params.append('startDate', activeFilters.dateRange.start)
+      }
+
+      if (activeFilters.dateRange?.end) {
+        params.append('endDate', activeFilters.dateRange.end)
+      }
+
+      if (activeFilters.amountRange?.min !== undefined) {
+        params.append('minAmount', String(activeFilters.amountRange.min))
+      }
+
+      if (activeFilters.amountRange?.max !== undefined) {
+        params.append('maxAmount', String(activeFilters.amountRange.max))
+      }
+
+      const response = await fetch(`/api/transactions/export?${params.toString()}`)
+
+      if (response.status === 204) {
+        toast.info('Tidak ada transaksi yang cocok dengan filter untuk diekspor')
+        return
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Gagal mengekspor transaksi')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const slug =
+        selectedWallet.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'wallet'
+      const fileName = `transactions-${slug}-${new Date().toISOString().split('T')[0]}.csv`
+
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast.success('Export transaksi berhasil')
+    } catch (error) {
+      console.error('Error exporting transactions:', error)
+      toast.error(error instanceof Error ? error.message : 'Gagal mengekspor transaksi')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   // Sort indicator component
@@ -509,6 +675,30 @@ const TransactionsPage = () => {
           >
             <FiUpload className="mr-2" />
             Import
+          </button>
+          <button
+            onClick={handleDeleteSelected}
+            disabled={selectedCount === 0 || isBulkDeleting}
+            className="flex items-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <FiTrash2 className="mr-2" />
+            Delete Selected
+          </button>
+          <button
+            onClick={handleDeleteAll}
+            disabled={filteredTransactions.length === 0 || isBulkDeleting}
+            className="flex items-center px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <FiTrash2 className="mr-2" />
+            Delete All
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isExporting ? <FiRefreshCw className="mr-2 animate-spin" /> : <FiDownload className="mr-2" />}
+            Export
           </button>
           <VoiceTransactionModal 
             buttonVariant="outline"
@@ -675,6 +865,19 @@ const TransactionsPage = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th
+                scope="col"
+                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  aria-label="Pilih semua transaksi"
+                />
+              </th>
               <th 
                 scope="col" 
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -718,19 +921,28 @@ const TransactionsPage = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             ) : filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-4 whitespace-nowrap text-center text-gray-500">
                   Tidak ada transaksi
                 </td>
               </tr>
             ) : (
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedTransactions.has(transaction.id)}
+                      onChange={() => toggleTransactionSelection(transaction.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={`Pilih transaksi ${transaction.description || transaction.id}`}
+                    />
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {new Date(transaction.date).toLocaleDateString('id-ID')}
                   </td>
@@ -761,7 +973,8 @@ const TransactionsPage = () => {
                     </button>
                     <button
                       onClick={() => handleDeleteTransaction(transaction.id)}
-                      className="text-red-600 hover:text-red-900 mx-1"
+                      className="text-red-600 hover:text-red-900 mx-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                      disabled={isBulkDeleting}
                     >
                       <FiTrash2 className="inline" />
                     </button>

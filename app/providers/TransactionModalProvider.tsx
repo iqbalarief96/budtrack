@@ -3,8 +3,16 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import TransactionModal from '../components/TransactionModal';
 
+type TransactionModalOptions =
+  | 'INCOME'
+  | 'EXPENSE'
+  | {
+      type?: 'INCOME' | 'EXPENSE';
+      quick?: boolean;
+    };
+
 interface TransactionModalContextType {
-  openTransactionModal: (type: 'INCOME' | 'EXPENSE') => void;
+  openTransactionModal: (options?: TransactionModalOptions) => void;
   closeTransactionModal: () => void;
 }
 
@@ -26,8 +34,26 @@ export function TransactionModalProvider({ children }: TransactionModalProviderP
   const [isOpen, setIsOpen] = useState(false);
   const [initialData, setInitialData] = useState<any>(null);
 
-  const openTransactionModal = (type: 'INCOME' | 'EXPENSE') => {
-    setInitialData({ type });
+  const openTransactionModal = (options?: TransactionModalOptions) => {
+    let payload: Record<string, unknown> = {};
+
+    if (typeof options === 'string') {
+      payload.type = options;
+      payload.quick = true;
+    } else if (options) {
+      if (options.type) {
+        payload.type = options.type;
+      }
+      if (typeof options.quick === 'boolean') {
+        payload.quick = options.quick;
+      }
+    }
+
+    if (payload.quick === undefined) {
+      payload.quick = true;
+    }
+
+    setInitialData(payload);
     setIsOpen(true);
   };
 
@@ -56,7 +82,7 @@ export function TransactionModalProvider({ children }: TransactionModalProviderP
         onClose={closeTransactionModal}
         onSave={handleSave}
         initialData={initialData}
-        isQuickAction={true}
+        isQuickAction={initialData?.quick !== false}
       />
     </TransactionModalContext.Provider>
   );

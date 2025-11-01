@@ -482,6 +482,8 @@ export default function FinanceChatbot() {
       return;
     }
     
+    if (isLoading) return;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -494,13 +496,16 @@ export default function FinanceChatbot() {
     setMessages(newMessages);
     setInputMessage('');
     setIsLoading(true);
+    setShowWelcome(false);
+    saveMessages(newMessages);
     
     // Update chat history for context
-    const newHistory: ChatHistoryItem[] = [
+    const updatedHistory: ChatHistoryItem[] = [
       ...chatHistory,
       { role: 'user', content: inputMessage }
     ];
-    setChatHistory(newHistory);
+    const trimmedHistory = updatedHistory.slice(-10);
+    setChatHistory(trimmedHistory);
     
     try {
       // Call API to get assistant response
@@ -512,21 +517,34 @@ export default function FinanceChatbot() {
         body: JSON.stringify({
           prompt: inputMessage,
           walletId: selectedWallet.id,
-          history: newHistory.slice(-10) // Send last 10 messages for context
+          history: trimmedHistory
         }),
       });
       
       if (!response.ok) {
-        throw new Error('Failed to get chatbot response');
+        const errorData = await response.json().catch(() => null);
+        const errorMessage =
+          (errorData && typeof errorData === 'object' && 'error' in errorData && typeof errorData.error === 'string')
+            ? errorData.error
+            : 'Failed to get chatbot response';
+        throw new Error(errorMessage);
       }
-      
+
       const data = await response.json();
+      const assistantReply =
+        typeof data?.response === 'string' && data.response.trim().length > 0
+          ? data.response.trim()
+          : null;
+
+      if (!assistantReply) {
+        throw new Error('Chatbot returned an empty response');
+      }
       
       // Add assistant response to messages
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.response,
+        content: assistantReply,
         timestamp: new Date(),
       };
       
@@ -534,10 +552,8 @@ export default function FinanceChatbot() {
       setMessages(updatedMessages);
       
       // Update chat history with assistant response
-      setChatHistory([
-        ...newHistory,
-        { role: 'assistant', content: data.response }
-      ]);
+      const assistantHistory = [...trimmedHistory, { role: 'assistant', content: assistantReply }].slice(-10);
+      setChatHistory(assistantHistory);
       
       // Save chat history to localStorage
       saveMessages(updatedMessages);
@@ -555,10 +571,11 @@ export default function FinanceChatbot() {
       
       setMessages([...newMessages, errorMessage]);
       saveMessages([...newMessages, errorMessage]);
+      setChatHistory(trimmedHistory);
       
       toast({
         title: 'Error',
-        description: 'Failed to get chatbot response. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to get chatbot response. Please try again.',
         variant: 'destructive',
       });
     } finally {

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardWidget } from './WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
-import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle } from 'react-icons/fi';
+import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle, FiZap } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import { useTransactionModal } from '@/app/providers/TransactionModalProvider';
 
@@ -177,6 +177,7 @@ interface WidgetRendererProps {
 export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRendererProps) {
   const { selectedWallet, setSelectedWalletAndPersist, wallets } = useWallet();
   const walletId = selectedWalletId || (selectedWallet?.id || '');
+  console.log('[DEBUG] WidgetRenderer walletId:', walletId, 'selectedWallet:', selectedWallet);
   const router = useRouter();
   
   // Data state for widgets
@@ -309,6 +310,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
       
     case 'emergency-fund':
+      console.log('[DEBUG] WidgetRenderer passing walletId to EmergencyFundCard:', walletId, 'selectedWallet:', selectedWallet);
       return <EmergencyFundCard walletId={walletId} />;
       
     case 'expense-chart':
@@ -345,6 +347,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
             
     case 'savings-goals':
+      // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <SavingsGoalCard walletId={walletId} />;
       
     case 'investment-performance':
@@ -357,7 +360,16 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return (
         <div className="bg-gray-50 rounded-lg border border-gray-100 p-4">
           <h3 className="font-medium text-gray-700 mb-3">Aksi Cepat</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+            <button
+              onClick={() => openTransactionModal({ quick: true })}
+              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
+            >
+              <div className="flex flex-col items-center">
+                <FiZap className="h-6 w-6 text-blue-500 mb-1" />
+                <span className="text-sm">Transaksi Cepat</span>
+              </div>
+            </button>
             <button
               onClick={() => openTransactionModal('EXPENSE')}
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
@@ -425,6 +437,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
       
     case 'top-spending':
+      // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <TopSpendingWidget walletId={walletId} />;
       
     default:

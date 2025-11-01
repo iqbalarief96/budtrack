@@ -13,6 +13,49 @@ type BudgetWithRelations = Budget & {
   percentage: number;
 }
 
+const getCurrentPeriod = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { start, end };
+};
+
+async function calculateBudgetSpending(params: {
+  userId: string;
+  walletId: string;
+  categoryId: string;
+  amount: number;
+  periodStart: Date;
+  periodEnd: Date;
+}) {
+  const whereClause: any = {
+    userId: params.userId,
+    walletId: params.walletId,
+    type: 'EXPENSE',
+    date: {
+      gte: params.periodStart,
+      lt: params.periodEnd,
+    },
+  };
+
+  if (params.categoryId) {
+    whereClause.categoryId = params.categoryId;
+  }
+
+  const spending = await prisma.transaction.aggregate({
+    where: whereClause,
+    _sum: {
+      amount: true,
+    },
+  });
+
+  const spent = Math.abs(spending._sum.amount ?? 0);
+  const percentage =
+    params.amount > 0 ? Math.min(100, Math.round((spent / params.amount) * 100)) : 0;
+
+  return { spent, percentage };
+}
+
 // GET /api/budgets - Get all budgets for the current user
 export async function GET(request: NextRequest) {
   try {
@@ -37,10 +80,32 @@ export async function GET(request: NextRequest) {
       },
       include: {
         category: true,
+        wallet: true,
       },
     });
 
-    return NextResponse.json(budgets);
+    const { start: periodStart, end: periodEnd } = getCurrentPeriod();
+
+    const budgetsWithSpending: BudgetWithRelations[] = await Promise.all(
+      budgets.map(async (budget) => {
+        const { spent, percentage } = await calculateBudgetSpending({
+          userId,
+          walletId: budget.walletId,
+          categoryId: budget.categoryId,
+          amount: budget.amount,
+          periodStart,
+          periodEnd,
+        });
+
+        return {
+          ...budget,
+          spent,
+          percentage,
+        };
+      })
+    );
+
+    return NextResponse.json(budgetsWithSpending);
   } catch (error) {
     console.error('Error fetching budgets:', error);
     return NextResponse.json(
@@ -262,14 +327,8 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    console.log('Updating budget with dates:', {
-      startDate,
-      endDate,
-      providedStartDate: updateData.startDate,
-      providedEndDate: updateData.endDate,
-      existingStartDate: existingBudget.startDate,
-      existingEndDate: existingBudget.endDate
-    });
+    const targetWalletId = updateData.walletId || existingBudget.walletId;
+    const targetCategoryId = updateData.categoryId || existingBudget.categoryId;
 
     const updatedBudget = await prisma.budget.update({
       where: { id },
@@ -277,8 +336,9 @@ export async function PUT(request: NextRequest) {
         amount: updateData.amount !== undefined ? parseFloat(updateData.amount.toString()) : existingBudget.amount,
         startDate,
         endDate,
-        categoryId: updateData.categoryId || existingBudget.categoryId,
-        walletId: updateData.walletId || existingBudget.walletId,
+        categoryId: targetCategoryId,
+        walletId: targetWalletId,
+        spent: 0,
       },
     });
 

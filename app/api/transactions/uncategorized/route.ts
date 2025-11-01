@@ -3,16 +3,14 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
-// GET /api/transactions/uncategorized - Get all uncategorized transactions
-export async function GET() {
+// GET /api/transactions/uncategorized - Get uncategorized transactions (optionally filtered by wallet)
+export async function GET(request: Request) {
   try {
-    // Check authentication
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
     });
@@ -21,24 +19,26 @@ export async function GET() {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Get count of uncategorized transactions
+    const url = new URL(request.url);
+    const walletId = url.searchParams.get('walletId') || undefined;
+
+    const baseWhere: Record<string, unknown> = {
+      userId: user.id,
+      categoryId: null,
+    };
+
+    if (walletId) {
+      baseWhere.walletId = walletId;
+    }
+
     const count = await prisma.transaction.count({
-      where: {
-        userId: user.id,
-        categoryId: null,
-      },
+      where: baseWhere,
     });
 
-    // Get uncategorized transactions
     const transactions = await prisma.transaction.findMany({
-      where: {
-        userId: user.id,
-        categoryId: null,
-      },
-      orderBy: {
-        date: 'desc',
-      },
-      take: 50, // Limit to 50 most recent
+      where: baseWhere,
+      orderBy: { date: 'desc' },
+      take: 50,
     });
 
     return NextResponse.json({ count, transactions });

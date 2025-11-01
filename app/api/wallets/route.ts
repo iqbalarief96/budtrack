@@ -51,6 +51,8 @@ export async function GET(request: Request) {
         }
       })
       
+      console.log('[DEBUG] Wallet', wallet.name, 'calculated balance:', calculatedBalance);
+      
       // Return wallet with correct balance
       return {
         ...wallet,
@@ -58,6 +60,7 @@ export async function GET(request: Request) {
       }
     })
 
+    console.log('[DEBUG] Returning wallets with balances:', walletsWithCorrectBalance.map(w => ({ id: w.id, name: w.name, balance: w.balance })));
     return NextResponse.json(walletsWithCorrectBalance)
   } catch (error) {
     console.error('Error fetching wallets:', error)

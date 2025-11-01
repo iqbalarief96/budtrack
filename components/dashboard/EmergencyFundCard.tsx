@@ -84,7 +84,13 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
       const timestamp = new Date().getTime();
       let url = `/api/emergency-fund?t=${timestamp}`;
       if (walletId) {
-        url += `&walletId=${walletId}`;
+        url += `&walletId=${encodeURIComponent(walletId)}`;
+        console.log('[DEBUG] EmergencyFundCard: Fetching with walletId:', walletId, 'encoded:', encodeURIComponent(walletId));
+        
+        // Force cache invalidation with a unique timestamp
+        url += `&_t=${Date.now()}`;
+      } else {
+        console.log('[DEBUG] EmergencyFundCard: Fetching without walletId');
       }
       
       console.log('Fetching emergency fund data from:', url);
@@ -120,6 +126,9 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
           setIsRefreshing(false);
         }
       }
+      
+      // Debug the current amount
+      console.log('[DEBUG] Setting data with currentAmount:', result.currentAmount);
       
       setData(result);
       // Always ensure we reset the refreshing state

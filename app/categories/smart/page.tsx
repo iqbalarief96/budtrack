@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiPlusCircle, FiTag, FiTrash, FiEdit, FiArrowDown, FiArrowUp, FiRefreshCw, FiLayers, FiFilter, FiChevronRight } from 'react-icons/fi';
 import Link from 'next/link';
+import { useWallet } from '@/app/providers/WalletProvider';
 import AutoCategorizeSection from './components/AutoCategorizeSection';
 import CustomRulesSection from './components/CustomRulesSection';
 import CategoryManagerSection from './components/CategoryManagerSection';
@@ -27,6 +28,7 @@ type Rule = {
 };
 
 const SmartCategoriesPage = () => {
+  const { selectedWallet } = useWallet();
   const [categories, setCategories] = useState<Category[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [activeTab, setActiveTab] = useState('auto');
@@ -162,8 +164,8 @@ const SmartCategoriesPage = () => {
         <div className="py-4">
           {activeTab === 'auto' && (
             <AutoCategorizeSection 
-              categories={categories}
-              onRefresh={fetchData}
+              walletId={selectedWallet?.id}
+              walletName={selectedWallet?.name}
             />
           )}
           

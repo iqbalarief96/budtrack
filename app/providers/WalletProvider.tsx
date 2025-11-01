@@ -46,6 +46,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
       const response = await fetch('/api/wallets')
       if (!response.ok) throw new Error('Failed to fetch wallets')
       const data: Wallet[] = await response.json()
+      console.log('[DEBUG] WalletProvider fetched wallets:', data);
       setWallets(data)
       
       // Determine the initial selected wallet
@@ -77,6 +78,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   
   // Function to set selected wallet and persist to localStorage
   const setSelectedWalletAndPersist = (wallet: Wallet) => {
+    console.log('[DEBUG] Setting selected wallet:', wallet);
     setSelectedWallet(wallet);
     localStorage.setItem(LOCAL_STORAGE_KEY, wallet.id);
   };
