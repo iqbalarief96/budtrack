@@ -165,14 +165,15 @@ export async function GET(req: Request) {
     }
 
     // NEW: Use wallet-based emergency fund system
-    try {
-      const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
-      const emergencyFundData = await getUserEmergencyFunds(session.user.id);
-      return NextResponse.json(emergencyFundData);
-    } catch (newApiError) {
-      console.error('New wallet-based API failed, falling back to old API:', newApiError);
-      // Fall through to old API below
-    }
+    // Temporarily disabled to use transaction-based calculation
+    // try {
+    //   const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
+    //   const emergencyFundData = await getUserEmergencyFunds(session.user.id);
+    //   return NextResponse.json(emergencyFundData);
+    // } catch (newApiError) {
+    //   console.error('New wallet-based API failed, falling back to old API:', newApiError);
+    //   // Fall through to old API below
+    // }
 
     // FALLBACK: Old emergency fund API (for backward compatibility)
     // Parse query parameters
