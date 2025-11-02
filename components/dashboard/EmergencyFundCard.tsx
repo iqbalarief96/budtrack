@@ -218,29 +218,30 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
   // Function to apply recommendation
   const applyRecommendation = async () => {
     if (!aiRecommendation) return;
-    
+
     try {
       setIsApplyingRecommendation(true);
-      
+
       // Use update-target endpoint to directly apply the recommendation
       const response = await fetch('/api/emergency-fund/update-target', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           targetAmount: aiRecommendation.recommendedTarget,
-          monthlyContribution: data?.monthlyContribution || Math.ceil(aiRecommendation.recommendedTarget * 0.1 / 1000) * 1000
+          monthlyContribution: data?.monthlyContribution || Math.ceil(aiRecommendation.recommendedTarget * 0.1 / 1000) * 1000,
+          walletId // Pass walletId to update wallet-specific target
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to update emergency fund target');
       }
-      
+
       // Refetch emergency fund data to show updated values
       await fetchData(true);
-      
+
       toast.success('Target dana darurat berhasil diperbarui! 🎯');
       setShowRecommendationDialog(false);
     } catch (error) {
@@ -264,15 +265,15 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
   const updateTarget = async () => {
     try {
       setIsUpdatingTarget(true);
-      
+
       const targetAmount = parseFloat(newTargetAmount);
       const monthlyContribution = parseFloat(newMonthlyContribution || '0');
-      
+
       if (isNaN(targetAmount) || targetAmount <= 0) {
         toast.error('Target harus berupa angka positif');
         return;
       }
-      
+
       // Call the API to update target
       const response = await fetch('/api/emergency-fund/update-target', {
         method: 'POST',
@@ -282,16 +283,17 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
         body: JSON.stringify({
           targetAmount,
           monthlyContribution,
+          walletId // Pass walletId to update wallet-specific target
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to update target');
       }
-      
+
       toast.success('Target dana darurat berhasil diperbarui!');
       setShowTargetDialog(false);
-      
+
       // Re-fetch data to show new target
       fetchData(true);
     } catch (error) {

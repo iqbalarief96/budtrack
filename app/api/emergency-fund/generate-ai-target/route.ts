@@ -284,16 +284,36 @@ export async function POST(request: NextRequest) {
     
     console.log('Generated emergency fund recommendation:', recommendedTarget, explanation);
     
+    // Get current wallet emergency fund if exists
+    let currentTarget = 0;
+    let hasExistingFund = false;
+
+    if (walletId) {
+      const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
+        where: { walletId }
+      });
+
+      if (walletEmergencyFund) {
+        currentTarget = walletEmergencyFund.targetAmount;
+        hasExistingFund = true;
+      }
+    } else {
+      // Fallback to general emergency fund if no walletId
+      currentTarget = user.emergencyFund?.targetAmount || 0;
+      hasExistingFund = !!user.emergencyFund;
+    }
+
     // Return the recommendation
     return NextResponse.json({
       success: true,
       recommendedTarget,
       explanation,
-      currentTarget: user.emergencyFund?.targetAmount || 0,
-      hasExistingFund: !!user.emergencyFund,
+      currentTarget,
+      hasExistingFund,
       toastMessage: randomSuccessMessage,
       usedAI: aiEnhancedMultiplier,
-      aiProvider: aiEnhancedMultiplier ? user.settings?.provider : null
+      aiProvider: aiEnhancedMultiplier ? user.settings?.provider : null,
+      walletId // Include walletId in response for client to use
     });
     
   } catch (error) {

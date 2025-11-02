@@ -164,30 +164,55 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // NEW: Use wallet-based emergency fund system (HYBRID MODE)
-    try {
-      const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
-      const emergencyFundData = await getUserEmergencyFunds(session.user.id);
-
-      // If user has set a target (targetAmount > 0), use wallet-based system
-      if (emergencyFundData.totals.targetAmount > 0) {
-        console.log('[DEBUG] Using wallet-based emergency fund (has target)');
-        return NextResponse.json(emergencyFundData);
-      }
-
-      // Otherwise, fall through to transaction-based calculation
-      console.log('[DEBUG] No target set, falling back to transaction-based calculation');
-    } catch (newApiError) {
-      console.error('New wallet-based API failed, falling back to old API:', newApiError);
-      // Fall through to old API below
-    }
-
-    // FALLBACK: Old emergency fund API (for backward compatibility)
-    // Parse query parameters
+    // Parse query parameters first
     const url = new URL(req.url);
     const walletId = url.searchParams.get('walletId');
 
     console.log('[DEBUG] Emergency fund API GET called with walletId:', walletId);
+
+    // NEW: Use wallet-based emergency fund system (HYBRID MODE)
+    if (walletId) {
+      // Check if this specific wallet has a target set
+      try {
+        const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
+          where: { walletId }
+        });
+
+        if (walletEmergencyFund && walletEmergencyFund.targetAmount > 0) {
+          console.log('[DEBUG] Wallet has specific target, using wallet-based system');
+
+          // Get wallet details
+          const wallet = await prisma.wallet.findUnique({
+            where: { id: walletId }
+          });
+
+          if (!wallet) {
+            return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
+          }
+
+          // Calculate savings for this wallet
+          const savingsSummary = await calculateSavingsSummary(session.user.id, walletId);
+
+          return NextResponse.json({
+            targetAmount: walletEmergencyFund.targetAmount,
+            currentAmount: wallet.balance,
+            monthlyContribution: 0,
+            isActive: walletEmergencyFund.isActive,
+            totalSavings: savingsSummary.total,
+            savingsByType: savingsSummary.byType
+          }, {
+            headers: {
+              'Cache-Control': 'no-store, max-age=0',
+            }
+          });
+        }
+
+        console.log('[DEBUG] Wallet has no specific target, falling back to transaction-based calculation');
+      } catch (walletError) {
+        console.error('Error checking wallet emergency fund:', walletError);
+        // Fall through to transaction-based calculation
+      }
+    }
 
     // Get user with emergency fund data
     const user = await prisma.user.findUnique({
