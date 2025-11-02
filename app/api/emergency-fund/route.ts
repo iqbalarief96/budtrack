@@ -164,16 +164,23 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // NEW: Use wallet-based emergency fund system
-    // Temporarily disabled to use transaction-based calculation
-    // try {
-    //   const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
-    //   const emergencyFundData = await getUserEmergencyFunds(session.user.id);
-    //   return NextResponse.json(emergencyFundData);
-    // } catch (newApiError) {
-    //   console.error('New wallet-based API failed, falling back to old API:', newApiError);
-    //   // Fall through to old API below
-    // }
+    // NEW: Use wallet-based emergency fund system (HYBRID MODE)
+    try {
+      const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
+      const emergencyFundData = await getUserEmergencyFunds(session.user.id);
+
+      // If user has set a target (targetAmount > 0), use wallet-based system
+      if (emergencyFundData.totals.targetAmount > 0) {
+        console.log('[DEBUG] Using wallet-based emergency fund (has target)');
+        return NextResponse.json(emergencyFundData);
+      }
+
+      // Otherwise, fall through to transaction-based calculation
+      console.log('[DEBUG] No target set, falling back to transaction-based calculation');
+    } catch (newApiError) {
+      console.error('New wallet-based API failed, falling back to old API:', newApiError);
+      // Fall through to old API below
+    }
 
     // FALLBACK: Old emergency fund API (for backward compatibility)
     // Parse query parameters
