@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu"
 import { Badge } from '@/components/ui/badge'
+import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
 
 // Function untuk format currency
 const formatCurrency = (amount: number, currencyCode = 'IDR') => {
@@ -120,7 +121,7 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       const tabParam = searchParams.get('tab');
-      if (tabParam && ['transactions', 'members', 'settings'].includes(tabParam)) {
+      if (tabParam && ['transactions', 'savings', 'members', 'settings'].includes(tabParam)) {
         setActiveTab(tabParam);
       }
     }
@@ -601,6 +602,7 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
       <Tabs defaultValue="transactions" className="w-full" value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-4">
           <TabsTrigger value="transactions" id="transactions-tab">Transactions</TabsTrigger>
+          <TabsTrigger value="savings" id="savings-tab">Savings</TabsTrigger>
           <TabsTrigger value="members" id="members-tab">Members</TabsTrigger>
           <TabsTrigger value="settings" id="settings-tab">Settings</TabsTrigger>
         </TabsList>
@@ -706,7 +708,21 @@ export default function GroupWalletPage({ params }: { params: { groupId: string;
             </div>
           )}
         </TabsContent>
-        
+
+        <TabsContent value="savings">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold mb-2">Savings Breakdown</h2>
+            <p className="text-sm text-gray-600">
+              View detailed breakdown of your savings transactions in this wallet
+            </p>
+          </div>
+
+          <WalletSavingsDetail
+            walletId={params.walletId}
+            timeRange="all_time"
+          />
+        </TabsContent>
+
         <TabsContent value="members">
           <div className="space-y-4">
             <div className="flex justify-between items-center">

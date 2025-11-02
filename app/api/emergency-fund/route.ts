@@ -159,17 +159,28 @@ async function calculateSavingsSummary(userId: string, walletId?: string | null)
 export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
+
+    // NEW: Use wallet-based emergency fund system
+    try {
+      const { getUserEmergencyFunds } = await import('@/lib/walletEmergencyFund');
+      const emergencyFundData = await getUserEmergencyFunds(session.user.id);
+      return NextResponse.json(emergencyFundData);
+    } catch (newApiError) {
+      console.error('New wallet-based API failed, falling back to old API:', newApiError);
+      // Fall through to old API below
+    }
+
+    // FALLBACK: Old emergency fund API (for backward compatibility)
     // Parse query parameters
     const url = new URL(req.url);
     const walletId = url.searchParams.get('walletId');
-    
+
     console.log('[DEBUG] Emergency fund API GET called with walletId:', walletId);
-    
+
     // Get user with emergency fund data
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
@@ -177,11 +188,11 @@ export async function GET(req: Request) {
         emergencyFund: true
       }
     });
-    
+
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
-    
+
     console.log('[DEBUG] User found with emergency fund:', user.emergencyFund);
     
     // Get all emergency fund data

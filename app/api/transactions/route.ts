@@ -7,6 +7,9 @@ import type { Category } from '@/app/types/category'
 import type { Wallet } from '@/app/types/wallet'
 import { autoTrackTransactionToGoals } from './auto-track-goals'
 import { Prisma } from '@prisma/client'
+import { checkBudgetAlerts } from '@/lib/budgetAlerts'
+import { detectSavingsType } from '@/lib/savingsTracker'
+import { autoLinkSavingsToGoal } from '@/lib/savingsGoalAutoLink'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -184,6 +187,32 @@ export async function POST(request: Request) {
       );
     }
 
+    // Auto-link savings transactions to matching goals
+    if (type === 'EXPENSE' && category) {
+      const savingsType = detectSavingsType(
+        description,
+        category.name,
+        wallet.name
+      );
+
+      if (savingsType) {
+        try {
+          const linkResult = await autoLinkSavingsToGoal(
+            transaction.id,
+            session.user.id,
+            savingsType
+          );
+
+          if (linkResult.linked) {
+            console.log(`Auto-linked savings transaction to goal: ${linkResult.goalName}`);
+          }
+        } catch (linkError) {
+          console.error('Failed to auto-link savings to goal:', linkError);
+          // Don't interrupt transaction flow
+        }
+      }
+    }
+
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
       const budget = await prisma.budget.findFirst({
@@ -224,6 +253,14 @@ export async function POST(request: Request) {
 
         const spent = spending._sum.amount || 0
         const percentage = (spent / budget.amount) * 100
+
+        // Check for budget alerts after transaction
+        try {
+          await checkBudgetAlerts(budget.id)
+        } catch (alertError) {
+          console.error('Failed to check budget alerts:', alertError)
+          // Don't interrupt transaction flow
+        }
 
         return NextResponse.json({
           transaction,
@@ -585,6 +622,14 @@ export async function PUT(request: Request) {
           },
         })
 
+        // Check for budget alerts after transaction update
+        try {
+          await checkBudgetAlerts(newBudget.id)
+        } catch (alertError) {
+          console.error('Failed to check budget alerts:', alertError)
+          // Don't interrupt transaction flow
+        }
+
         return NextResponse.json({
           transaction: updatedTransaction,
           budget: {
@@ -685,6 +730,14 @@ export async function DELETE(request: Request) {
                 where: { id: budget.id },
                 data: { spent: spending._sum.amount || 0 },
               })
+
+              // Check for budget alerts after bulk transaction deletion
+              try {
+                await checkBudgetAlerts(budget.id)
+              } catch (alertError) {
+                console.error('Failed to check budget alerts:', alertError)
+                // Don't interrupt transaction flow
+              }
             }
           }
 
@@ -883,6 +936,14 @@ export async function DELETE(request: Request) {
             spent: spent,
           },
         })
+
+        // Check for budget alerts after transaction deletion
+        try {
+          await checkBudgetAlerts(budget.id)
+        } catch (alertError) {
+          console.error('Failed to check budget alerts:', alertError)
+          // Don't interrupt transaction flow
+        }
 
         // Delete transaction
         await prisma.transaction.delete({

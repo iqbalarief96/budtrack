@@ -58,7 +58,10 @@ export default function BudgetForm({
     walletId: initialData?.walletId || (wallets.find(w => w.isDefault)?.id || wallets[0]?.id || ''),
     startDate: defaultStartDate,
     endDate: defaultEndDate,
-    period: 'monthly'
+    period: 'monthly',
+    isRecurring: false,
+    warningThreshold: 80,
+    criticalThreshold: 100,
   });
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,6 +98,11 @@ export default function BudgetForm({
         endDateFormatted: format(formData.endDate, "yyyy-MM-dd"),
       });
       
+      const notificationThresholds = JSON.stringify({
+        warning: formData.warningThreshold,
+        critical: formData.criticalThreshold,
+      });
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -103,6 +111,7 @@ export default function BudgetForm({
         body: JSON.stringify({
           ...(isEditing && initialData?.id ? { id: initialData.id } : {}),
           ...formData,
+          notificationThresholds,
           userId,
         }),
       });
@@ -275,10 +284,76 @@ export default function BudgetForm({
           />
         </div>
       </div>
-      
+
+      <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center space-x-2">
+          <input
+            id="isRecurring"
+            type="checkbox"
+            checked={formData.isRecurring}
+            onChange={(e) => setFormData(prev => ({ ...prev, isRecurring: e.target.checked }))}
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <Label htmlFor="isRecurring" className="font-medium cursor-pointer">
+            Auto-reset monthly
+          </Label>
+        </div>
+        <p className="text-sm text-muted-foreground ml-6">
+          Automatically reset this budget at the end of each period and save history
+        </p>
+
+        <div className="space-y-3 mt-4">
+          <Label className="text-sm font-medium">Alert Thresholds</Label>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="warningThreshold" className="text-sm text-muted-foreground">
+                Warning at
+              </Label>
+              <span className="text-sm font-medium">{formData.warningThreshold}%</span>
+            </div>
+            <Input
+              id="warningThreshold"
+              type="range"
+              min="50"
+              max="100"
+              step="5"
+              value={formData.warningThreshold}
+              onChange={(e) => setFormData(prev => ({ ...prev, warningThreshold: parseInt(e.target.value) }))}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">
+              Get notified when spending reaches this percentage
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="criticalThreshold" className="text-sm text-muted-foreground">
+                Critical at
+              </Label>
+              <span className="text-sm font-medium">{formData.criticalThreshold}%</span>
+            </div>
+            <Input
+              id="criticalThreshold"
+              type="range"
+              min="80"
+              max="120"
+              step="5"
+              value={formData.criticalThreshold}
+              onChange={(e) => setFormData(prev => ({ ...prev, criticalThreshold: parseInt(e.target.value) }))}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">
+              Critical alert when budget limit is reached or exceeded
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting 
-          ? (isEditing ? 'Updating...' : 'Creating...') 
+        {isSubmitting
+          ? (isEditing ? 'Updating...' : 'Creating...')
           : (isEditing ? 'Update Budget' : 'Create Budget')
         }
       </Button>

@@ -4,12 +4,27 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
+import { Wallet2 } from 'lucide-react';
 
-interface EmergencyFundData {
+interface WalletEmergencyFund {
+  walletId: string;
+  walletName: string;
+  walletBalance: number;
   targetAmount: number;
   currentAmount: number;
-  monthlyContribution: number;
+  remaining: number;
+  percentage: number;
   isActive: boolean;
+}
+
+interface EmergencyFundData {
+  wallets: WalletEmergencyFund[];
+  totals: {
+    targetAmount: number;
+    currentAmount: number;
+    remaining: number;
+    percentage: number;
+  };
 }
 
 export default function EmergencyFundCard() {
@@ -22,15 +37,34 @@ export default function EmergencyFundCard() {
       try {
         setIsLoading(true);
         setError(null);
-        
+
+        // Fetch wallet-based emergency funds
         const response = await fetch('/api/emergency-fund');
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch emergency fund data');
         }
-        
+
         const data = await response.json();
-        setEmergencyFund(data);
+
+        // Transform to new format if old API structure
+        if (data.targetAmount !== undefined) {
+          // Old API - create mock wallet data
+          setEmergencyFund({
+            wallets: [],
+            totals: {
+              targetAmount: data.targetAmount || 0,
+              currentAmount: data.currentAmount || 0,
+              remaining: Math.max(0, (data.targetAmount || 0) - (data.currentAmount || 0)),
+              percentage: data.targetAmount > 0
+                ? Math.min(100, ((data.currentAmount || 0) / data.targetAmount) * 100)
+                : 0,
+            },
+          });
+        } else {
+          setEmergencyFund(data);
+        }
+
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching emergency fund:', error);
@@ -38,7 +72,7 @@ export default function EmergencyFundCard() {
         setIsLoading(false);
       }
     };
-    
+
     fetchEmergencyFund();
   }, []);
   
@@ -68,11 +102,14 @@ export default function EmergencyFundCard() {
     );
   }
   
-  if (!emergencyFund || !emergencyFund.isActive) {
+  if (!emergencyFund || emergencyFund.totals.targetAmount === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Dana Darurat</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet2 className="h-5 w-5" />
+            Dana Darurat
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
           <p className="text-gray-500">Dana darurat belum diatur</p>
@@ -80,53 +117,55 @@ export default function EmergencyFundCard() {
       </Card>
     );
   }
-  
-  const progressPercentage = Math.min(
-    Math.round((emergencyFund.currentAmount / emergencyFund.targetAmount) * 100), 
-    100
-  );
-  
-  const remainingAmount = emergencyFund.targetAmount - emergencyFund.currentAmount;
-  const monthsToGoal = remainingAmount > 0 && emergencyFund.monthlyContribution > 0
-    ? Math.ceil(remainingAmount / emergencyFund.monthlyContribution)
-    : 0;
-  
+
+  const { totals } = emergencyFund;
+  const activeWallets = emergencyFund.wallets.filter((w) => w.isActive);
+  const progressPercentage = Math.min(Math.round(totals.percentage), 100);
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Dana Darurat</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Wallet2 className="h-5 w-5" />
+          Dana Darurat
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-500">Progress</span>
+            <span className="text-sm text-gray-500">Progress Total</span>
             <span className="font-medium">{progressPercentage}%</span>
           </div>
           <Progress value={progressPercentage} className="h-2" />
         </div>
-        
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-sm text-gray-500">Saat Ini</p>
+            <p className="text-sm text-gray-500">Saldo Total</p>
             <p className="text-lg font-medium">
-              {formatCurrency(emergencyFund.currentAmount)}
+              {formatCurrency(totals.currentAmount)}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Target</p>
+            <p className="text-sm text-gray-500">Target Total</p>
             <p className="text-lg font-medium">
-              {formatCurrency(emergencyFund.targetAmount)}
+              {formatCurrency(totals.targetAmount)}
             </p>
           </div>
         </div>
-        
-        {remainingAmount > 0 && (
-          <div className="pt-2 text-center">
-            <p className="text-sm text-gray-600">
-              {monthsToGoal > 0 
-                ? `${monthsToGoal} bulan lagi untuk mencapai target`
-                : 'Hampir mencapai target!'}
-            </p>
+
+        {activeWallets.length > 0 && (
+          <div className="pt-2 border-t space-y-2">
+            <p className="text-xs text-gray-500 font-medium">Per Wallet:</p>
+            {activeWallets.slice(0, 3).map((wallet) => (
+              <div key={wallet.walletId} className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">{wallet.walletName}</span>
+                <span className="font-medium">{Math.round(wallet.percentage)}%</span>
+              </div>
+            ))}
+            {activeWallets.length > 3 && (
+              <p className="text-xs text-gray-400">+{activeWallets.length - 3} wallets lainnya</p>
+            )}
           </div>
         )}
       </CardContent>

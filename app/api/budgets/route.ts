@@ -5,55 +5,20 @@ import prisma from '@/lib/prisma';
 import type { Budget } from '@/app/types/budget';
 import type { Category } from '@/app/types/category';
 import type { Wallet } from '@/app/types/wallet';
+import {
+  calculateBudgetDetails,
+  getBudgetPeriod,
+  getNextPeriodDates,
+  isActiveBudget,
+} from '@/lib/budgetCalculations';
 
 type BudgetWithRelations = Budget & {
   category: Category;
   wallet: Wallet;
   spent: number;
   percentage: number;
-}
-
-const getCurrentPeriod = () => {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return { start, end };
-};
-
-async function calculateBudgetSpending(params: {
-  userId: string;
-  walletId: string;
-  categoryId: string;
-  amount: number;
-  periodStart: Date;
-  periodEnd: Date;
-}) {
-  const whereClause: any = {
-    userId: params.userId,
-    walletId: params.walletId,
-    type: 'EXPENSE',
-    date: {
-      gte: params.periodStart,
-      lt: params.periodEnd,
-    },
-  };
-
-  if (params.categoryId) {
-    whereClause.categoryId = params.categoryId;
-  }
-
-  const spending = await prisma.transaction.aggregate({
-    where: whereClause,
-    _sum: {
-      amount: true,
-    },
-  });
-
-  const spent = Math.abs(spending._sum.amount ?? 0);
-  const percentage =
-    params.amount > 0 ? Math.min(100, Math.round((spent / params.amount) * 100)) : 0;
-
-  return { spent, percentage };
+  remaining: number;
+  isActive: boolean;
 }
 
 // GET /api/budgets - Get all budgets for the current user
@@ -84,23 +49,30 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const { start: periodStart, end: periodEnd } = getCurrentPeriod();
-
+    // Use ACTUAL budget dates instead of current month
     const budgetsWithSpending: BudgetWithRelations[] = await Promise.all(
       budgets.map(async (budget) => {
-        const { spent, percentage } = await calculateBudgetSpending({
-          userId,
+        const { spent, percentage, remaining } = await calculateBudgetDetails({
+          id: budget.id,
+          userId: budget.userId,
           walletId: budget.walletId,
           categoryId: budget.categoryId,
           amount: budget.amount,
-          periodStart,
-          periodEnd,
+          startDate: budget.startDate,
+          endDate: budget.endDate,
+        });
+
+        const active = isActiveBudget({
+          startDate: budget.startDate,
+          endDate: budget.endDate,
         });
 
         return {
           ...budget,
           spent,
           percentage,
+          remaining,
+          isActive: active,
         };
       })
     );
@@ -246,20 +218,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine period type from form data or timeframe
+    let periodType = data.periodType || 'MONTHLY';
+    if (!data.periodType && data.timeframe) {
+      switch (data.timeframe) {
+        case 'month':
+          periodType = 'MONTHLY';
+          break;
+        case 'quarter':
+          periodType = 'QUARTERLY';
+          break;
+        case 'year':
+          periodType = 'YEARLY';
+          break;
+        default:
+          periodType = 'MONTHLY';
+      }
+    }
+
+    // Default notification thresholds
+    const notificationThresholds = data.notificationThresholds || JSON.stringify({
+      warning: 80,
+      critical: 100,
+    });
+
     const budgetData = {
       amount: parseFloat(data.amount?.toString() || data.target?.toString() || "0"),
       startDate,
       endDate,
+      periodType,
+      isRecurring: data.isRecurring || false,
+      notificationThresholds,
       walletId,
       categoryId,
       userId: session.user.id,
       spent: 0,
     };
-    
+
     console.log("Creating budget with data:", budgetData);
 
     const budget = await prisma.budget.create({
       data: budgetData,
+      include: {
+        category: true,
+        wallet: true,
+      },
     });
 
     return NextResponse.json(budget);

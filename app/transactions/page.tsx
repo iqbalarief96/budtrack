@@ -658,8 +658,9 @@ const TransactionsPage = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
+    <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      {/* Header - Desktop */}
+      <div className="hidden md:flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">Transactions - {selectedWallet?.name || 'Personal'}</h1>
         <div className="flex gap-2">
           <button
@@ -700,7 +701,7 @@ const TransactionsPage = () => {
             {isExporting ? <FiRefreshCw className="mr-2 animate-spin" /> : <FiDownload className="mr-2" />}
             Export
           </button>
-          <VoiceTransactionModal 
+          <VoiceTransactionModal
             buttonVariant="outline"
             buttonText="Voice"
             onSuccess={handleImportComplete}
@@ -719,19 +720,77 @@ const TransactionsPage = () => {
         </div>
       </div>
 
+      {/* Header - Mobile */}
+      <div className="md:hidden mb-4">
+        <h1 className="text-lg font-bold mb-3">Transactions - {selectedWallet?.name || 'Personal'}</h1>
+
+        {/* Action Buttons Row 1 */}
+        <div className="flex gap-2 mb-2">
+          <button
+            onClick={() => {
+              setEditingTransaction(null);
+              setIsModalOpen(true);
+            }}
+            className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            <FiPlus className="mr-1 h-4 w-4" />
+            Add
+          </button>
+          <button
+            onClick={() => setIsFilterModalOpen(true)}
+            className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+          >
+            <FiFilter className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+          >
+            <FiUpload className="h-4 w-4" />
+          </button>
+          <VoiceTransactionModal
+            buttonVariant="outline"
+            buttonText=""
+            onSuccess={handleImportComplete}
+            className="bg-purple-600 text-white hover:bg-purple-700 border-0 px-3 py-2 rounded-lg"
+          />
+        </div>
+
+        {/* Action Buttons Row 2 - Bulk Actions */}
+        {selectedCount > 0 && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleDeleteSelected}
+              disabled={isBulkDeleting}
+              className="flex-1 flex items-center justify-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 text-sm"
+            >
+              <FiTrash2 className="mr-1 h-4 w-4" />
+              Delete {selectedCount}
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 text-sm"
+            >
+              {isExporting ? <FiRefreshCw className="animate-spin h-4 w-4" /> : <FiDownload className="h-4 w-4" />}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Transaction Summary Section */}
-      <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="mb-4 sm:mb-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Monthly Summary Card */}
-        <div className="bg-white rounded-lg p-5 shadow">
+        <div className="bg-white rounded-lg p-4 sm:p-5 shadow">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg font-medium">
-              {selectedPeriod === 'weekly' && 'Ringkasan Minggu Ini'}
-              {selectedPeriod === 'monthly' && 'Ringkasan Bulan Ini'}
-              {selectedPeriod === 'quarterly' && 'Ringkasan Kuartal Ini'}
-              {selectedPeriod === 'yearly' && 'Ringkasan Tahun Ini'}
+            <h3 className="text-sm sm:text-lg font-medium">
+              {selectedPeriod === 'weekly' && 'Minggu Ini'}
+              {selectedPeriod === 'monthly' && 'Bulan Ini'}
+              {selectedPeriod === 'quarterly' && 'Kuartal Ini'}
+              {selectedPeriod === 'yearly' && 'Tahun Ini'}
             </h3>
-            <select 
-              className="text-sm border border-gray-200 rounded-md p-1"
+            <select
+              className="text-xs sm:text-sm border border-gray-200 rounded-md p-1"
               value={selectedPeriod}
               onChange={(e) => handlePeriodChange(e.target.value)}
             >
@@ -742,25 +801,25 @@ const TransactionsPage = () => {
             </select>
           </div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-gray-600">Income</span>
-            <span className="font-medium text-green-600">{formatCurrency(totalIncome)}</span>
+            <span className="text-xs sm:text-sm text-gray-600">Income</span>
+            <span className="text-sm sm:text-base font-semibold text-green-600">{formatCurrency(totalIncome)}</span>
           </div>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-gray-600">Expense</span>
-            <span className="font-medium text-red-600">{formatCurrency(totalExpense)}</span>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs sm:text-sm text-gray-600">Expense</span>
+            <span className="text-sm sm:text-base font-semibold text-red-600">{formatCurrency(totalExpense)}</span>
           </div>
-          
+
           {/* Income vs Expense Bar */}
           <div className="mb-2">
             <div className="text-xs text-gray-500 mb-1">Income vs Expense</div>
-            <div className="h-4 bg-gray-100 rounded-full overflow-hidden flex">
-              <div 
+            <div className="h-3 sm:h-4 bg-gray-100 rounded-full overflow-hidden flex">
+              <div
                 className="h-full bg-green-500 transition-all duration-500"
                 style={{
                   width: `${totalIncome && totalExpense ? (totalIncome / (totalIncome + totalExpense)) * 100 : 50}%`
                 }}
               ></div>
-              <div 
+              <div
                 className="h-full bg-red-500 transition-all duration-500"
                 style={{
                   width: `${totalIncome && totalExpense ? (totalExpense / (totalIncome + totalExpense)) * 100 : 50}%`
@@ -768,12 +827,12 @@ const TransactionsPage = () => {
               ></div>
             </div>
           </div>
-          
+
           {/* Balance Info */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100">
             <div className="flex items-center justify-between">
-              <span className="text-gray-600">Balance</span>
-              <span className={`font-medium ${totalIncome - totalExpense >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span className="text-xs sm:text-sm text-gray-600">Balance</span>
+              <span className={`text-sm sm:text-base font-semibold ${totalIncome - totalExpense >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatCurrency(totalIncome - totalExpense)}
               </span>
             </div>
@@ -781,52 +840,52 @@ const TransactionsPage = () => {
         </div>
         
         {/* Smart Insights */}
-        <div className="bg-white rounded-lg p-5 shadow col-span-1 lg:col-span-2">
+        <div className="bg-white rounded-lg p-4 sm:p-5 shadow col-span-1 lg:col-span-2">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg font-medium">Smart Insights {useAI ? '🧠✨' : '🧠'}</h3>
-            <div className="flex items-center space-x-2">
+            <h3 className="text-sm sm:text-lg font-medium">Smart Insights {useAI ? '🧠✨' : '🧠'}</h3>
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleRefreshInsights}
-                className="text-xs text-gray-500 hover:text-blue-500 mr-2"
+                className="text-xs text-gray-500 hover:text-blue-500 p-1"
                 title="Refresh insights"
               >
                 <FiRefreshCw className="h-4 w-4" />
               </button>
-              <Switch 
-                id="ai-mode" 
+              <Switch
+                id="ai-mode"
                 checked={useAI}
                 onCheckedChange={handleAIModeToggle}
               />
-              <Label htmlFor="ai-mode" className="text-xs text-gray-500">AI Mode</Label>
+              <Label htmlFor="ai-mode" className="text-xs text-gray-500 hidden sm:inline">AI Mode</Label>
             </div>
           </div>
-          
+
           {insightsLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="animate-pulse">Loading insights...</div>
+            <div className="flex items-center justify-center h-24 sm:h-32">
+              <div className="animate-pulse text-sm text-gray-500">Loading insights...</div>
             </div>
           ) : insights.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-64 sm:max-h-none overflow-y-auto">
               {insights.map((insight, idx) => (
-                <div 
-                  key={idx} 
-                  className={`p-3 rounded-lg ${
-                    insight.type === 'warning' ? 'bg-amber-50 border-l-4 border-amber-500' : 
-                    insight.type === 'success' ? 'bg-green-50 border-l-4 border-green-500' : 
+                <div
+                  key={idx}
+                  className={`p-2.5 sm:p-3 rounded-lg ${
+                    insight.type === 'warning' ? 'bg-amber-50 border-l-4 border-amber-500' :
+                    insight.type === 'success' ? 'bg-green-50 border-l-4 border-green-500' :
                     'bg-blue-50 border-l-4 border-blue-500'
                   }`}
                 >
-                  <p className={`text-sm ${
-                    insight.type === 'warning' ? 'text-amber-800' : 
-                    insight.type === 'success' ? 'text-green-800' : 
+                  <p className={`text-xs sm:text-sm leading-relaxed ${
+                    insight.type === 'warning' ? 'text-amber-800' :
+                    insight.type === 'success' ? 'text-green-800' :
                     'text-blue-800'
                   }`}>{insight.message}</p>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center h-32 text-gray-500">
-              <p>Not enough transaction data for insights yet.</p>
+            <div className="flex items-center justify-center h-24 sm:h-32 text-gray-500">
+              <p className="text-xs sm:text-sm text-center px-4">Not enough transaction data for insights yet.</p>
             </div>
           )}
         </div>
@@ -834,19 +893,19 @@ const TransactionsPage = () => {
       
       {/* Active Filters */}
       {Object.keys(activeFilters).length > 0 && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+        <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-600">Filter aktif:</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-600">Filter aktif:</span>
             {(Object.entries(activeFilters) as [string, FilterValues][]).map(([key, value]) => (
               value && typeof value !== 'object' && (
-                <span key={key} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm">
+                <span key={key} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs sm:text-sm">
                   {key}: {String(value)}
                 </span>
               )
             ))}
             <button
               onClick={() => setActiveFilters({})}
-              className="text-sm text-red-600 hover:text-red-800"
+              className="text-xs sm:text-sm text-red-600 hover:text-red-800 font-medium"
             >
               Reset
             </button>
@@ -855,13 +914,13 @@ const TransactionsPage = () => {
       )}
 
       {error && (
-        <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg">
+        <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-red-100 text-red-700 rounded-lg text-sm">
           {error}
         </div>
       )}
 
-      {/* Transactions Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Transactions Table - Desktop */}
+      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -878,36 +937,36 @@ const TransactionsPage = () => {
                   aria-label="Pilih semua transaksi"
                 />
               </th>
-              <th 
-                scope="col" 
+              <th
+                scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('date')}
               >
                 Tanggal <SortIndicator columnKey="date" />
               </th>
-              <th 
-                scope="col" 
+              <th
+                scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('description')}
               >
                 Deskripsi <SortIndicator columnKey="description" />
               </th>
-              <th 
-                scope="col" 
+              <th
+                scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('category')}
               >
                 Kategori <SortIndicator columnKey="category" />
               </th>
-              <th 
-                scope="col" 
+              <th
+                scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('wallet')}
               >
                 Dompet <SortIndicator columnKey="wallet" />
               </th>
-              <th 
-                scope="col" 
+              <th
+                scope="col"
                 className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('amount')}
               >
@@ -984,6 +1043,93 @@ const TransactionsPage = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Transactions List - Mobile */}
+      <div className="md:hidden bg-white rounded-lg shadow">
+        {/* Select All Header */}
+        <div className="px-3 py-2.5 bg-gray-50 border-b flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={isAllSelected}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Pilih Semua</span>
+          </label>
+          {selectedCount > 0 && (
+            <span className="text-xs font-medium text-blue-600">{selectedCount} dipilih</span>
+          )}
+        </div>
+
+        {/* Transaction Cards */}
+        <div className="divide-y divide-gray-100">
+          {isLoading ? (
+            <div className="px-4 py-8 text-center text-gray-500 text-sm">Loading...</div>
+          ) : filteredTransactions.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-500 text-sm">Tidak ada transaksi</div>
+          ) : (
+            filteredTransactions.map((transaction) => (
+              <div key={transaction.id} className="p-3 hover:bg-gray-50 active:bg-gray-100">
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedTransactions.has(transaction.id)}
+                    onChange={() => toggleTransactionSelection(transaction.id)}
+                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 line-clamp-1">
+                          {transaction.description || '-'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {new Date(transaction.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <div className={`text-sm font-bold flex-shrink-0 ${
+                        transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        {transaction.category?.name || 'Tanpa Kategori'}
+                      </span>
+                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-gray-50 text-gray-600 border border-gray-200">
+                        {transaction.wallet?.name || '-'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setEditingTransaction(transaction);
+                          setIsModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-200"
+                      >
+                        <FiEdit2 className="h-3 w-3" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTransaction(transaction.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded disabled:opacity-60 border border-red-200"
+                        disabled={isBulkDeleting}
+                      >
+                        <FiTrash2 className="h-3 w-3" />
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Transaction Modal */}

@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign, 
+import { FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign,
   FiCreditCard as FiCreditCardIcon, FiGift, FiHeart, FiSmile, FiTruck, FiBookmark,
-  FiShoppingCart, FiMusic, FiMonitor, FiActivity } from 'react-icons/fi'
+  FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiArrowRight } from 'react-icons/fi'
+import Link from 'next/link'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
 import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard'
+import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
 
 // Define Icon mapping
 const AVAILABLE_ICONS = [
@@ -545,28 +547,37 @@ const WalletsPage = () => {
             <div key={wallet.id} className="space-y-4">
               <div className="card">
               <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center">
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3" 
+                <div className="flex items-center flex-1">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3"
                     style={{ backgroundColor: wallet.color || '#1976D2' }}
                   >
                     <WalletIcon className="text-white text-xl" />
                   </div>
-                  <div>
-                    <h3 className="font-medium">{wallet.name}</h3>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">{wallet.name}</h3>
+                      <Link
+                        href={`/wallets/${wallet.id}`}
+                        className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                        title="View wallet details"
+                      >
+                        <FiArrowRight size={16} />
+                      </Link>
+                    </div>
                     {wallet.isDefault && (
                       <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
                     )}
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button 
+                  <button
                     className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
                     onClick={() => handleEditWallet(wallet)}
                   >
                     <FiEdit size={16} />
                   </button>
-                  <button 
+                  <button
                     className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
                     onClick={() => handleDeleteWallet(wallet.id)}
                     disabled={wallet.isDefault}
@@ -627,6 +638,14 @@ const WalletsPage = () => {
                 walletId={wallet.id}
                 className="shadow-none border border-gray-200 bg-white"
               />
+
+              <div className="card">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Detail Tabungan</h3>
+                <WalletSavingsDetail
+                  walletId={wallet.id}
+                  timeRange="all_time"
+                />
+              </div>
             </div>
           );
         })}

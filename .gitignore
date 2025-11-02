@@ -26,3 +26,6 @@ dist-ssr
 .next/
 *.tar.gz
 .env
+.claude/
+*.zip
+.next2/
