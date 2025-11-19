@@ -69,13 +69,20 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
 
                     const tryCompress = () => {
                         const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                        base64 = dataUrl.split(',')[1];
+                        // Extract and sanitize base64 string (remove any whitespace/newlines)
+                        base64 = dataUrl.split(',')[1].replace(/\s/g, '').trim();
+
+                        // Validate base64 format (should only contain A-Z, a-z, 0-9, +, /, =)
+                        if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
+                            reject(new Error('Invalid base64 format after compression'));
+                            return;
+                        }
 
                         // Check size (base64 is ~1.37x original size)
                         const estimatedSize = (base64.length * 3) / 4;
 
                         if (estimatedSize <= maxSize || quality <= 0.5 || attempts >= maxAttempts) {
-                            console.log(`[Compress] Final size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}`);
+                            console.log(`[Compress] Final size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}, Base64 length: ${base64.length}`);
                             resolve(base64);
                         } else {
                             attempts++;
@@ -106,6 +113,13 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
             toast.info('Memproses gambar...');
             const base64 = await compressImage(file);
 
+            // Final validation before sending
+            if (!base64 || base64.length < 100) {
+                throw new Error('Gambar terlalu kecil atau tidak valid');
+            }
+
+            console.log(`[ReceiptScanner] Sending image: ${(base64.length * 3 / 4 / 1024 / 1024).toFixed(2)}MB, Model: ${selectedModel}`);
+
             const response = await fetch('/api/scan-receipt', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -117,6 +131,7 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
 
             if (!response.ok) {
                 const error = await response.json();
+                console.error('[ReceiptScanner] API error:', error);
                 throw new Error(error.error || 'Gagal memproses struk');
             }
 
@@ -125,8 +140,9 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
             setIsOpen(false);
             toast.success('Struk berhasil diproses!');
         } catch (error) {
-            console.error('Scan error:', error);
-            toast.error(error instanceof Error ? error.message : 'Gagal memproses struk');
+            console.error('[ReceiptScanner] Scan error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Gagal memproses struk';
+            toast.error(errorMessage);
         } finally {
             setIsScanning(false);
             if (fileInputRef.current) {
