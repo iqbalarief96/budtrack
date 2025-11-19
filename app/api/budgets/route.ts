@@ -257,6 +257,37 @@ export async function POST(request: NextRequest) {
 
     console.log("Creating budget with data:", budgetData);
 
+    // Check for duplicate budget (same category, wallet, and overlapping date range)
+    const existingBudget = await prisma.budget.findFirst({
+      where: {
+        userId: session.user.id,
+        categoryId: budgetData.categoryId,
+        walletId: budgetData.walletId,
+        OR: [
+          {
+            AND: [
+              { startDate: { lte: budgetData.startDate } },
+              { endDate: { gte: budgetData.startDate } }
+            ]
+          },
+          {
+            AND: [
+              { startDate: { lte: budgetData.endDate } },
+              { endDate: { gte: budgetData.endDate } }
+            ]
+          }
+        ]
+      }
+    });
+
+    if (existingBudget) {
+      console.log('[DEBUG] Duplicate budget detected, returning existing budget:', existingBudget.id);
+      return NextResponse.json(
+        { error: 'Budget already exists for this category and wallet in this period' },
+        { status: 409 }
+      );
+    }
+
     const budget = await prisma.budget.create({
       data: budgetData,
       include: {
@@ -265,6 +296,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('[DEBUG] Budget created successfully:', budget.id);
     return NextResponse.json(budget);
   } catch (error) {
     console.error('Error creating budget:', error);

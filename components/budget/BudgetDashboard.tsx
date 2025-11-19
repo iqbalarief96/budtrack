@@ -25,18 +25,42 @@ export default function BudgetDashboard({ initialBudgets, categories, wallets }:
   const [budgets, setBudgets] = useState<BudgetWithRelations[]>(initialBudgets);
   const [showForm, setShowForm] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetWithRelations | null>(null);
-  
-  // Function to refresh budget data from server
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Function to refresh budget data from server with debounce
   const refreshBudgets = async () => {
+    // Prevent multiple simultaneous refreshes
+    if (isRefreshing) {
+      console.log('[DEBUG] Refresh already in progress, skipping');
+      return;
+    }
+
     try {
+      setIsRefreshing(true);
       const response = await fetch('/api/budgets/with-spending');
       if (response.ok) {
         const updatedBudgets = await response.json();
+
+        // Debug: Check for duplicates
+        const budgetIds = updatedBudgets.map((b: any) => b.id);
+        const uniqueIds = new Set(budgetIds);
+        if (budgetIds.length !== uniqueIds.size) {
+          console.error('[DEBUG] DUPLICATE BUDGETS DETECTED IN API RESPONSE!', {
+            total: budgetIds.length,
+            unique: uniqueIds.size,
+            budgetIds
+          });
+        } else {
+          console.log('[DEBUG] No duplicates in API response. Total:', budgetIds.length);
+        }
+
         setBudgets(updatedBudgets);
         console.log('[DEBUG] Budgets refreshed with monthly reset logic');
       }
     } catch (error) {
       console.error('Failed to refresh budgets:', error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
   
@@ -46,23 +70,15 @@ export default function BudgetDashboard({ initialBudgets, categories, wallets }:
     const handleTransactionChange = () => {
       refreshBudgets();
     };
-    
+
     // Listen for custom event
     window.addEventListener('transaction:change', handleTransactionChange);
-    
+
     // Clean up
     return () => {
       window.removeEventListener('transaction:change', handleTransactionChange);
     };
-  }, []);
-
-  const handleAddBudget = async (newBudget: BudgetWithRelations) => {
-    setBudgets([newBudget, ...budgets]);
-    setShowForm(false);
-    
-    // Refresh budgets to ensure data is up-to-date
-    refreshBudgets();
-  };
+  }, [isRefreshing]); // Add dependency to prevent stale closure
 
   const handleUpdateBudget = async (updatedBudget: BudgetWithRelations) => {
     setBudgets(budgets.map(budget => 
@@ -102,13 +118,16 @@ export default function BudgetDashboard({ initialBudgets, categories, wallets }:
 
       {/* Budget Progress Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-        {budgets.map(budget => (
-          <BudgetProgress 
-            key={budget.id}
-            budget={budget}
-            onUpdate={handleUpdateBudget}
-          />
-        ))}
+        {budgets.map((budget, index) => {
+          console.log(`[DEBUG] Rendering budget card ${index + 1}/${budgets.length}: ${budget.id} - ${budget.category.name}`);
+          return (
+            <BudgetProgress
+              key={budget.id}
+              budget={budget}
+              onUpdate={handleUpdateBudget}
+            />
+          );
+        })}
       </div>
 
       {/* Budget List */}

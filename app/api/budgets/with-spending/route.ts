@@ -13,10 +13,16 @@ export async function GET(request: NextRequest) {
 
     const userId = session.user.id;
 
-    // Fetch all budgets for the user
+    // Fetch only active budgets for the user (endDate >= today)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of day for comparison
+
     const budgets = await prisma.budget.findMany({
       where: {
         userId,
+        endDate: {
+          gte: today // Only budgets that haven't ended yet
+        }
       },
       include: {
         category: true,
@@ -26,6 +32,8 @@ export async function GET(request: NextRequest) {
         startDate: 'desc'
       }
     });
+
+    console.log(`[DEBUG] Found ${budgets.length} active budgets for user ${userId}`);
 
     // Calculate spending using ACTUAL budget dates
     const budgetsWithSpending = await Promise.all(

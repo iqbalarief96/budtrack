@@ -7,14 +7,14 @@ interface AIRequestParams {
 
 interface ChatbotParams extends AIRequestParams {
   context?: string
-  history?: Array<{role: 'user' | 'assistant', content: string}>
+  history?: Array<{ role: 'user' | 'assistant', content: string }>
 }
 
 async function generateDeepseekResponse(params: AIRequestParams) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
+
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -34,7 +34,7 @@ async function generateDeepseekResponse(params: AIRequestParams) {
       }),
       signal: controller.signal
     })
-    
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -50,11 +50,11 @@ async function generateDeepseekResponse(params: AIRequestParams) {
     if (!message) {
       throw new Error('Invalid response format from DeepSeek API');
     }
-    
+
     if (choice?.finish_reason === 'length') {
       console.warn('DeepSeek response truncated because max_tokens was hit. Consider increasing the limit.');
     }
-    
+
     return message;
   } catch (error: unknown) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -69,10 +69,10 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
     // Increase timeout for 'all' timeframe
     const isAllTimeframe = params.prompt.includes('all time period');
     const timeoutDuration = isAllTimeframe ? 60000 : 30000; // 60 seconds for all timeframe, 30 for others
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
-    
+
     // Simplify the prompt if it's too large (> 4000 chars)
     let promptToUse = params.prompt;
     if (promptToUse.length > 4000) {
@@ -86,7 +86,7 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
         console.log(`Trimmed prompt length: ${promptToUse.length} chars`);
       }
     }
-    
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -108,7 +108,7 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
       }),
       signal: controller.signal
     })
-    
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -124,7 +124,7 @@ async function generateOpenRouterResponse(params: AIRequestParams) {
     if (!message) {
       throw new Error('Invalid response format from OpenRouter API');
     }
-    
+
     if (choice?.finish_reason === 'length') {
       console.warn('OpenRouter response truncated because max_tokens was hit. Consider increasing the limit or reducing prompt size.');
     }
@@ -163,7 +163,7 @@ export async function generateAIResponse(params: AIRequestParams): Promise<strin
 export async function generateChatbotResponse(params: ChatbotParams): Promise<string> {
   try {
     const { prompt, provider, apiKey, model, context, history } = params;
-    
+
     // Build complete prompt with context and history
     let fullPrompt = "You are a helpful financial assistant for BudTrack, a personal finance app. ";
     fullPrompt += "Provide friendly, informative and concise responses about financial topics. ";
@@ -172,12 +172,12 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
     fullPrompt += "Keep answers brief, friendly, and easy to understand.\n\n";
     fullPrompt += "Use Markdown formatting in your responses: **bold** for emphasis, *italics* for secondary emphasis, ";
     fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n\n";
-    
+
     // Add user context if available
     if (context) {
       fullPrompt += `User Context: ${context}\n\n`;
     }
-    
+
     // Add conversation history if available
     if (history && history.length > 0) {
       fullPrompt += "Conversation History:\n";
@@ -186,10 +186,10 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
       });
       fullPrompt += "\n";
     }
-    
+
     // Add the current question
     fullPrompt += `User's Question: ${prompt}\n\nYour helpful response:`;
-    
+
     // Generate response using the appropriate provider
     return await generateAIResponse({
       prompt: fullPrompt,
@@ -197,7 +197,7 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
       apiKey,
       model
     });
-    
+
   } catch (error) {
     console.error('Error generating chatbot response:', error);
     throw error;
@@ -211,7 +211,7 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
  * @returns Analysis of unusual spending with recommendations
  */
 export async function detectUnusualSpending(
-  params: AIRequestParams & { 
+  params: AIRequestParams & {
     recentTransactions: any[],
     historicalData: any
   }
@@ -224,20 +224,20 @@ export async function detectUnusualSpending(
 }> {
   try {
     const { recentTransactions, historicalData, provider, apiKey, model } = params;
-    
+
     // Create a prompt for analyzing unusual spending
     let prompt = "Analyze the following recent transactions and detect any unusual spending patterns ";
     prompt += "compared to the user's historical spending behavior. ";
     prompt += "Only identify truly significant deviations that would be worth alerting the user about.\n\n";
-    
+
     // Include recent transactions data
     prompt += "Recent Transactions:\n";
     prompt += JSON.stringify(recentTransactions) + "\n\n";
-    
+
     // Include historical spending data for context
     prompt += "Historical Spending Patterns:\n";
     prompt += JSON.stringify(historicalData) + "\n\n";
-    
+
     prompt += "Respond in JSON format with the following structure:\n";
     prompt += "{\n";
     prompt += '  "unusual": boolean, // true if unusual spending detected\n';
@@ -246,14 +246,14 @@ export async function detectUnusualSpending(
     prompt += '  "reason": string, // brief explanation of why this is unusual (if unusual is true)\n';
     prompt += '  "recommendation": string // brief recommendation for the user (if unusual is true)\n';
     prompt += "}\n";
-    
+
     const response = await generateAIResponse({
       prompt,
       provider,
       apiKey,
       model
     });
-    
+
     // Parse the JSON response
     try {
       return JSON.parse(response);
@@ -261,9 +261,230 @@ export async function detectUnusualSpending(
       console.error('Failed to parse unusual spending response:', e);
       return { unusual: false };
     }
-    
   } catch (error) {
     console.error('Error detecting unusual spending:', error);
     return { unusual: false };
   }
-} 
+}
+
+export async function generateVisionResponse(params: AIRequestParams & { imageBase64: string }): Promise<string> {
+  try {
+    const { prompt, imageBase64, provider, apiKey, model } = params;
+
+    if (!apiKey) {
+      throw new Error('No API key provided. Please configure your API key in Settings.');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for images
+
+    // Google Gemini Direct API
+    if (provider === 'google') {
+      console.log('[DEBUG] Using direct Google Gemini API');
+
+      // Map model names to Gemini API format
+      // Remove provider prefix (google/, openai/, etc)
+      let geminiModel = model.replace('google/', '').replace('openai/', '');
+
+      // Map to valid Gemini API model names
+      // Try with -latest suffix first, fallback if needed
+      let apiVersion = 'v1';
+
+      if (geminiModel.includes('flash-1.5') || geminiModel.includes('1.5-flash') || geminiModel === 'gemini-flash') {
+        geminiModel = 'gemini-1.5-flash-latest';
+        apiVersion = 'v1';
+      } else if (geminiModel.includes('1.5-pro')) {
+        geminiModel = 'gemini-1.5-pro-latest';
+        apiVersion = 'v1';
+      } else if (geminiModel.includes('2.0')) {
+        // Gemini 2.0 experimental models
+        geminiModel = 'gemini-2.0-flash-exp';
+        apiVersion = 'v1beta';
+      } else if (geminiModel.includes('vision')) {
+        geminiModel = 'gemini-pro-vision';
+        apiVersion = 'v1';
+      } else {
+        // Default to 1.5-flash-latest
+        geminiModel = 'gemini-1.5-flash-latest';
+        apiVersion = 'v1';
+      }
+
+      console.log('[DEBUG] Original model:', model);
+      console.log('[DEBUG] Mapped Gemini model:', geminiModel);
+      console.log('[DEBUG] Using API version:', apiVersion);
+
+      const apiUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${geminiModel}:generateContent?key=${apiKey}`;
+      console.log('[DEBUG] Gemini API URL:', apiUrl.replace(apiKey, 'API_KEY_HIDDEN'));
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inline_data: {
+                  mime_type: 'image/jpeg',
+                  data: imageBase64
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2000,
+          }
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('[DEBUG] Gemini API error response:', errorData);
+        const errorMessage = errorData?.error?.message || `HTTP error ${response.status}`;
+        throw new Error(`Gemini API error: ${errorMessage}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!text) {
+        console.error('[DEBUG] Invalid Gemini response format:', data);
+        throw new Error('Invalid response format from Gemini API');
+      }
+
+      return text;
+    }
+
+    // OpenAI Direct API
+    if (provider === 'openai') {
+      console.log('[DEBUG] Using direct OpenAI API');
+
+      // Remove provider prefix (openai/, google/, etc)
+      let openaiModel = model.replace('openai/', '').replace('google/', '');
+      console.log('[DEBUG] Original model:', model);
+      console.log('[DEBUG] Mapped OpenAI model:', openaiModel);
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: openaiModel || 'gpt-4o-mini',
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: prompt
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64}`
+                  }
+                }
+              ]
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 2000
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.error?.message || `HTTP error ${response.status}`;
+        throw new Error(`OpenAI API error: ${errorMessage}`);
+      }
+
+      const data = await response.json();
+      const message = data.choices?.[0]?.message?.content;
+
+      if (!message) {
+        throw new Error('Invalid response format from OpenAI API');
+      }
+
+      return message;
+    }
+
+    // OpenRouter / DeepSeek (default)
+    console.log('[DEBUG] Using OpenRouter API');
+    console.log('[DEBUG] OpenRouter model:', model);
+    console.log('[DEBUG] Image size:', imageBase64.length, 'characters');
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://budtrack.vercel.app',
+        'X-Title': 'Budtrack'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`
+                }
+              }
+            ]
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 2000
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error('[DEBUG] OpenRouter error response:', JSON.stringify(errorData, null, 2));
+
+      // Check for rate limiting error
+      if (errorData?.error?.code === 429 || errorData?.error?.metadata?.raw?.includes('rate-limited')) {
+        const rawMessage = errorData?.error?.metadata?.raw || '';
+        throw new Error(`Model sedang rate-limited. Coba ganti model atau tunggu sebentar lalu coba lagi. Detail: ${rawMessage}`);
+      }
+
+      const errorMessage = errorData?.error?.message || `HTTP error ${response.status}`;
+      throw new Error(`OpenRouter API error: ${errorMessage}`);
+    }
+
+    const data = await response.json();
+    console.log('[DEBUG] OpenRouter response:', JSON.stringify(data, null, 2));
+    const choice = data.choices?.[0];
+    const message = choice?.message?.content;
+
+    if (!message) {
+      throw new Error('Invalid response format from Vision API');
+    }
+
+    return message;
+  } catch (error) {
+    console.error('Error generating vision response:', error);
+    throw error;
+  }
+}

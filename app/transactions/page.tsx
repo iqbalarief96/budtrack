@@ -15,6 +15,10 @@ import { VoiceTransactionModal } from '../components/VoiceTransactionModal';
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
+import { ReceiptScanner } from '@/components/ReceiptScanner';
+import { ReceiptConfirmationModal } from '@/components/ReceiptConfirmationModal';
+
+
 
 // Define Transaction type
 type Transaction = {
@@ -58,8 +62,9 @@ const TransactionsPage = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
   const typeParam = searchParams.get('type')
-  
-  const { selectedWallet, refreshWallets } = useWallet()
+
+  const { selectedWallet, refreshWallets, wallets } = useWallet()
+
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -79,22 +84,25 @@ const TransactionsPage = () => {
   const [totalExpense, setTotalExpense] = useState(0)
   const [useAI, setUseAI] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState('monthly')
-  
+  const [scannedReceiptData, setScannedReceiptData] = useState<any>(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+
+
   // Hydration-safe localStorage init
   const [isClientSide, setIsClientSide] = useState(false)
   const selectAllRef = useRef<HTMLInputElement>(null)
-  
+
   // Check if we're on client-side
   useEffect(() => {
     setIsClientSide(true)
-    
+
     // Get saved AI mode state
     try {
       const savedAIMode = localStorage.getItem(AI_MODE_KEY);
       if (savedAIMode) {
         setUseAI(savedAIMode === 'true');
       }
-      
+
       // Get saved period preference
       const savedPeriod = localStorage.getItem(PERIOD_KEY);
       if (savedPeriod) {
@@ -108,12 +116,12 @@ const TransactionsPage = () => {
   // Handle AI mode toggle with localStorage persistence
   const handleAIModeToggle = (checked: boolean) => {
     setUseAI(checked);
-    
+
     // Save to localStorage
     if (isClientSide) {
       try {
         localStorage.setItem(AI_MODE_KEY, checked.toString());
-        
+
         // Clear cached insights to force a refresh
         if (selectedWallet) {
           localStorage.removeItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`);
@@ -123,16 +131,16 @@ const TransactionsPage = () => {
         console.error('Error saving to localStorage:', error);
       }
     }
-    
+
     // Always fetch new insights when toggling AI mode
     setInsightsLoading(true);
     fetchInsights();
   };
-  
+
   // Handle period change with localStorage persistence
   const handlePeriodChange = (period: string) => {
     setSelectedPeriod(period);
-    
+
     // Save to localStorage
     if (isClientSide) {
       try {
@@ -150,7 +158,7 @@ const TransactionsPage = () => {
       setInitialType(transactionType)
       setEditingTransaction(null)
       setIsModalOpen(true)
-      
+
       // Clear the URL parameter after processing
       router.replace('/transactions', { scroll: false })
     }
@@ -200,23 +208,23 @@ const TransactionsPage = () => {
   // Fetch insights
   const fetchInsights = async () => {
     if (!selectedWallet) return;
-    
+
     // Check if we have cached insights for this wallet
     let shouldFetchFromAPI = true;
-    
+
     if (isClientSide) {
       try {
         // Get the cached insights and timestamp
         const cachedInsightsData = localStorage.getItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`);
         const cachedTimestamp = localStorage.getItem(`${WALLET_INSIGHTS_TIMESTAMP_KEY}_${selectedWallet.id}`);
-        
+
         if (cachedInsightsData && cachedTimestamp) {
           // Check if cache is less than 1 hour old
           const timestamp = parseInt(cachedTimestamp, 10);
           const now = Date.now();
           const cacheAge = now - timestamp;
           const ONE_HOUR = 60 * 60 * 1000;
-          
+
           if (cacheAge < ONE_HOUR) {
             // Use the cached insights
             const parsedInsights = JSON.parse(cachedInsightsData);
@@ -230,7 +238,7 @@ const TransactionsPage = () => {
         console.error('Error reading cached insights:', error);
       }
     }
-    
+
     // Only fetch from API if needed
     if (shouldFetchFromAPI) {
       setInsightsLoading(true);
@@ -239,19 +247,19 @@ const TransactionsPage = () => {
         if (selectedWallet) {
           queryParams.append('walletId', selectedWallet.id);
         }
-        
+
         // Add AI parameter
         if (useAI) {
           queryParams.append('useAI', 'true');
         }
-        
+
         const response = await fetch(`/api/insights?${queryParams.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch insights');
-        
+
         const data = await response.json();
         const newInsights = data.insights || [];
         setInsights(newInsights);
-        
+
         // Cache the insights and timestamp
         if (isClientSide && selectedWallet) {
           try {
@@ -273,19 +281,19 @@ const TransactionsPage = () => {
   useEffect(() => {
     fetchTransactions(activeFilters)
   }, [selectedWallet, activeFilters])
-  
+
   // Recalculate totals when transactions or period changes
   useEffect(() => {
     const { income, expense } = calculateTotals(transactions);
     setTotalIncome(income);
     setTotalExpense(expense);
   }, [transactions, selectedPeriod]);
-  
+
   // Fetch insights when wallet changes
   useEffect(() => {
     fetchInsights()
   }, [selectedWallet, useAI])
-  
+
   // Sort handler
   const handleSort = (key: string) => {
     setSortConfig((prevConfig) => {
@@ -302,10 +310,10 @@ const TransactionsPage = () => {
   // Get sorted transactions
   const getSortedTransactions = (transactions: Transaction[], sortConfig: SortConfig) => {
     const sortableItems = [...transactions]
-    
+
     sortableItems.sort((a, b) => {
       let aValue, bValue;
-      
+
       // Extract the correct values based on the sort key
       switch (sortConfig.key) {
         case 'date':
@@ -332,7 +340,7 @@ const TransactionsPage = () => {
           aValue = a[sortConfig.key] || ''
           bValue = b[sortConfig.key] || ''
       }
-      
+
       // Perform the actual comparison
       if (aValue < bValue) {
         return sortConfig.direction === 'asc' ? -1 : 1
@@ -342,34 +350,34 @@ const TransactionsPage = () => {
       }
       return 0
     })
-    
+
     return sortableItems
   }
-  
+
   // Filter transactions based on selected wallet and filters
   const filteredTransactions = getSortedTransactions(
     transactions.filter(tx => {
       if (!activeFilters) return true
-      
+
       // Filter by type
       if (activeFilters.type && tx.type !== activeFilters.type) return false
-      
+
       // Filter by category
       if (activeFilters.categoryId && tx.category.id !== activeFilters.categoryId) return false
-      
+
       // Filter by date range
       if (activeFilters.dateRange) {
         const txDate = new Date(tx.date)
         if (activeFilters.dateRange.start && txDate < new Date(activeFilters.dateRange.start)) return false
         if (activeFilters.dateRange.end && txDate > new Date(activeFilters.dateRange.end)) return false
       }
-      
+
       // Filter by amount range
       if (activeFilters.amountRange) {
         if (activeFilters.amountRange.min && tx.amount < activeFilters.amountRange.min) return false
         if (activeFilters.amountRange.max && tx.amount > activeFilters.amountRange.max) return false
       }
-      
+
       return true
     }),
     sortConfig
@@ -390,13 +398,13 @@ const TransactionsPage = () => {
     try {
       // Wait for the transaction to be saved (handled by TransactionModal)
       console.log('Transaction saved:', transactionData);
-      
+
       // Refresh transaction list
       await fetchTransactions(activeFilters);
-      
+
       // Refresh wallet balances
       await refreshWallets();
-      
+
       // Close modal and reset editing state
       setIsModalOpen(false);
       setEditingTransaction(null);
@@ -501,7 +509,7 @@ const TransactionsPage = () => {
     setActiveFilters(filters)
     setIsFilterModalOpen(false)
   }
-  
+
   // Handle import complete
   const handleImportComplete = async () => {
     // Refresh transactions after import
@@ -582,6 +590,40 @@ const TransactionsPage = () => {
     }
   }
 
+  const handleScanComplete = (data: any) => {
+    console.log('Scanned Receipt Data:', data);
+    setScannedReceiptData(data);
+    setIsReceiptModalOpen(true);
+  };
+
+  const handleSaveReceiptTransactions = async (transactionsToSave: any[]) => {
+    try {
+      const response = await fetch('/api/transactions/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactions: transactionsToSave })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save transactions');
+      }
+
+      const result = await response.json();
+      toast.success(`${result.count} transaksi berhasil disimpan!`);
+
+      // Refresh data
+      await fetchTransactions(activeFilters);
+      await refreshWallets();
+
+      setIsReceiptModalOpen(false);
+      setScannedReceiptData(null);
+    } catch (error) {
+      console.error('Error saving receipt transactions:', error);
+      toast.error('Gagal menyimpan transaksi');
+    }
+  };
+
+
   // Sort indicator component
   const SortIndicator = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig.key !== columnKey) return null;
@@ -592,7 +634,7 @@ const TransactionsPage = () => {
   const calculateTotals = (transactions: Transaction[]) => {
     const now = new Date();
     let periodStart = new Date();
-    
+
     // Set period start date based on selection
     switch (selectedPeriod) {
       case 'weekly':
@@ -617,19 +659,19 @@ const TransactionsPage = () => {
       default:
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1); // Default to monthly
     }
-    
-    const filteredTransactions = transactions.filter((tx: Transaction) => 
+
+    const filteredTransactions = transactions.filter((tx: Transaction) =>
       new Date(tx.date) >= periodStart
     );
-    
+
     const income = filteredTransactions
       .filter((tx: Transaction) => tx.type === 'INCOME')
       .reduce((sum: number, tx: Transaction) => sum + tx.amount, 0);
-      
+
     const expense = filteredTransactions
       .filter((tx: Transaction) => tx.type === 'EXPENSE')
       .reduce((sum: number, tx: Transaction) => sum + tx.amount, 0);
-      
+
     return { income, expense };
   };
 
@@ -644,7 +686,7 @@ const TransactionsPage = () => {
         console.error('Error clearing cached insights:', error);
       }
     }
-    
+
     setInsightsLoading(true);
     fetchInsights();
   };
@@ -707,6 +749,8 @@ const TransactionsPage = () => {
             onSuccess={handleImportComplete}
             className="bg-purple-600 text-white hover:bg-purple-700 border-0"
           />
+          <ReceiptScanner onScanComplete={handleScanComplete} />
+
           <button
             onClick={() => {
               setEditingTransaction(null);
@@ -754,6 +798,10 @@ const TransactionsPage = () => {
             onSuccess={handleImportComplete}
             className="bg-purple-600 text-white hover:bg-purple-700 border-0 px-3 py-2 rounded-lg"
           />
+          <div className="flex items-center px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm">
+            <ReceiptScanner onScanComplete={handleScanComplete} />
+          </div>
+
         </div>
 
         {/* Action Buttons Row 2 - Bulk Actions */}
@@ -838,7 +886,7 @@ const TransactionsPage = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Smart Insights */}
         <div className="bg-white rounded-lg p-4 sm:p-5 shadow col-span-1 lg:col-span-2">
           <div className="flex justify-between items-center mb-3">
@@ -869,17 +917,15 @@ const TransactionsPage = () => {
               {insights.map((insight, idx) => (
                 <div
                   key={idx}
-                  className={`p-2.5 sm:p-3 rounded-lg ${
-                    insight.type === 'warning' ? 'bg-amber-50 border-l-4 border-amber-500' :
+                  className={`p-2.5 sm:p-3 rounded-lg ${insight.type === 'warning' ? 'bg-amber-50 border-l-4 border-amber-500' :
                     insight.type === 'success' ? 'bg-green-50 border-l-4 border-green-500' :
-                    'bg-blue-50 border-l-4 border-blue-500'
-                  }`}
+                      'bg-blue-50 border-l-4 border-blue-500'
+                    }`}
                 >
-                  <p className={`text-xs sm:text-sm leading-relaxed ${
-                    insight.type === 'warning' ? 'text-amber-800' :
+                  <p className={`text-xs sm:text-sm leading-relaxed ${insight.type === 'warning' ? 'text-amber-800' :
                     insight.type === 'success' ? 'text-green-800' :
-                    'text-blue-800'
-                  }`}>{insight.message}</p>
+                      'text-blue-800'
+                    }`}>{insight.message}</p>
                 </div>
               ))}
             </div>
@@ -890,7 +936,7 @@ const TransactionsPage = () => {
           )}
         </div>
       </div>
-      
+
       {/* Active Filters */}
       {Object.keys(activeFilters).length > 0 && (
         <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg">
@@ -1014,9 +1060,8 @@ const TransactionsPage = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {transaction.wallet?.name || '-'}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
-                    transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
-                  }`}>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
+                    }`}>
                     {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1090,9 +1135,8 @@ const TransactionsPage = () => {
                           {new Date(transaction.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                       </div>
-                      <div className={`text-sm font-bold flex-shrink-0 ${
-                        transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
-                      }`}>
+                      <div className={`text-sm font-bold flex-shrink-0 ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
+                        }`}>
                         {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
                       </div>
                     </div>
@@ -1152,7 +1196,7 @@ const TransactionsPage = () => {
         onApply={handleFilter}
         initialFilters={activeFilters}
       />
-      
+
       {/* Import Modal */}
       <ImportModal
         isOpen={isImportModalOpen}
@@ -1160,8 +1204,16 @@ const TransactionsPage = () => {
         wallets={selectedWallet ? [selectedWallet] : []}
         onImportComplete={handleImportComplete}
       />
+      <ReceiptConfirmationModal
+        isOpen={isReceiptModalOpen}
+        onClose={() => setIsReceiptModalOpen(false)}
+        onSave={handleSaveReceiptTransactions}
+        data={scannedReceiptData}
+        wallets={wallets}
+      />
     </div>
   )
 }
+
 
 export default TransactionsPage 

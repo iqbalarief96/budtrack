@@ -66,22 +66,28 @@ export default function BudgetForm({
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // Prevent double submission
+    if (isSubmitting) {
+      console.log('[DEBUG] Form already submitting, ignoring duplicate submit');
+      return;
+    }
+
     if (!formData.categoryId) {
       toast.error('Please select a category');
       return;
     }
-    
+
     if (!formData.walletId) {
       toast.error('Please select a wallet');
       return;
     }
-    
+
     if (formData.amount <= 0) {
       toast.error('Amount must be greater than 0');
       return;
     }
-    
+
     try {
       setIsSubmitting(true);
       
@@ -123,23 +129,21 @@ export default function BudgetForm({
       
       const result = await response.json();
       console.log('Budget created/updated successfully:', result);
-      
+
       toast.success(isEditing ? 'Budget updated!' : 'Budget created!');
-      
+
       // Call onSuccess callback if provided
       if (onSuccess) {
         onSuccess();
-      }
-      
-      // Redirect setelah berhasil update/create
-      if (isEditing && initialData?.id) {
-        // Jika sedang edit, kembali ke halaman detail budget
-        router.push(`/budgets/${initialData.id}`);
       } else {
-        // Jika sedang create, kembali ke daftar budget
-        router.push('/budgets');
+        // Only redirect if no onSuccess callback (i.e., not in modal)
+        if (isEditing && initialData?.id) {
+          router.push(`/budgets/${initialData.id}`);
+        } else {
+          router.push('/budgets');
+        }
+        router.refresh();
       }
-      router.refresh();
     } catch (error) {
       console.error('Error saving budget:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to save budget');

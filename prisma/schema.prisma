@@ -243,6 +243,8 @@ model UserSettings {
   theme         String   @default("light")
   provider      String?
   apiKey        String?
+  openaiApiKey  String?
+  geminiApiKey  String?
   selectedModel String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
