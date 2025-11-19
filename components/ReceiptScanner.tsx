@@ -24,42 +24,106 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
     const [selectedModel, setSelectedModel] = useState(MODELS[0].id); // Default to GPT-4o
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Compress image to fit under maxSize (in bytes)
+    const compressImage = async (file: File, maxSize: number = 4 * 1024 * 1024): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onerror = reject;
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target?.result as string;
+                img.onerror = reject;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Canvas not supported'));
+                        return;
+                    }
+
+                    // Calculate new dimensions (max 2048px on longest side for receipt OCR)
+                    let width = img.width;
+                    let height = img.height;
+                    const maxDimension = 2048;
+
+                    if (width > maxDimension || height > maxDimension) {
+                        if (width > height) {
+                            height = (height / width) * maxDimension;
+                            width = maxDimension;
+                        } else {
+                            width = (width / height) * maxDimension;
+                            height = maxDimension;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Try different quality levels to get under maxSize
+                    let quality = 0.9;
+                    let base64 = '';
+                    let attempts = 0;
+                    const maxAttempts = 5;
+
+                    const tryCompress = () => {
+                        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        base64 = dataUrl.split(',')[1];
+
+                        // Check size (base64 is ~1.37x original size)
+                        const estimatedSize = (base64.length * 3) / 4;
+
+                        if (estimatedSize <= maxSize || quality <= 0.5 || attempts >= maxAttempts) {
+                            console.log(`[Compress] Final size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}`);
+                            resolve(base64);
+                        } else {
+                            attempts++;
+                            quality -= 0.1;
+                            tryCompress();
+                        }
+                    };
+
+                    tryCompress();
+                };
+            };
+        });
+    };
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (file.size > 4 * 1024 * 1024) {
-            toast.error('Ukuran file terlalu besar (maks 4MB)');
+        // Check if it's an image
+        if (!file.type.startsWith('image/')) {
+            toast.error('File harus berupa gambar');
             return;
         }
 
         setIsScanning(true);
         try {
-            // Convert to base64
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = async () => {
-                const base64 = reader.result?.toString().split(',')[1];
+            // Compress image first
+            toast.info('Memproses gambar...');
+            const base64 = await compressImage(file);
 
-                const response = await fetch('/api/scan-receipt', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        imageBase64: base64,
-                        model: selectedModel
-                    })
-                });
+            const response = await fetch('/api/scan-receipt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageBase64: base64,
+                    model: selectedModel
+                })
+            });
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Gagal memproses struk');
-                }
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Gagal memproses struk');
+            }
 
-                const data = await response.json();
-                onScanComplete(data);
-                setIsOpen(false);
-                toast.success('Struk berhasil diproses!');
-            };
+            const data = await response.json();
+            onScanComplete(data);
+            setIsOpen(false);
+            toast.success('Struk berhasil diproses!');
         } catch (error) {
             console.error('Scan error:', error);
             toast.error(error instanceof Error ? error.message : 'Gagal memproses struk');
@@ -119,29 +183,40 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
                             <span>Upload Foto</span>
                         </Button>
 
-                        <Button
-                            variant="outline"
-                            className="h-24 flex flex-col gap-2"
-                            onClick={() => {
-                                // Camera handling would go here, for now just trigger upload
-                                fileInputRef.current?.click();
-                            }}
-                            disabled={isScanning}
-                        >
-                            {isScanning ? (
-                                <FiLoader className="w-6 h-6 animate-spin" />
-                            ) : (
-                                <FiCamera className="w-6 h-6" />
-                            )}
-                            <span>Ambil Foto</span>
-                        </Button>
+                        <label htmlFor="camera-input" className="cursor-pointer">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-24 flex flex-col gap-2 w-full"
+                                disabled={isScanning}
+                                onClick={() => document.getElementById('camera-input')?.click()}
+                            >
+                                {isScanning ? (
+                                    <FiLoader className="w-6 h-6 animate-spin" />
+                                ) : (
+                                    <FiCamera className="w-6 h-6" />
+                                )}
+                                <span>Ambil Foto</span>
+                            </Button>
+                        </label>
                     </div>
 
+                    {/* Upload file input */}
                     <input
                         type="file"
                         accept="image/*"
                         className="hidden"
                         ref={fileInputRef}
+                        onChange={handleFileChange}
+                    />
+
+                    {/* Camera capture input (mobile only) */}
+                    <input
+                        id="camera-input"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
                         onChange={handleFileChange}
                     />
                 </div>
