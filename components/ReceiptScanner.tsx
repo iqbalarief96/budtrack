@@ -68,30 +68,52 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
                     const maxAttempts = 5;
 
                     const tryCompress = () => {
-                        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                        // Extract and sanitize base64 string (remove any whitespace/newlines)
-                        base64 = dataUrl.split(',')[1].replace(/\s/g, '').trim();
+                        try {
+                            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                            console.log(`[Compress] Canvas toDataURL success, dataUrl length: ${dataUrl.length}`);
 
-                        // Validate base64 format (should only contain A-Z, a-z, 0-9, +, /, =)
-                        if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
-                            reject(new Error('Invalid base64 format after compression'));
-                            return;
-                        }
+                            // Extract and sanitize base64 string (remove any whitespace/newlines)
+                            const parts = dataUrl.split(',');
+                            if (parts.length !== 2) {
+                                console.error('[Compress] Invalid dataUrl format, parts:', parts.length);
+                                reject(new Error('Format data URL tidak valid'));
+                                return;
+                            }
 
-                        // Check size (base64 is ~1.37x original size)
-                        const estimatedSize = (base64.length * 3) / 4;
+                            base64 = parts[1].replace(/\s/g, '').trim();
+                            console.log(`[Compress] Base64 extracted, length: ${base64.length}, first 50 chars: ${base64.substring(0, 50)}`);
 
-                        if (estimatedSize <= maxSize || quality <= 0.5 || attempts >= maxAttempts) {
-                            console.log(`[Compress] Final size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}, Base64 length: ${base64.length}`);
-                            resolve(base64);
-                        } else {
-                            attempts++;
-                            quality -= 0.1;
-                            tryCompress();
+                            // Basic validation - just check if we have data
+                            if (!base64 || base64.length < 100) {
+                                console.error('[Compress] Base64 too short or empty');
+                                reject(new Error('Data gambar tidak valid'));
+                                return;
+                            }
+
+                            // Check size (base64 is ~1.37x original size)
+                            const estimatedSize = (base64.length * 3) / 4;
+                            console.log(`[Compress] Estimated size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}, Attempt: ${attempts + 1}`);
+
+                            if (estimatedSize <= maxSize || quality <= 0.5 || attempts >= maxAttempts) {
+                                console.log(`[Compress] Compression complete! Final size: ${(estimatedSize / 1024 / 1024).toFixed(2)}MB, Quality: ${quality}`);
+                                resolve(base64);
+                            } else {
+                                attempts++;
+                                quality -= 0.1;
+                                tryCompress();
+                            }
+                        } catch (err) {
+                            console.error('[Compress] Error in tryCompress:', err);
+                            reject(err);
                         }
                     };
 
-                    tryCompress();
+                    try {
+                        tryCompress();
+                    } catch (err) {
+                        console.error('[Compress] Error starting compression:', err);
+                        reject(err);
+                    }
                 };
             };
         });
