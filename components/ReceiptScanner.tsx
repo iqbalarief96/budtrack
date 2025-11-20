@@ -80,14 +80,29 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
                                 return;
                             }
 
-                            base64 = parts[1].replace(/\s/g, '').trim();
+                            // Aggressive sanitization for iOS compatibility
+                            // Remove all whitespace, newlines, and non-base64 characters
+                            base64 = parts[1]
+                                .replace(/\s+/g, '')  // Remove all whitespace
+                                .replace(/\r?\n|\r/g, '')  // Remove newlines
+                                .replace(/[^A-Za-z0-9+/=]/g, '')  // Keep only valid base64 chars
+                                .trim();
+
                             console.log(`[Compress] Base64 extracted, length: ${base64.length}, first 50 chars: ${base64.substring(0, 50)}`);
+                            console.log(`[Compress] Last 20 chars: ${base64.substring(base64.length - 20)}`);
 
                             // Basic validation - just check if we have data
                             if (!base64 || base64.length < 100) {
                                 console.error('[Compress] Base64 too short or empty');
                                 reject(new Error('Data gambar tidak valid'));
                                 return;
+                            }
+
+                            // iOS-specific validation: ensure proper base64 padding
+                            const paddingNeeded = (4 - (base64.length % 4)) % 4;
+                            if (paddingNeeded > 0) {
+                                console.log(`[Compress] iOS: Adding ${paddingNeeded} padding characters`);
+                                base64 += '='.repeat(paddingNeeded);
                             }
 
                             // Check size (base64 is ~1.37x original size)
