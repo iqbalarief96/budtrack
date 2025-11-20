@@ -17,19 +17,30 @@ export default function ScanReceiptButton({ onScanSuccess, className = '' }: Sca
         const file = e.target.files?.[0];
         if (!file) return;
 
+        console.log('[ScanReceipt] File selected:', {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            lastModified: new Date(file.lastModified)
+        });
+
         setIsScanning(true);
         const formData = new FormData();
         formData.append('file', file);
 
         try {
+            console.log('[ScanReceipt] Sending request to /api/scan-receipt...');
             const response = await fetch('/api/scan-receipt', {
                 method: 'POST',
                 body: formData,
             });
 
+            console.log('[ScanReceipt] Response status:', response.status);
             const data = await response.json();
+            console.log('[ScanReceipt] Response data:', data);
 
             if (!response.ok) {
+                console.error('[ScanReceipt] Error response:', data);
                 throw new Error(data.error || 'Failed to scan receipt');
             }
 
@@ -41,7 +52,11 @@ export default function ScanReceiptButton({ onScanSuccess, className = '' }: Sca
                 categoryId: data.categoryId,
             });
         } catch (error) {
-            console.error('Scan error:', error);
+            console.error('[ScanReceipt] Error:', error);
+            console.error('[ScanReceipt] Error details:', {
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+            });
             toast.error(error instanceof Error ? error.message : 'Gagal memindai struk');
         } finally {
             setIsScanning(false);
