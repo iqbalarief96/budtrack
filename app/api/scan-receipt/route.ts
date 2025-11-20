@@ -15,30 +15,63 @@ export async function POST(request: NextRequest) {
         }
         console.log('[SCAN-RECEIPT] User authenticated:', session.user.id);
 
-        const formData = await request.formData();
-        const file = formData.get('file') as File;
-        const model = formData.get('model') as string | null;
+        // Support both JSON (ReceiptScanner.tsx) and FormData (ScanReceiptButton.tsx)
+        const contentType = request.headers.get('content-type') || '';
+        let imageBase64: string;
+        let model: string | null = null;
 
-        console.log('[SCAN-RECEIPT] File info:', {
-            hasFile: !!file,
-            fileName: file?.name,
-            fileType: file?.type,
-            fileSize: file?.size,
-            model: model || 'default'
-        });
+        if (contentType.includes('application/json')) {
+            // Handle JSON request (ReceiptScanner.tsx)
+            console.log('[SCAN-RECEIPT] Processing JSON request');
+            const body = await request.json();
+            imageBase64 = body.imageBase64;
+            model = body.model || null;
 
-        if (!file) {
-            console.log('[SCAN-RECEIPT] Error: No file provided');
-            return NextResponse.json({ error: 'Image file is required' }, { status: 400 });
+            console.log('[SCAN-RECEIPT] JSON data:', {
+                hasImageBase64: !!imageBase64,
+                base64Length: imageBase64?.length,
+                base64Prefix: imageBase64?.substring(0, 50),
+                model: model || 'default'
+            });
+
+            if (!imageBase64) {
+                console.log('[SCAN-RECEIPT] Error: No imageBase64 provided in JSON');
+                return NextResponse.json({ error: 'Image base64 is required' }, { status: 400 });
+            }
+
+            // Add data URL prefix if not present
+            if (!imageBase64.startsWith('data:image')) {
+                imageBase64 = `data:image/jpeg;base64,${imageBase64}`;
+                console.log('[SCAN-RECEIPT] Added data URL prefix');
+            }
+        } else {
+            // Handle FormData request (ScanReceiptButton.tsx)
+            console.log('[SCAN-RECEIPT] Processing FormData request');
+            const formData = await request.formData();
+            const file = formData.get('file') as File;
+            model = formData.get('model') as string | null;
+
+            console.log('[SCAN-RECEIPT] File info:', {
+                hasFile: !!file,
+                fileName: file?.name,
+                fileType: file?.type,
+                fileSize: file?.size,
+                model: model || 'default'
+            });
+
+            if (!file) {
+                console.log('[SCAN-RECEIPT] Error: No file provided in FormData');
+                return NextResponse.json({ error: 'Image file is required' }, { status: 400 });
+            }
+
+            // Convert file to base64
+            console.log('[SCAN-RECEIPT] Converting file to base64...');
+            const bytes = await file.arrayBuffer();
+            const buffer = Buffer.from(bytes);
+            imageBase64 = `data:${file.type};base64,${buffer.toString('base64')}`;
+            console.log('[SCAN-RECEIPT] Base64 length:', imageBase64.length);
+            console.log('[SCAN-RECEIPT] Base64 prefix:', imageBase64.substring(0, 50));
         }
-
-        // Convert file to base64
-        console.log('[SCAN-RECEIPT] Converting file to base64...');
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        const imageBase64 = `data:${file.type};base64,${buffer.toString('base64')}`;
-        console.log('[SCAN-RECEIPT] Base64 length:', imageBase64.length);
-        console.log('[SCAN-RECEIPT] Base64 prefix:', imageBase64.substring(0, 50));
 
         // Fetch user settings to get API keys
         console.log('[SCAN-RECEIPT] Fetching user settings...');
