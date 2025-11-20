@@ -98,12 +98,8 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
                                 return;
                             }
 
-                            // iOS-specific validation: ensure proper base64 padding
-                            const paddingNeeded = (4 - (base64.length % 4)) % 4;
-                            if (paddingNeeded > 0) {
-                                console.log(`[Compress] iOS: Adding ${paddingNeeded} padding characters`);
-                                base64 += '='.repeat(paddingNeeded);
-                            }
+                            // Note: Canvas toDataURL() already adds proper base64 padding
+                            // No need to add manual padding
 
                             // Check size (base64 is ~1.37x original size)
                             const estimatedSize = (base64.length * 3) / 4;
@@ -145,8 +141,126 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
         }
 
         setIsScanning(true);
+
+        // iOS Safari workaround: Skip compression and send file directly
+        // Modern iOS Safari (13+) reports as "Mac" with touch support
+        const isIOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream) ||
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        console.log('[ReceiptScanner] Device detected - iOS:', isIOS);
+        console.log('[ReceiptScanner] User Agent:', navigator.userAgent);
+        console.log('[ReceiptScanner] Platform:', navigator.platform);
+        console.log('[ReceiptScanner] Max Touch Points:', navigator.maxTouchPoints);
+
+        if (isIOS) {
+            // iOS: Compress and send as Blob to avoid base64 atob() issues
+            try {
+                toast.info('Memproses gambar...');
+                console.log('[ReceiptScanner] iOS: Original file size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+
+                // Compress image to under 4MB using Canvas
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+
+                const compressedBlob = await new Promise<Blob>((resolve, reject) => {
+                    reader.onerror = reject;
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.src = e.target?.result as string;
+                        img.onerror = reject;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) {
+                                reject(new Error('Canvas not supported'));
+                                return;
+                            }
+
+                            // Calculate new dimensions (max 2048px)
+                            let width = img.width;
+                            let height = img.height;
+                            const maxDimension = 2048;
+
+                            if (width > maxDimension || height > maxDimension) {
+                                if (width > height) {
+                                    height = (height / width) * maxDimension;
+                                    width = maxDimension;
+                                } else {
+                                    width = (width / height) * maxDimension;
+                                    height = maxDimension;
+                                }
+                            }
+
+                            canvas.width = width;
+                            canvas.height = height;
+                            ctx.drawImage(img, 0, 0, width, height);
+
+                            // Convert to Blob with quality adjustment
+                            canvas.toBlob((blob) => {
+                                if (!blob) {
+                                    reject(new Error('Failed to create blob'));
+                                    return;
+                                }
+                                resolve(blob);
+                            }, 'image/jpeg', 0.8); // Start with 0.8 quality
+                        };
+                    };
+                });
+
+                console.log('[ReceiptScanner] iOS: Compressed size:', (compressedBlob.size / 1024 / 1024).toFixed(2), 'MB');
+
+                const formData = new FormData();
+                formData.append('file', compressedBlob, 'receipt.jpg');
+                formData.append('model', selectedModel);
+
+                console.log('[ReceiptScanner] iOS: Fetching API...');
+                const response = await fetch('/api/scan-receipt', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('[ReceiptScanner] iOS: Response status:', response.status, response.statusText);
+                console.log('[ReceiptScanner] iOS: Response content-type:', response.headers.get('content-type'));
+
+                if (!response.ok) {
+                    let errorText = '';
+                    try {
+                        const error = await response.json();
+                        console.error('[ReceiptScanner] API JSON error:', error);
+                        errorText = error.error || 'Gagal memproses struk';
+                    } catch (parseError) {
+                        errorText = await response.text();
+                        console.error('[ReceiptScanner] API text error:', errorText);
+                    }
+                    throw new Error(errorText || 'Gagal memproses struk');
+                }
+
+                console.log('[ReceiptScanner] iOS: Parsing response JSON...');
+                const data = await response.json();
+                console.log('[ReceiptScanner] iOS: Response data:', data);
+
+                onScanComplete(data);
+                setIsOpen(false);
+                toast.success('Struk berhasil diproses!');
+            } catch (error) {
+                console.error('[ReceiptScanner] iOS Scan error:', error);
+                console.error('[ReceiptScanner] iOS Error name:', error instanceof Error ? error.name : 'Unknown');
+                console.error('[ReceiptScanner] iOS Error message:', error instanceof Error ? error.message : 'Unknown');
+                console.error('[ReceiptScanner] iOS Error stack:', error instanceof Error ? error.stack : 'No stack');
+
+                const errorMessage = error instanceof Error ? error.message : 'Gagal memproses struk';
+                toast.error(errorMessage);
+            } finally {
+                setIsScanning(false);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            }
+            return;
+        }
+
+        // Non-iOS: Use compression
         try {
-            // Compress image first
             toast.info('Memproses gambar...');
             const base64 = await compressImage(file);
 
@@ -157,13 +271,50 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
 
             console.log(`[ReceiptScanner] Sending image: ${(base64.length * 3 / 4 / 1024 / 1024).toFixed(2)}MB, Model: ${selectedModel}`);
 
+            // iOS Safari compatibility: Validate base64 before sending
+            try {
+                // Test if base64 is valid by attempting to decode a small portion
+                const testString = base64.substring(0, Math.min(100, base64.length));
+                if (!/^[A-Za-z0-9+/]*={0,2}$/.test(testString)) {
+                    throw new Error('Invalid base64 characters detected');
+                }
+                console.log('[ReceiptScanner] Base64 validation passed');
+            } catch (validationError) {
+                console.error('[ReceiptScanner] Base64 validation failed:', validationError);
+                throw new Error('Gagal memvalidasi data gambar. Coba lagi.');
+            }
+
+            // iOS Safari workaround: Convert base64 to Blob and send as FormData
+            // iOS Safari has issues with large base64 strings in JSON
+            console.log('[ReceiptScanner] Converting base64 to blob for iOS compatibility');
+
+            let byteCharacters;
+            try {
+                byteCharacters = atob(base64);
+                console.log('[ReceiptScanner] atob() success, decoded length:', byteCharacters.length);
+            } catch (atobError) {
+                console.error('[ReceiptScanner] atob() failed:', atobError);
+                console.error('[ReceiptScanner] Base64 sample (first 200 chars):', base64.substring(0, 200));
+                console.error('[ReceiptScanner] Base64 sample (last 200 chars):', base64.substring(base64.length - 200));
+                throw new Error('Gagal decode gambar. Error: ' + (atobError instanceof Error ? atobError.message : 'Unknown'));
+            }
+
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+            const formData = new FormData();
+            formData.append('file', blob, 'receipt.jpg');
+            formData.append('model', selectedModel);
+
+            console.log('[ReceiptScanner] Sending as FormData, blob size:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+
             const response = await fetch('/api/scan-receipt', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    imageBase64: base64,
-                    model: selectedModel
-                })
+                body: formData  // No Content-Type header - browser sets it with boundary
             });
 
             if (!response.ok) {
