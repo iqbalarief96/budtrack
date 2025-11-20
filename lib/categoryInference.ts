@@ -192,7 +192,7 @@ export async function findFallbackCategory(
 ): Promise<CategoryLike | null> {
   const patterns = [
     {
-      regex: /(?:belanja|supermarket|mart|swalayan|grocery|food|makanan|makan|resto|restaurant|cafe)/i,
+      regex: /(?:belanja|supermarket|mart|swalayan|grocery|food|makanan|makan|resto|restaurant|cafe|alfamart|indomaret|indo maret|alfa mart|superindo|griya|yogya|yomart|alfamidi|hypermart|lotte|transmart|carrefour|hero|farmers market|ranch market|papaya)/i,
       category: 'Food',
       type: 'EXPENSE',
     },

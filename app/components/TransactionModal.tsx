@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiCreditCard, FiTarget, FiRefreshCw, FiZap, FiAlertCircle } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency, parseCurrency } from '../lib/utils'
+import ScanReceiptButton from './ScanReceiptButton'
 
 type Category = {
   id: string
@@ -178,7 +179,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
       setIsSuggestingCategory(false)
     }
   }, [isOpen])
-  
+
   // Fetch goals for dropdown when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -188,8 +189,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           const response = await fetch('/api/goals')
           if (!response.ok) throw new Error('Failed to fetch goals')
           const data = await response.json()
-          setGoals(data.filter((goal: any) => 
-            goal.status === 'ONGOING' && 
+          setGoals(data.filter((goal: any) =>
+            goal.status === 'ONGOING' &&
             !goal.isArchived // Don't show archived goals
           ))
         } catch (error) {
@@ -197,7 +198,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           setGoals([])
         }
       }
-      
+
       fetchGoals()
     }
   }, [isOpen])
@@ -208,6 +209,17 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
       console.log('TransactionModal opened with initialData:', initialData);
     }
   }, [isOpen, initialData]);
+
+  const handleScanSuccess = (data: { amount: number; date: string; merchant: string; categoryId: string | null }) => {
+    setFormData(prev => ({
+      ...prev,
+      amount: data.amount.toString(),
+      date: data.date || prev.date,
+      description: data.merchant || prev.description,
+      categoryId: data.categoryId || prev.categoryId,
+      type: 'EXPENSE', // Receipts are typically expenses
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -248,7 +260,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
 
       const savedTransaction = await response.json()
       console.log('Transaction saved successfully:', savedTransaction);
-      
+
       // If a goal was selected and should update goal progress, create a goal activity
       if (formData.goalId && formData.updateGoalProgress) {
         try {
@@ -257,13 +269,13 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           // For INCOME, we update positive amounts
           const activityAmount = formData.type === 'INCOME' ? amount : -amount;
           const transactionId = savedTransaction.transaction?.id || savedTransaction.id;
-          
+
           console.log('Creating goal activity:', {
             goalId: formData.goalId,
             amount: activityAmount,
             transactionId
           });
-          
+
           await fetch(`/api/goals/${formData.goalId}/activities`, {
             method: 'POST',
             headers: {
@@ -281,7 +293,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           // Still continue with the flow even if goal update fails
         }
       }
-      
+
       // Dispatch event to notify budget component to refresh
       if (savedTransaction.triggerRefresh) {
         const refreshEvent = new CustomEvent('transaction:change', {
@@ -289,7 +301,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         });
         window.dispatchEvent(refreshEvent);
       }
-      
+
       onSave(savedTransaction)
       onClose()
     } catch (err) {
@@ -307,8 +319,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
   console.log('Rendering TransactionModal with formData:', formData);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
@@ -316,20 +328,24 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
           <FiX size={24} />
         </button>
 
-        <h2 className="text-xl font-bold mb-6">
-          {isEditing ? 'Edit Transaksi' : 'Tambah Transaksi'}
-        </h2>
+        <div className="flex items-center justify-between mb-6 pr-8">
+          <h2 className="text-xl font-bold">
+            {isEditing ? 'Edit Transaksi' : 'Tambah Transaksi'}
+          </h2>
+          {!isEditing && (
+            <ScanReceiptButton onScanSuccess={handleScanSuccess} />
+          )}
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Transaction Type */}
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
-              className={`flex items-center justify-center gap-2 p-3 rounded-lg border ${
-                formData.type === 'INCOME'
+              className={`flex items-center justify-center gap-2 p-3 rounded-lg border ${formData.type === 'INCOME'
                   ? 'bg-green-50 border-green-500 text-green-700'
                   : 'hover:bg-gray-50'
-              }`}
+                }`}
               onClick={() => setFormData({ ...formData, type: 'INCOME' })}
             >
               <FiPlus />
@@ -337,11 +353,10 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
             </button>
             <button
               type="button"
-              className={`flex items-center justify-center gap-2 p-3 rounded-lg border ${
-                formData.type === 'EXPENSE'
+              className={`flex items-center justify-center gap-2 p-3 rounded-lg border ${formData.type === 'EXPENSE'
                   ? 'bg-red-50 border-red-500 text-red-700'
                   : 'hover:bg-gray-50'
-              }`}
+                }`}
               onClick={() => setFormData({ ...formData, type: 'EXPENSE' })}
             >
               <FiMinus />
@@ -468,7 +483,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
                 ))}
             </select>
           </div>
-          
+
           {/* Goal Progress Option - Only show if a goal is selected */}
           {formData.goalId && (
             <div className="flex items-center mb-4">
@@ -480,7 +495,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
                 className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label htmlFor="updateGoalProgress" className="ml-2 text-sm text-gray-600">
-                {formData.type === 'INCOME' 
+                {formData.type === 'INCOME'
                   ? 'Tambahkan jumlah ini ke progres tujuan'
                   : 'Kurangi jumlah ini dari progres tujuan'}
               </label>
