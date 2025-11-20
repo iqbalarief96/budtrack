@@ -11,12 +11,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const body = await request.json();
-        const { imageBase64, model } = body;
+        const formData = await request.formData();
+        const file = formData.get('file') as File;
+        const model = formData.get('model') as string | null;
 
-        if (!imageBase64) {
-            return NextResponse.json({ error: 'Image is required' }, { status: 400 });
+        if (!file) {
+            return NextResponse.json({ error: 'Image file is required' }, { status: 400 });
         }
+
+        // Convert file to base64
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const imageBase64 = `data:${file.type};base64,${buffer.toString('base64')}`;
 
         // Fetch user settings to get API keys
         const userSettings = await prisma.userSettings.findUnique({
