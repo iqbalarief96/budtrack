@@ -313,6 +313,11 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
       console.log('[DEBUG] Mapped Gemini model:', geminiModel);
       console.log('[DEBUG] Using API version:', apiVersion);
 
+      // Strip data URL prefix - Gemini expects raw base64 without prefix
+      const base64Only = imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
+      console.log('[DEBUG] Original imageBase64 length:', imageBase64.length);
+      console.log('[DEBUG] Stripped base64 length:', base64Only.length);
+
       const apiUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${geminiModel}:generateContent?key=${apiKey}`;
       console.log('[DEBUG] Gemini API URL:', apiUrl.replace(apiKey, 'API_KEY_HIDDEN'));
 
@@ -328,7 +333,7 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
               {
                 inline_data: {
                   mime_type: 'image/jpeg',
-                  data: imageBase64
+                  data: base64Only
                 }
               }
             ]
@@ -370,6 +375,11 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
       console.log('[DEBUG] Original model:', model);
       console.log('[DEBUG] Mapped OpenAI model:', openaiModel);
 
+      // Strip existing data URL prefix to avoid double prefix
+      const base64Only = imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
+      console.log('[DEBUG] Original imageBase64 length:', imageBase64.length);
+      console.log('[DEBUG] Stripped base64 length:', base64Only.length);
+
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -389,7 +399,7 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
                 {
                   type: "image_url",
                   image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`
+                    url: `data:image/jpeg;base64,${base64Only}`
                   }
                 }
               ]
@@ -424,6 +434,11 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
     console.log('[DEBUG] OpenRouter model:', model);
     console.log('[DEBUG] Image size:', imageBase64.length, 'characters');
 
+    // Strip existing data URL prefix to avoid double prefix
+    const base64Only = imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
+    console.log('[DEBUG] Original imageBase64 length:', imageBase64.length);
+    console.log('[DEBUG] Stripped base64 length:', base64Only.length);
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -445,7 +460,7 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:image/jpeg;base64,${imageBase64}`
+                  url: `data:image/jpeg;base64,${base64Only}`
                 }
               }
             ]
