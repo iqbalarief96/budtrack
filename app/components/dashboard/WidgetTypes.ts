@@ -22,7 +22,8 @@ export type WidgetType =
   | 'summary'
   | 'safe-to-spend'
   | 'cashflow-forecast'
-  | 'subscription-intelligence';
+  | 'subscription-intelligence'
+  | 'debt-payoff-planner';
 
 export interface DashboardWidget {
   id: string;
@@ -145,6 +146,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'medium',
     title: 'Financial Health Score',
     position: 13
+  },
+  {
+    id: 'debt-payoff-planner-widget',
+    type: 'debt-payoff-planner',
+    size: 'large',
+    title: 'Debt Payoff Planner',
+    position: 14
   }
 ];
 

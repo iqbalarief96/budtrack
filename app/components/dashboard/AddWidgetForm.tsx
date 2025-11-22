@@ -158,6 +158,8 @@ function getWidgetDescription(type: string): string {
       return 'Detect duplicate subscriptions, price changes, dan savings opportunities';
     case 'financial-health':
       return 'Overall financial health score (0-100) dengan breakdown dan achievements';
+    case 'debt-payoff-planner':
+      return 'Strategi pelunasan hutang dengan metode Snowball/Avalanche dan rekomendasi';
     default:
       return 'Widget tambahan untuk dashboard';
   }
