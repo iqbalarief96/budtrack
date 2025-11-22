@@ -10,6 +10,8 @@ import { Prisma } from '@prisma/client'
 import { checkBudgetAlerts } from '@/lib/budgetAlerts'
 import { detectSavingsType } from '@/lib/savingsTracker'
 import { autoLinkSavingsToGoal } from '@/lib/savingsGoalAutoLink'
+import { TransactionSchema } from '@/lib/validators'
+import { z } from 'zod'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -55,7 +57,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const data = await request.json()
+    const body = await request.json()
+
+    // Validate input with Zod
+    const validated = TransactionSchema.parse(body)
     const {
       categoryId,
       walletId,
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
       date,
       description,
       goalId
-    } = data
+    } = validated
 
     console.log('Creating transaction:', {
       categoryId,
@@ -75,11 +80,6 @@ export async function POST(request: Request) {
       description,
       goalId
     });
-
-    // Validate required fields
-    if (!walletId || !amount || !type || !date) {
-      return new NextResponse('Missing required fields', { status: 400 })
-    }
 
     // Find the wallet to make sure it belongs to this user
     const wallet = await prisma.wallet.findFirst({
@@ -305,6 +305,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ transaction, triggerRefresh: true })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      )
+    }
     console.error('Error creating transaction:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
   }
@@ -427,9 +433,16 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const data = await request.json()
+    const body = await request.json()
+    const { id, ...updateData } = body
+
+    if (!id) {
+      return new NextResponse('Transaction ID is required', { status: 400 })
+    }
+
+    // Validate input with Zod (partial allows optional fields for updates)
+    const validated = TransactionSchema.partial().parse(updateData)
     const {
-      id,
       categoryId,
       walletId,
       amount,
@@ -437,12 +450,7 @@ export async function PUT(request: Request) {
       date,
       description,
       goalId
-    } = data
-
-    // Validate required fields
-    if (!id || !walletId || !amount || !type || !date) {
-      return new NextResponse('Missing required fields', { status: 400 })
-    }
+    } = validated
 
     // Get the old transaction
     const existingTransaction = await prisma.transaction.findUnique({
@@ -644,6 +652,12 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ transaction: updatedTransaction, triggerRefresh: true })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      )
+    }
     console.error('Error updating transaction:', error)
     return new NextResponse('Internal Server Error', { status: 500 })
   }

@@ -12,6 +12,8 @@ import ChatbotButton from './components/ChatbotButton'
 import { TransactionModalProvider } from './providers/TransactionModalProvider'
 import SessionClientProvider from './providers/SessionClientProvider'
 import dynamic from 'next/dynamic'
+// Validate environment variables on startup
+import '@/lib/env'
 
 // Import ThemeProvider as a Client Component to prevent hydration mismatch
 const ThemeProviderClient = dynamic(

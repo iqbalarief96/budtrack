@@ -11,6 +11,8 @@ import {
   getNextPeriodDates,
   isActiveBudget,
 } from '@/lib/budgetCalculations';
+import { BudgetSchema } from '@/lib/validators';
+import { z } from 'zod';
 
 type BudgetWithRelations = Budget & {
   category: Category;
@@ -95,8 +97,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data = await request.json();
-    console.log("Budget submission data:", data);
+    const body = await request.json();
+    console.log("Budget submission data:", body);
+
+    // Validate input with Zod
+    const data = BudgetSchema.parse(body);
     
     // Check if categoryId is valid or use a default
     let categoryId = data.categoryId;
@@ -267,6 +272,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(budget);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      );
+    }
     console.error('Error creating budget:', error);
     return NextResponse.json(
       { error: 'Failed to create budget' },
@@ -283,8 +294,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data = await request.json();
-    const { id, ...updateData } = data;
+    const body = await request.json();
+    const { id, ...updateFields } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -292,6 +303,9 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Validate input with Zod (partial allows optional fields for updates)
+    const updateData = BudgetSchema.partial().parse(updateFields);
 
     // Check if the budget exists and belongs to the user
     const existingBudget = await prisma.budget.findFirst({
@@ -347,6 +361,12 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(updatedBudget);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      );
+    }
     console.error('Error updating budget:', error);
     return NextResponse.json(
       { error: 'Failed to update budget' },

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { WalletSchema } from '@/lib/validators'
+import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,19 +77,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    
+
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { name, color, icon, balance = 0 } = await request.json()
+    const body = await request.json()
 
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
-    }
+    // Validate input with Zod
+    const { name, color, icon, balance } = WalletSchema.parse(body)
 
     // First check if user exists
     const user = await prisma.user.findUnique({
@@ -130,6 +128,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(wallet)
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      )
+    }
     console.error('Error creating wallet:', error)
     return NextResponse.json(
       { error: 'Failed to create wallet' },
@@ -142,19 +146,23 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    
+
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id, name, color, icon, isDefault } = await request.json()
+    const body = await request.json()
+    const { id, ...updateFields } = body
 
-    if (!id || !name) {
+    if (!id) {
       return NextResponse.json(
-        { error: 'ID and name are required' },
+        { error: 'Wallet ID is required' },
         { status: 400 }
       )
     }
+
+    // Validate input with Zod (partial allows optional fields for updates)
+    const { name, color, icon, isDefault } = WalletSchema.partial().parse(updateFields)
 
     // Check if wallet exists and belongs to user
     const wallet = await prisma.wallet.findUnique({
@@ -222,6 +230,12 @@ export async function PUT(request: Request) {
 
     return NextResponse.json(updatedWallet)
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.errors },
+        { status: 400 }
+      )
+    }
     console.error('Error updating wallet:', error)
     return NextResponse.json(
       { error: 'Failed to update wallet' },
