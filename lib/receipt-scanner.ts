@@ -1,20 +1,24 @@
 import { generateVisionResponse } from './ai';
 
+export type ReceiptItem = {
+    name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    notes?: string;
+    category?: string;
+};
+
 export type ReceiptData = {
-    header: {
+    transaction: {
         store_name: string;
-        transaction_date: string;
+        date: string;
         total_amount: number;
         category: string;
-        description_default: string;
+        description: string;
+        payment_method?: string;
     };
-    items_as_transactions: Array<{
-        tanggal: string;
-        deskripsi: string;
-        kategori: string;
-        dompet: string;
-        jumlah: number;
-    }>;
+    items: ReceiptItem[];
 };
 
 export async function processReceipt(
@@ -57,53 +61,73 @@ export async function processReceipt(
     }
 
     const prompt = `
-Dari teks struk di bawah ini, ekstrak:
-1) Info utama struk
-2) Daftar item belanja dalam format transaksi
-
-Balas HANYA dengan JSON yang valid seperti contoh ini:
+Dari gambar struk belanja ini, ekstrak informasi berikut dalam format JSON:
 
 {
-  "header": {
-    "store_name": "Alfamart",
-    "transaction_date": "2025-11-19",
-    "total_amount": 73500,
+  "transaction": {
+    "store_name": "Nama Toko",
+    "date": "YYYY-MM-DD",
+    "total_amount": 500000,
     "category": "Belanja",
-    "description_default": "Belanja Alfamart"
+    "description": "Belanja [Nama Toko]",
+    "payment_method": "Cash/Debit/Credit (optional)"
   },
-  "items_as_transactions": [
+  "items": [
     {
-      "tanggal": "2025-11-19",
-      "deskripsi": "Belanja Alfamart - Indomie Goreng 5pcs",
-      "kategori": "Belanja",
-      "dompet": "DEFAULT",
-      "jumlah": 25000
+      "name": "Nama Item",
+      "quantity": 2,
+      "unit_price": 15000,
+      "total_price": 30000,
+      "notes": "ukuran/varian jika ada"
     }
   ]
 }
 
-PENJELASAN FIELD:
+ATURAN PENTING:
+1. transaction.total_amount HARUS sama dengan SUM dari semua items.total_price
+2. Jika quantity tidak jelas di struk, set 1
+3. Format tanggal: YYYY-MM-DD
+4. Semua harga dalam angka (no currency symbol)
+5. Jika item tidak ada harga detail, masukkan ke 1 item "Lain-lain" dengan total_price = total_amount
+6. unit_price = total_price / quantity
+7. Jika ada diskon, sudah masukkan ke total_price (harga final)
 
-1. header:
-   - "store_name": nama toko dari header struk.
-   - "transaction_date": tanggal transaksi dalam format "YYYY-MM-DD".
-   - "total_amount": total belanja dari struk (angka desimal).
-   - "category": Default "Belanja".
-   - "description_default": "Belanja {store_name}".
+CONTOH:
+Struk menunjukkan:
+- Susu 2x @ Rp 15.000 = Rp 30.000
+- Roti 1x @ Rp 12.000 = Rp 12.000
+- Total: Rp 42.000
 
-2. items_as_transactions:
-   - "tanggal": sama dengan transaction_date.
-   - "deskripsi": "Belanja {store_name} - {nama_item}".
-   - "kategori": "Belanja".
-   - "dompet": "DEFAULT".
-   - "jumlah": harga total per item (qty x harga).
+Harus extract sebagai:
+{
+  "transaction": {
+    "store_name": "Indomaret",
+    "date": "2025-11-21",
+    "total_amount": 42000,
+    "category": "Belanja",
+    "description": "Belanja Indomaret"
+  },
+  "items": [
+    {
+      "name": "Susu",
+      "quantity": 2,
+      "unit_price": 15000,
+      "total_price": 30000
+    },
+    {
+      "name": "Roti",
+      "quantity": 1,
+      "unit_price": 12000,
+      "total_price": 12000
+    }
+  ]
+}
 
-PENTING:
-- Balas HANYA JSON tanpa penjelasan tambahan.
-- Jangan pakai markdown block (\`\`\`json).
+Balas HANYA dengan JSON yang valid, tanpa backticks atau penjelasan tambahan.
 `;
 
     try {
+        console.log('[RECEIPT-SCANNER] Calling AI vision API...');
         const response = await generateVisionResponse({
             prompt,
             imageBase64,
@@ -112,12 +136,71 @@ PENTING:
             model
         });
 
-        // Clean up response if it contains markdown blocks
-        const cleanResponse = response.replace(/```json/g, '').replace(/```/g, '').trim();
+        console.log('[RECEIPT-SCANNER] Raw AI response:', response);
 
-        return JSON.parse(cleanResponse);
+        // Clean up response if it contains markdown blocks
+        let cleanResponse = response.trim();
+        if (cleanResponse.startsWith('```')) {
+            cleanResponse = cleanResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        }
+
+        // Parse JSON response
+        let data: ReceiptData;
+        try {
+            data = JSON.parse(cleanResponse);
+        } catch (parseError) {
+            console.error('[RECEIPT-SCANNER] JSON parse error:', parseError);
+            throw new Error('Failed to parse AI response as JSON');
+        }
+
+        // Validate response structure
+        if (!data.transaction || !data.items || !Array.isArray(data.items)) {
+            console.error('[RECEIPT-SCANNER] Invalid response structure:', data);
+            throw new Error('Invalid receipt data structure from AI');
+        }
+
+        // Validate required fields
+        if (!data.transaction.store_name || !data.transaction.date || !data.transaction.total_amount) {
+            throw new Error('Missing required transaction fields');
+        }
+
+        // Validate items
+        if (data.items.length === 0) {
+            console.warn('[RECEIPT-SCANNER] No items found, creating default item');
+            // Create a single item with total amount
+            data.items = [{
+                name: 'Belanja (detail tidak tersedia)',
+                quantity: 1,
+                unit_price: data.transaction.total_amount,
+                total_price: data.transaction.total_amount
+            }];
+        }
+
+        // Validate total matches sum of items
+        const itemsTotal = data.items.reduce((sum, item) => sum + item.total_price, 0);
+        const difference = Math.abs(itemsTotal - data.transaction.total_amount);
+
+        if (difference > 1) { // Allow 1 rupiah rounding difference
+            console.warn('[RECEIPT-SCANNER] Total mismatch!', {
+                transactionTotal: data.transaction.total_amount,
+                itemsTotal,
+                difference
+            });
+
+            // Auto-adjust: add/subtract difference to first item
+            if (data.items.length > 0) {
+                const adjustment = data.transaction.total_amount - itemsTotal;
+                data.items[0].total_price += adjustment;
+                data.items[0].unit_price = data.items[0].total_price / data.items[0].quantity;
+                data.items[0].notes = (data.items[0].notes || '') + ' (disesuaikan)';
+                console.log('[RECEIPT-SCANNER] Adjusted first item by:', adjustment);
+            }
+        }
+
+        console.log('[RECEIPT-SCANNER] Validated receipt data:', data);
+        return data;
     } catch (error) {
-        console.error('Error processing receipt:', error);
+        console.error('[RECEIPT-SCANNER] Error processing receipt:', error);
         // Pass through the actual error message if available
         if (error instanceof Error) {
             throw error;

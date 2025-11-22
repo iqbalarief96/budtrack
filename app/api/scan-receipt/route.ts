@@ -99,10 +99,16 @@ export async function POST(request: NextRequest) {
         };
 
         console.log('[SCAN-RECEIPT] Processing receipt with model:', model || 'google/gemini-2.0-flash-exp:free');
-        const data = await processReceipt(imageBase64, model || 'google/gemini-2.0-flash-exp:free', keys);
+        const receiptData = await processReceipt(imageBase64, model || 'google/gemini-2.0-flash-exp:free', keys);
 
-        console.log('[SCAN-RECEIPT] Success! Data:', JSON.stringify(data, null, 2));
-        return NextResponse.json(data);
+        console.log('[SCAN-RECEIPT] Receipt data extracted:', JSON.stringify(receiptData, null, 2));
+
+        // Return extracted data for preview (don't save yet)
+        return NextResponse.json({
+            success: true,
+            data: receiptData,
+            message: `Receipt scanned! Found ${receiptData.items.length} items.`
+        });
     } catch (error) {
         console.error('[SCAN-RECEIPT] Error:', error);
         console.error('[SCAN-RECEIPT] Error stack:', error instanceof Error ? error.stack : 'No stack trace');

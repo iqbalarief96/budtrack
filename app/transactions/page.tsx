@@ -16,7 +16,9 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
 import { ReceiptScanner } from '@/components/ReceiptScanner';
-import { ReceiptConfirmationModal } from '@/components/ReceiptConfirmationModal';
+import { ReceiptPreviewModal } from '@/components/ReceiptPreviewModal';
+import TransactionItemsList from '@/components/transactions/TransactionItemsList';
+import AddTransactionItemDialog from '@/components/transactions/AddTransactionItemDialog';
 
 
 
@@ -86,6 +88,9 @@ const TransactionsPage = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('monthly')
   const [scannedReceiptData, setScannedReceiptData] = useState<any>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const [transactionItems, setTransactionItems] = useState<Record<string, any[]>>({});
 
 
   // Hydration-safe localStorage init
@@ -189,6 +194,25 @@ const TransactionsPage = () => {
       setIsLoading(false)
     }
   }
+
+  // Fetch categories
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      if (!response.ok) throw new Error('Failed to fetch categories')
+      const data = await response.json()
+      // API returns array directly, not { categories: [] }
+      setCategories(Array.isArray(data) ? data : [])
+      console.log('[CATEGORIES] Fetched:', data.length, 'categories')
+    } catch (err) {
+      console.error('[CATEGORIES] Error fetching categories:', err)
+    }
+  }
+
+  // Fetch categories on mount
+  useEffect(() => {
+    fetchCategories()
+  }, [])
 
   useEffect(() => {
     setSelectedTransactions(prev => {
@@ -590,10 +614,81 @@ const TransactionsPage = () => {
     }
   }
 
-  const handleScanComplete = (data: any) => {
-    console.log('Scanned Receipt Data:', data);
-    setScannedReceiptData(data);
-    setIsReceiptModalOpen(true);
+  const handleScanComplete = async (response: any) => {
+    console.log('Scanned Receipt Data:', response);
+
+    // New API response format: { success: true, data, message }
+    if (response.success && response.data) {
+      // Show preview modal with extracted data
+      setScannedReceiptData(response.data);
+      setIsReceiptModalOpen(true);
+      toast.success(response.message || 'Receipt scanned successfully! Review and save.');
+    } else {
+      // Error handling
+      toast.error(response.error || 'Failed to scan receipt');
+    }
+  };
+
+  const handleSaveReceipt = async (data: any, walletId: string, categoryId?: string) => {
+    try {
+      const response = await fetch('/api/transactions/from-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, walletId, categoryId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save transaction');
+      }
+
+      const result = await response.json();
+      toast.success(result.message || 'Transaction saved successfully!');
+
+      // Refresh data
+      await fetchTransactions(activeFilters);
+      await refreshWallets();
+
+      // Close modal
+      setIsReceiptModalOpen(false);
+      setScannedReceiptData(null);
+    } catch (error) {
+      console.error('Error saving receipt transaction:', error);
+      toast.error('Failed to save transaction');
+    }
+  };
+
+  // Fetch items for a transaction
+  const fetchTransactionItems = async (transactionId: string) => {
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/items`);
+      if (!response.ok) throw new Error('Failed to fetch items');
+      const data = await response.json();
+      setTransactionItems(prev => ({ ...prev, [transactionId]: data.items || [] }));
+      return data.items || [];
+    } catch (error) {
+      console.error('Error fetching transaction items:', error);
+      return [];
+    }
+  };
+
+  // Toggle transaction items expansion
+  const toggleTransactionItems = async (transactionId: string) => {
+    if (expandedTransactionId === transactionId) {
+      setExpandedTransactionId(null);
+    } else {
+      setExpandedTransactionId(transactionId);
+      // Fetch items if not already loaded
+      if (!transactionItems[transactionId]) {
+        await fetchTransactionItems(transactionId);
+      }
+    }
+  };
+
+  // Refresh items after changes
+  const handleItemsChange = async (transactionId: string) => {
+    await fetchTransactionItems(transactionId);
+    await fetchTransactions(activeFilters);
+    await refreshWallets();
   };
 
   const handleSaveReceiptTransactions = async (transactionsToSave: any[]) => {
@@ -1038,52 +1133,80 @@ const TransactionsPage = () => {
               </tr>
             ) : (
               filteredTransactions.map((transaction) => (
-                <tr key={transaction.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={selectedTransactions.has(transaction.id)}
-                      onChange={() => toggleTransactionSelection(transaction.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      aria-label={`Pilih transaksi ${transaction.description || transaction.id}`}
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(transaction.date).toLocaleDateString('id-ID')}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.description || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.category?.name || 'Tanpa Kategori'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.wallet?.name || '-'}
-                  </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
-                    }`}>
-                    {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => {
-                        console.log('Edit button clicked for transaction:', transaction);
-                        setEditingTransaction(transaction);
-                        setIsModalOpen(true);
-                      }}
-                      className="text-blue-600 hover:text-blue-900 mx-1"
-                    >
-                      <FiEdit2 className="inline" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTransaction(transaction.id)}
-                      className="text-red-600 hover:text-red-900 mx-1 disabled:opacity-60 disabled:cursor-not-allowed"
-                      disabled={isBulkDeleting}
-                    >
-                      <FiTrash2 className="inline" />
-                    </button>
-                  </td>
-                </tr>
+                <React.Fragment key={transaction.id}>
+                  <tr className="hover:bg-gray-50">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedTransactions.has(transaction.id)}
+                        onChange={() => toggleTransactionSelection(transaction.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        aria-label={`Pilih transaksi ${transaction.description || transaction.id}`}
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {new Date(transaction.date).toLocaleDateString('id-ID')}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <div
+                        className="cursor-pointer hover:text-blue-600"
+                        onClick={() => toggleTransactionItems(transaction.id)}
+                      >
+                        {transaction.description || '-'}
+                      </div>
+                      {expandedTransactionId === transaction.id && (
+                        <div className="mt-2">
+                          {transactionItems[transaction.id] ? (
+                            <>
+                              <TransactionItemsList
+                                transactionId={transaction.id}
+                                items={transactionItems[transaction.id]}
+                                onItemsChange={() => handleItemsChange(transaction.id)}
+                              />
+                              <div className="mt-2">
+                                <AddTransactionItemDialog
+                                  transactionId={transaction.id}
+                                  onItemAdded={() => handleItemsChange(transaction.id)}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-xs text-gray-500">Loading items...</div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {transaction.category?.name || 'Tanpa Kategori'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {transaction.wallet?.name || '-'}
+                    </td>
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                      {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => {
+                          console.log('Edit button clicked for transaction:', transaction);
+                          setEditingTransaction(transaction);
+                          setIsModalOpen(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-900 mx-1"
+                      >
+                        <FiEdit2 className="inline" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTransaction(transaction.id)}
+                        className="text-red-600 hover:text-red-900 mx-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                        disabled={isBulkDeleting}
+                      >
+                        <FiTrash2 className="inline" />
+                      </button>
+                    </td>
+                  </tr>
+                </React.Fragment>
               ))
             )}
           </tbody>
@@ -1128,7 +1251,10 @@ const TransactionsPage = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2 mb-1.5">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 line-clamp-1">
+                        <p
+                          className="text-sm font-medium text-gray-900 line-clamp-1 cursor-pointer hover:text-blue-600"
+                          onClick={() => toggleTransactionItems(transaction.id)}
+                        >
                           {transaction.description || '-'}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
@@ -1140,6 +1266,30 @@ const TransactionsPage = () => {
                         {transaction.type === 'EXPENSE' ? '-' : '+'}{formatCurrency(transaction.amount)}
                       </div>
                     </div>
+
+                    {/* Expanded Items */}
+                    {expandedTransactionId === transaction.id && (
+                      <div className="my-2">
+                        {transactionItems[transaction.id] ? (
+                          <>
+                            <TransactionItemsList
+                              transactionId={transaction.id}
+                              items={transactionItems[transaction.id]}
+                              onItemsChange={() => handleItemsChange(transaction.id)}
+                            />
+                            <div className="mt-2">
+                              <AddTransactionItemDialog
+                                transactionId={transaction.id}
+                                onItemAdded={() => handleItemsChange(transaction.id)}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-xs text-gray-500">Loading items...</div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-1.5 mb-2">
                       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                         {transaction.category?.name || 'Tanpa Kategori'}
@@ -1204,12 +1354,13 @@ const TransactionsPage = () => {
         wallets={selectedWallet ? [selectedWallet] : []}
         onImportComplete={handleImportComplete}
       />
-      <ReceiptConfirmationModal
+      <ReceiptPreviewModal
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
-        onSave={handleSaveReceiptTransactions}
+        onSave={handleSaveReceipt}
         data={scannedReceiptData}
         wallets={wallets}
+        categories={categories}
       />
     </div>
   )
