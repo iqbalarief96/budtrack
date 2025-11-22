@@ -160,6 +160,10 @@ model Transaction {
   goal             Goal?                         @relation(fields: [goalId], references: [id])
   wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
   user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([walletId, type])
+  @@index([categoryId])
 }
 
 model TransactionItem {
