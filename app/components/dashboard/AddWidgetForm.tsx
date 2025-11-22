@@ -156,6 +156,8 @@ function getWidgetDescription(type: string): string {
       return 'Prediksi cash flow untuk 3-12 bulan ke depan dengan insights';
     case 'subscription-intelligence':
       return 'Detect duplicate subscriptions, price changes, dan savings opportunities';
+    case 'financial-health':
+      return 'Overall financial health score (0-100) dengan breakdown dan achievements';
     default:
       return 'Widget tambahan untuk dashboard';
   }

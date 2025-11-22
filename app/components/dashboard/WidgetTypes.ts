@@ -138,6 +138,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'large',
     title: 'Subscription Intelligence',
     position: 12
+  },
+  {
+    id: 'financial-health-widget',
+    type: 'financial-health',
+    size: 'medium',
+    title: 'Financial Health Score',
+    position: 13
   }
 ];
 

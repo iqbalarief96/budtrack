@@ -21,6 +21,7 @@ import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
 import SafeToSpendCard from '@/app/components/dashboard/SafeToSpendCard';
 import CashFlowForecastCard from '@/app/components/dashboard/CashFlowForecastCard';
 import SubscriptionIntelligenceCard from '@/app/components/dashboard/SubscriptionIntelligenceCard';
+import FinancialHealthScoreCard from '@/app/components/dashboard/FinancialHealthScoreCard';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -451,6 +452,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
 
     case 'subscription-intelligence':
       return <SubscriptionIntelligenceCard />;
+
+    case 'financial-health':
+      return <FinancialHealthScoreCard />;
 
     default:
       return (
