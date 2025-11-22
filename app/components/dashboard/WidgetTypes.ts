@@ -1,12 +1,12 @@
 // Widget types for dashboard customization
 
 export type WidgetSize = 'small' | 'medium' | 'large' | 'full';
-export type WidgetType = 
-  | 'balance' 
-  | 'income' 
-  | 'expense' 
-  | 'budget-progress' 
-  | 'expense-chart' 
+export type WidgetType =
+  | 'balance'
+  | 'income'
+  | 'expense'
+  | 'budget-progress'
+  | 'expense-chart'
   | 'income-expense-chart'
   | 'transaction-list'
   | 'savings-goal'
@@ -19,7 +19,8 @@ export type WidgetType =
   | 'summary-stats'
   | 'quick-actions'
   | 'top-spending'
-  | 'summary';
+  | 'summary'
+  | 'safe-to-spend';
 
 export interface DashboardWidget {
   id: string;
@@ -114,6 +115,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'medium',
     title: 'Top Spending',
     position: 9
+  },
+  {
+    id: 'safe-to-spend-widget',
+    type: 'safe-to-spend',
+    size: 'medium',
+    title: 'Safe to Spend',
+    position: 10
   }
 ];
 

@@ -150,6 +150,8 @@ function getWidgetDescription(type: string): string {
       return 'Daftar dan progres target tabungan';
     case 'investment-performance':
       return 'Grafik performa investasi';
+    case 'safe-to-spend':
+      return 'Hitung berapa yang aman untuk dibelanjakan setelah alokasi';
     default:
       return 'Widget tambahan untuk dashboard';
   }

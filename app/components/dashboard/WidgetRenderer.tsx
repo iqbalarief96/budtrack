@@ -18,6 +18,7 @@ import SavingsGoalCard from '@/components/dashboard/SavingsGoalCard';
 import InvestmentPerformance from '@/components/dashboard/InvestmentPerformance';
 import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
 import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
+import SafeToSpendCard from '@/app/components/dashboard/SafeToSpendCard';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -439,7 +440,10 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     case 'top-spending':
       // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <TopSpendingWidget walletId={walletId} />;
-      
+
+    case 'safe-to-spend':
+      return <SafeToSpendCard />;
+
     default:
       return (
         <div className="flex items-center justify-center h-full">
