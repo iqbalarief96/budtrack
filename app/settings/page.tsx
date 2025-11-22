@@ -1,7 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { FiSave, FiCheck, FiRefreshCw } from 'react-icons/fi'
+import {
+  FiSave, FiCheck, FiRefreshCw, FiUser, FiMoon, FiBell, FiCpu, FiShield,
+  FiMail, FiLock, FiTrash2, FiDownload, FiUpload, FiGlobe, FiDollarSign
+} from 'react-icons/fi'
 import { useSession } from 'next-auth/react'
 
 interface AISettings {
@@ -12,19 +15,10 @@ interface AISettings {
   geminiApiKey?: string
 }
 
-interface SettingsResponse {
-  provider?: string;
-  apiKey?: string;
-  selectedModel?: string;
-  openaiApiKey?: string;
-  geminiApiKey?: string;
-}
+type TabType = 'profile' | 'appearance' | 'notifications' | 'ai' | 'security'
 
 const models = {
-  deepseek: [
-    'deepseek-chat',
-    'deepseek-coder',
-  ],
+  deepseek: ['deepseek-chat', 'deepseek-coder'],
   openrouter: [
     'google/gemini-2.0-flash-thinking-exp:free',
     'google/gemini-2.0-flash-thinking-exp-1219:free',
@@ -47,10 +41,13 @@ const models = {
 
 const SettingsPage = () => {
   const { data: session } = useSession()
+  const [activeTab, setActiveTab] = useState<TabType>('profile')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const [settings, setSettings] = useState<AISettings>({
+
+  // AI Settings State
+  const [aiSettings, setAiSettings] = useState<AISettings>({
     provider: 'deepseek',
     apiKey: '',
     selectedModel: models.deepseek[0],
@@ -65,6 +62,18 @@ const SettingsPage = () => {
   const [verifiedGemini, setVerifiedGemini] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>(models.deepseek)
 
+  // Appearance Settings State
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light')
+  const [language, setLanguage] = useState('id')
+  const [currency, setCurrency] = useState('IDR')
+  const [dateFormat, setDateFormat] = useState('DD/MM/YYYY')
+
+  // Notifications State
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [budgetAlerts, setBudgetAlerts] = useState(true)
+  const [goalReminders, setGoalReminders] = useState(true)
+  const [transactionNotif, setTransactionNotif] = useState(false)
+
   useEffect(() => {
     if (session?.user) {
       fetchSettings()
@@ -72,54 +81,36 @@ const SettingsPage = () => {
   }, [session])
 
   useEffect(() => {
-    // Update available models when provider changes
-    setAvailableModels(models[settings.provider])
-  }, [settings.provider])
-
-  const isValidProvider = (provider: string): provider is 'deepseek' | 'openrouter' => {
-    return provider === 'deepseek' || provider === 'openrouter'
-  }
+    setAvailableModels(models[aiSettings.provider])
+  }, [aiSettings.provider])
 
   const fetchSettings = async () => {
     try {
       const response = await fetch('/api/settings')
-      if (!response.ok) {
-        throw new Error('Failed to fetch settings')
-      }
-      const data = (await response.json()) as SettingsResponse
-      // Only update if we have provider and apiKey
-      if (data.provider && data.apiKey && isValidProvider(data.provider)) {
-        const defaultModel = models[data.provider][0]
-        setSettings({
+      if (!response.ok) throw new Error('Failed to fetch settings')
+      const data = await response.json()
+
+      if (data.provider && data.apiKey) {
+        const defaultModel = models[data.provider as 'deepseek' | 'openrouter'][0]
+        setAiSettings({
           provider: data.provider,
           apiKey: data.apiKey,
           selectedModel: data.selectedModel || defaultModel,
           openaiApiKey: data.openaiApiKey || '',
           geminiApiKey: data.geminiApiKey || '',
         })
-        setVerified(true) // Assume API key is verified if it exists
+        setVerified(true)
         if (data.openaiApiKey) setVerifiedOpenAI(true)
         if (data.geminiApiKey) setVerifiedGemini(true)
       }
+
+      // Load other settings
+      setTheme(data.theme || 'light')
+      setLanguage(data.language || 'id')
+      setCurrency(data.currency || 'IDR')
     } catch (err) {
       console.error('Error fetching settings:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch settings')
     }
-  }
-
-  const handleProviderChange = (provider: 'deepseek' | 'openrouter') => {
-    setSettings(prev => ({
-      ...prev,
-      provider,
-      selectedModel: models[provider][0],
-    }))
-    setVerified(false)
-    setAvailableModels([])
-  }
-
-  const handleApiKeyChange = (apiKey: string) => {
-    setSettings(prev => ({ ...prev, apiKey }))
-    setVerified(false)
   }
 
   const verifyApiKey = async (type: 'chatbot' | 'openai' | 'gemini' = 'chatbot') => {
@@ -127,19 +118,20 @@ const SettingsPage = () => {
     if (type === 'openai') setVerifyingOpenAI(true)
     if (type === 'gemini') setVerifyingGemini(true)
 
-    setError(null)
-
     try {
       const response = await fetch('/api/settings/verify', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: settings.provider,
-          apiKey: type === 'chatbot' ? settings.apiKey : (type === 'openai' ? settings.openaiApiKey : settings.geminiApiKey),
-          selectedModel: settings.selectedModel,
-          type
+          provider: aiSettings.provider,
+          apiKey:
+            type === 'chatbot'
+              ? aiSettings.apiKey
+              : type === 'openai'
+                ? aiSettings.openaiApiKey
+                : aiSettings.geminiApiKey,
+          selectedModel: aiSettings.selectedModel,
+          type,
         }),
       })
 
@@ -151,7 +143,6 @@ const SettingsPage = () => {
       if (type === 'chatbot') setVerified(true)
       if (type === 'openai') setVerifiedOpenAI(true)
       if (type === 'gemini') setVerifiedGemini(true)
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to verify API key')
       if (type === 'chatbot') setVerified(false)
@@ -165,11 +156,6 @@ const SettingsPage = () => {
   }
 
   const saveSettings = async () => {
-    if (!verified) {
-      setError('Please verify your API key first')
-      return
-    }
-
     setLoading(true)
     setError(null)
     setSuccess(false)
@@ -177,19 +163,16 @@ const SettingsPage = () => {
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: settings.provider,
-          apiKey: settings.apiKey,
-          selectedModel: settings.selectedModel,
-          openaiApiKey: settings.openaiApiKey,
-          geminiApiKey: settings.geminiApiKey,
-          // Include default values for other fields
-          currency: 'IDR',
-          language: 'id',
-          theme: 'light'
+          provider: aiSettings.provider,
+          apiKey: aiSettings.apiKey,
+          selectedModel: aiSettings.selectedModel,
+          openaiApiKey: aiSettings.openaiApiKey,
+          geminiApiKey: aiSettings.geminiApiKey,
+          currency,
+          language,
+          theme,
         }),
       })
 
@@ -199,6 +182,7 @@ const SettingsPage = () => {
       }
 
       setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save settings')
     } finally {
@@ -206,256 +190,413 @@ const SettingsPage = () => {
     }
   }
 
+  const tabs = [
+    { id: 'profile' as TabType, label: 'Profile', icon: <FiUser size={18} /> },
+    { id: 'appearance' as TabType, label: 'Appearance', icon: <FiMoon size={18} /> },
+    { id: 'notifications' as TabType, label: 'Notifications', icon: <FiBell size={18} /> },
+    { id: 'ai' as TabType, label: 'AI & Integrations', icon: <FiCpu size={18} /> },
+    { id: 'security' as TabType, label: 'Security', icon: <FiShield size={18} /> },
+  ]
+
   if (!session) {
     return (
-      <div className="p-6">
-        <div className="text-center text-gray-500">
-          Please sign in to access settings
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center text-gray-500">Please sign in to access settings</div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Pengaturan</h1>
+    <div className="max-w-5xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+        <p className="text-gray-600 mt-2">Manage your account settings and preferences</p>
+      </div>
 
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Pengaturan AI</h2>
-        <p className="text-gray-600 mb-6">
-          Konfigurasi AI provider dan API key untuk fitur AI di aplikasi BudTrack.
-        </p>
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {/* Tab Navigation */}
+        <div className="border-b border-gray-200 bg-gray-50">
+          <nav className="flex space-x-1 p-2 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-2 px-4 py-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
 
-        <div className="space-y-4">
-          {/* AI Provider Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              AI Provider
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="aiProvider"
-                  value="deepseek"
-                  checked={settings.provider === 'deepseek'}
-                  onChange={() => handleProviderChange('deepseek')}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="ml-2">DeepSeek</span>
-              </label>
+        {/* Tab Content */}
+        <div className="p-6">
+          {/* Profile Tab */}
+          {activeTab === 'profile' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Profile Information</h2>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-full flex items-center justify-center text-3xl font-bold shadow-lg">
+                      {session?.user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                        <FiUpload size={16} />
+                        <span>Change Avatar</span>
+                      </button>
+                      <p className="text-xs text-gray-500 mt-1">JPG, PNG or GIF (max. 2MB)</p>
+                    </div>
+                  </div>
 
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="aiProvider"
-                  value="openrouter"
-                  checked={settings.provider === 'openrouter'}
-                  onChange={() => handleProviderChange('openrouter')}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="ml-2">OpenRouter</span>
-              </label>
-            </div>
-          </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      defaultValue={session?.user?.name || ''}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Your full name"
+                    />
+                  </div>
 
-          {/* API Key Input */}
-          <div>
-            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
-              Default API Key (untuk Chatbot & Scan Struk)
-            </label>
-            <div className="mt-1 flex rounded-md shadow-sm">
-              <input
-                type="password"
-                name="apiKey"
-                id="apiKey"
-                value={settings.apiKey}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
-                className="flex-1 min-w-0 block w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder={`Masukkan ${settings.provider === 'deepseek' ? 'DeepSeek' : 'OpenRouter'} API Key`}
-              />
-            </div>
-            <p className="mt-1 text-sm text-gray-500">
-              {settings.provider === 'deepseek'
-                ? 'Dapatkan API key di dashboard DeepSeek'
-                : 'Dapatkan API key di dashboard OpenRouter'}
-            </p>
-          </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="email"
+                        defaultValue={session?.user?.email || ''}
+                        disabled
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+                      />
+                      <span className="text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg font-medium">
+                        Verified
+                      </span>
+                    </div>
+                  </div>
 
-          {/* Info for all providers - Scan Receipt support */}
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-blue-800">
-                  Pilihan Provider untuk Scan Struk
-                </h3>
-                <div className="mt-2 text-sm text-blue-700">
-                  <p className="mb-2">
-                    Anda dapat menggunakan provider berikut untuk fitur Scan Struk:
-                  </p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li><strong>Default Provider (di atas):</strong> Untuk Chatbot & akses via OpenRouter/DeepSeek</li>
-                    <li><strong>Gemini Direct:</strong> Isi "Gemini API Key" di bawah untuk akses langsung ke Google Gemini (gratis)</li>
-                    <li><strong>OpenAI Direct:</strong> Isi "OpenAI API Key" di bawah untuk akses langsung ke GPT-4o/GPT-4o-mini</li>
-                  </ul>
-                  <p className="mt-2 text-xs">
-                    <strong>Cara Kerja:</strong> Pilih model Gemini saat scan → otomatis pakai Gemini API key jika ada. Pilih model GPT → otomatis pakai OpenAI API key jika ada.
-                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Bio</label>
+                    <textarea
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Tell us about yourself..."
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="border-t pt-4 mt-4">
-            <h3 className="text-md font-medium mb-3">API Keys Khusus (Opsional)</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Diperlukan untuk fitur Scan Struk jika ingin menggunakan API langsung (tanpa OpenRouter).
-            </p>
-
-            <div className="space-y-4">
+          {/* Appearance Tab */}
+          {activeTab === 'appearance' && (
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">OpenAI API Key</label>
-                <input
-                  type="password"
-                  value={settings.openaiApiKey || ''}
-                  onChange={(e) => setSettings(prev => ({ ...prev, openaiApiKey: e.target.value }))}
-                  className="block w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="sk-..."
-                />
-                <p className="text-xs text-gray-500 mt-1">Untuk model GPT-4o / GPT-4o-mini. Dapatkan di <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">platform.openai.com</a></p>
-              </div>
+                <h2 className="text-xl font-semibold mb-4">Appearance Settings</h2>
+                <div className="space-y-6">
+                  {/* Theme */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Theme</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {(['light', 'dark', 'system'] as const).map((themOpt) => (
+                        <button
+                          key={themeOpt}
+                          onClick={() => setTheme(themeOpt)}
+                          className={`p-4 border-2 rounded-lg transition-all ${
+                            theme === themeOpt
+                              ? 'border-blue-600 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <FiMoon className={`mx-auto mb-2 ${theme === themeOpt ? 'text-blue-600' : 'text-gray-400'}`} size={24} />
+                          <p className="text-sm font-medium capitalize">{themeOpt}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Gemini API Key</label>
-                <input
-                  type="password"
-                  value={settings.geminiApiKey || ''}
-                  onChange={(e) => setSettings(prev => ({ ...prev, geminiApiKey: e.target.value }))}
-                  className="block w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="AIza..."
-                />
-                <p className="text-xs text-gray-500 mt-1">Untuk model Gemini (gratis). Dapatkan di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline">aistudio.google.com</a></p>
+                  {/* Language */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="id">Bahasa Indonesia</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+
+                  {/* Currency */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Default Currency</label>
+                    <select
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="IDR">IDR - Indonesian Rupiah</option>
+                      <option value="USD">USD - US Dollar</option>
+                      <option value="EUR">EUR - Euro</option>
+                      <option value="SGD">SGD - Singapore Dollar</option>
+                    </select>
+                  </div>
+
+                  {/* Date Format */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Date Format</label>
+                    <select
+                      value={dateFormat}
+                      onChange={(e) => setDateFormat(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => verifyApiKey('openai')}
-                disabled={verifyingOpenAI || !settings.openaiApiKey}
-                className={`inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${verifyingOpenAI || !settings.openaiApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {verifyingOpenAI ? <FiRefreshCw className="animate-spin mr-1 h-3 w-3" /> : null}
-                Verify OpenAI
-              </button>
-              {verifiedOpenAI && <span className="text-green-600 text-xs flex items-center"><FiCheck className="mr-1" /> Valid</span>}
-
-              <button
-                type="button"
-                onClick={() => verifyApiKey('gemini')}
-                disabled={verifyingGemini || !settings.geminiApiKey}
-                className={`inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${verifyingGemini || !settings.geminiApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {verifyingGemini ? <FiRefreshCw className="animate-spin mr-1 h-3 w-3" /> : null}
-                Verify Gemini
-              </button>
-              {verifiedGemini && <span className="text-green-600 text-xs flex items-center"><FiCheck className="mr-1" /> Valid</span>}
+          {/* Notifications Tab */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Notification Preferences</h2>
+                <div className="space-y-4">
+                  {[
+                    { id: 'email', label: 'Email Notifications', desc: 'Receive email updates about your account', state: emailNotifications, setState: setEmailNotifications },
+                    { id: 'budget', label: 'Budget Alerts', desc: 'Get notified when you exceed budget limits', state: budgetAlerts, setState: setBudgetAlerts },
+                    { id: 'goals', label: 'Goal Reminders', desc: 'Reminders about your savings goals progress', state: goalReminders, setState: setGoalReminders },
+                    { id: 'transaction', label: 'Transaction Notifications', desc: 'Alert for every new transaction', state: transactionNotif, setState: setTransactionNotif },
+                  ].map((notif) => (
+                    <div key={notif.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{notif.label}</p>
+                        <p className="text-sm text-gray-500 mt-1">{notif.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => notif.setState(!notif.state)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          notif.state ? 'bg-blue-600' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            notif.state ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
+          )}
 
-          </div>
+          {/* AI & Integrations Tab */}
+          {activeTab === 'ai' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-2">AI Configuration</h2>
+                <p className="text-gray-600 mb-6">Configure AI providers for chatbot and receipt scanning features</p>
 
-          {/* Verification Button */}
-          <div>
-            <button
-              type="button"
-              onClick={() => verifyApiKey('chatbot')}
-              disabled={verifying || !settings.apiKey}
-              className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${verifying
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
-                }`}
-            >
-              {verifying ? (
-                <>
-                  <FiRefreshCw className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                  Memverifikasi...
-                </>
-              ) : (
-                <>
-                  Verifikasi API Key
-                </>
-              )}
-            </button>
+                <div className="space-y-6">
+                  {/* Provider Selection */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(['deepseek', 'openrouter'] as const).map((provider) => (
+                        <button
+                          key={provider}
+                          onClick={() => setAiSettings((prev) => ({ ...prev, provider, selectedModel: models[provider][0] }))}
+                          className={`p-4 border-2 rounded-lg transition-all ${
+                            aiSettings.provider === provider
+                              ? 'border-blue-600 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <p className="font-medium capitalize">{provider}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-            {/* Verification Status */}
-            {verified && (
-              <span className="ml-3 text-green-600 flex items-center">
-                <FiCheck className="mr-1" /> API Key valid
-              </span>
-            )}
-            {error && (
-              <span className="ml-3 text-red-600">
-                {error}
-              </span>
-            )}
-          </div>
+                  {/* Main API Key */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {aiSettings.provider === 'deepseek' ? 'DeepSeek' : 'OpenRouter'} API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={aiSettings.apiKey}
+                      onChange={(e) => setAiSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder={`Enter ${aiSettings.provider} API key`}
+                    />
+                    <div className="mt-2">
+                      <button
+                        onClick={() => verifyApiKey('chatbot')}
+                        disabled={verifying || !aiSettings.apiKey}
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {verifying ? <FiRefreshCw className="animate-spin mr-2" size={16} /> : null}
+                        Verify API Key
+                      </button>
+                      {verified && (
+                        <span className="ml-3 text-green-600 flex items-center">
+                          <FiCheck className="mr-1" /> Valid
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-          {/* Model Selection */}
-          <div>
-            <label htmlFor="model" className="block text-sm font-medium text-gray-700 mb-1">
-              Model AI
-            </label>
-            <select
-              id="model"
-              name="model"
-              value={settings.selectedModel}
-              onChange={(e) => setSettings(prev => ({ ...prev, selectedModel: e.target.value }))}
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md"
-            >
-              {availableModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              Model yang tersedia dari {settings.provider === 'deepseek' ? 'DeepSeek' : 'OpenRouter'}
-            </p>
-          </div>
+                  {/* Model Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                    <select
+                      value={aiSettings.selectedModel}
+                      onChange={(e) => setAiSettings((prev) => ({ ...prev, selectedModel: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {availableModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Optional Keys */}
+                  <div className="border-t pt-6">
+                    <h3 className="font-medium text-gray-900 mb-4">Optional API Keys (for direct access)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">OpenAI API Key</label>
+                        <input
+                          type="password"
+                          value={aiSettings.openaiApiKey || ''}
+                          onChange={(e) => setAiSettings((prev) => ({ ...prev, openaiApiKey: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="sk-..."
+                        />
+                        <button
+                          onClick={() => verifyApiKey('openai')}
+                          disabled={verifyingOpenAI || !aiSettings.openaiApiKey}
+                          className="mt-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                        >
+                          {verifyingOpenAI ? 'Verifying...' : verifiedOpenAI ? '✓ Verified' : 'Verify'}
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Gemini API Key</label>
+                        <input
+                          type="password"
+                          value={aiSettings.geminiApiKey || ''}
+                          onChange={(e) => setAiSettings((prev) => ({ ...prev, geminiApiKey: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="AIza..."
+                        />
+                        <button
+                          onClick={() => verifyApiKey('gemini')}
+                          disabled={verifyingGemini || !aiSettings.geminiApiKey}
+                          className="mt-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                        >
+                          {verifyingGemini ? 'Verifying...' : verifiedGemini ? '✓ Verified' : 'Verify'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Security Tab */}
+          {activeTab === 'security' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Security & Privacy</h2>
+                <div className="space-y-4">
+                  {/* Change Password */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">Change Password</p>
+                        <p className="text-sm text-gray-500 mt-1">Update your password regularly for security</p>
+                      </div>
+                      <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center space-x-2">
+                        <FiLock size={16} />
+                        <span>Change</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Export Data */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">Export Data</p>
+                        <p className="text-sm text-gray-500 mt-1">Download all your financial data</p>
+                      </div>
+                      <button className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center space-x-2">
+                        <FiDownload size={16} />
+                        <span>Export</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Delete Account */}
+                  <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-red-900">Delete Account</p>
+                        <p className="text-sm text-red-600 mt-1">Permanently delete your account and all data</p>
+                      </div>
+                      <button className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 flex items-center space-x-2">
+                        <FiTrash2 size={16} />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={saveSettings}
-          disabled={loading || !verified}
-          className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${loading || !verified
-            ? 'bg-gray-400 cursor-not-allowed'
-            : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
-            }`}
-        >
-          {loading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          ) : (
-            <>
-              <FiSave className="mr-2" />
-              Simpan Pengaturan
-            </>
-          )}
-        </button>
-
+      {/* Save Button - Fixed Bottom */}
+      <div className="mt-6 flex items-center justify-end space-x-3 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         {success && (
-          <span className="ml-3 text-green-600 flex items-center">
-            <FiCheck className="mr-1" /> Pengaturan disimpan
+          <span className="text-green-600 flex items-center text-sm">
+            <FiCheck className="mr-2" /> Settings saved successfully!
           </span>
         )}
+        {error && <span className="text-red-600 text-sm">{error}</span>}
+        <button
+          onClick={saveSettings}
+          disabled={loading}
+          className="inline-flex items-center px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+        >
+          {loading ? (
+            <FiRefreshCw className="animate-spin mr-2" size={18} />
+          ) : (
+            <FiSave className="mr-2" size={18} />
+          )}
+          Save Changes
+        </button>
       </div>
     </div>
   )

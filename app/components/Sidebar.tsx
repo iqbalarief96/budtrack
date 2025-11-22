@@ -2,33 +2,32 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { 
-  FiHome, FiDollarSign, FiCreditCard, FiTag, FiPieChart, 
-  FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiShield, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
-  FiBriefcase, FiUsers, FiGrid, FiMessageSquare, FiHeart, FiFlag
+import {
+  FiHome, FiDollarSign, FiCreditCard, FiPieChart,
+  FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
+  FiBriefcase, FiUsers, FiHeart, FiChevronDown, FiChevronUp, FiSearch
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
 import { Session } from 'next-auth'
-import {
-  CreditCard,
-  LineChart,
-  ListTodo,
-  Menu,
-  Percent,
-  PieChart,
-  Target,
-  Wallet,
-  Home,
-  Settings,
-  LogOut,
-  Users,
-} from "lucide-react"
+import { Bot, CreditCard } from 'lucide-react'
 import AlertCenter from './AlertCenter'
-import { Bot } from 'lucide-react'
 
 export interface SidebarProps {
   session: Session | null
+}
+
+interface MenuItem {
+  path: string
+  icon: React.ReactNode
+  label: string
+  badge?: string
+}
+
+interface MenuGroup {
+  label: string
+  items: MenuItem[]
+  defaultOpen?: boolean
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ session }) => {
@@ -36,20 +35,76 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['dashboard', 'finance']))
+
+  // Organized menu groups
+  const menuGroups: MenuGroup[] = [
+    {
+      label: 'Dashboard',
+      defaultOpen: true,
+      items: [
+        { path: '/dashboard', icon: <FiHome size={20} />, label: 'Dashboard' },
+      ]
+    },
+    {
+      label: 'Finance',
+      defaultOpen: true,
+      items: [
+        { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
+        { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
+        { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring' },
+      ]
+    },
+    {
+      label: 'Planning',
+      defaultOpen: false,
+      items: [
+        { path: '/budgets', icon: <FiTarget size={20} />, label: 'Budget' },
+        { path: '/goals', icon: <FiTarget size={20} />, label: 'Savings Goals' },
+        { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
+      ]
+    },
+    {
+      label: 'AI Tools',
+      defaultOpen: false,
+      items: [
+        { path: '/chatbot', icon: <Bot size={20} />, label: 'Finance Assistant' },
+        { path: '/categories/smart', icon: <FiZap size={20} />, label: 'Smart Kategorisasi' },
+      ]
+    },
+    {
+      label: 'Analytics',
+      defaultOpen: false,
+      items: [
+        { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insights' },
+        { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },
+      ]
+    },
+    {
+      label: 'Management',
+      defaultOpen: false,
+      items: [
+        { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
+        { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
+        { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
+        { path: '/alerts', icon: <FiBell size={20} />, label: 'Alerts' },
+      ]
+    },
+  ]
 
   useEffect(() => {
     const checkIfMobile = () => {
-      const mobile = window.innerWidth < 768;
-      const collapsed = window.innerWidth < 1280;
-      
+      const mobile = window.innerWidth < 768
+      const collapsed = window.innerWidth < 1280
+
       setIsMobile(mobile)
       setIsCollapsed(collapsed)
-      
-      // Update body class based on sidebar state
+
       if (mobile) {
-        document.body.setAttribute('data-sidebar', isOpen ? 'mobile-open' : 'mobile-closed');
+        document.body.setAttribute('data-sidebar', isOpen ? 'mobile-open' : 'mobile-closed')
       } else {
-        document.body.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded');
+        document.body.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded')
       }
     }
 
@@ -61,12 +116,11 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     }
   }, [isOpen])
 
-  // Update body class whenever sidebar state changes
   useEffect(() => {
     if (isMobile) {
-      document.body.setAttribute('data-sidebar', isOpen ? 'mobile-open' : 'mobile-closed');
+      document.body.setAttribute('data-sidebar', isOpen ? 'mobile-open' : 'mobile-closed')
     } else {
-      document.body.setAttribute('data-sidebar', isCollapsed ? 'collapsed' : 'expanded');
+      document.body.setAttribute('data-sidebar', isCollapsed ? 'collapsed' : 'expanded')
     }
   }, [isCollapsed, isOpen, isMobile])
 
@@ -92,27 +146,28 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
     return pathname === path
   }
 
-  const menuItems = [
-    { path: '/dashboard', icon: <FiHome size={20} />, label: 'Dashboard' },
-    { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
-    { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
-    { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
-    { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
-    { path: '/budgets', icon: <FiTarget size={20} />, label: 'Anggaran' },
-    { path: '/goals', icon: <FiFlag size={20} />, label: 'Goals' },
-    { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring Transaction' },
-    { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
-    { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
-    { path: '/chatbot', icon: <Bot size={20} />, label: 'Finance Assistant' },
-    { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insight' },
-    { path: '/alerts', icon: <FiBell size={20} />, label: 'Alerts' },
-    { path: '/categories/smart', icon: <FiZap size={20} />, label: 'Smart Kategorisasi' },
-    { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },
-    { path: '/settings', icon: <FiSettings size={20} />, label: 'Pengaturan' },
-  ]
+  const toggleGroup = (groupLabel: string) => {
+    const newOpenGroups = new Set(openGroups)
+    if (newOpenGroups.has(groupLabel)) {
+      newOpenGroups.delete(groupLabel)
+    } else {
+      newOpenGroups.add(groupLabel)
+    }
+    setOpenGroups(newOpenGroups)
+  }
+
+  // Filter menu items based on search
+  const filteredGroups = searchQuery
+    ? menuGroups.map(group => ({
+        ...group,
+        items: group.items.filter(item =>
+          item.label.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      })).filter(group => group.items.length > 0)
+    : menuGroups
 
   if (!session) {
-    return null;
+    return null
   }
 
   return (
@@ -126,18 +181,18 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
           >
             {isOpen ? <FiX size={24} /> : <FiMenu size={24} />}
           </button>
-          
+
           <h1 className="text-xl font-bold text-blue-600">BudTrack</h1>
-          
+
           <div className="flex items-center space-x-4">
-            {/* AlertCenter removed - now in main layout */}
+            {/* AlertCenter in header for mobile */}
           </div>
         </div>
       </div>
 
       {/* Mobile Menu Overlay */}
       {isMobile && isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40"
           onClick={closeSidebar}
         />
@@ -145,79 +200,150 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full bg-white shadow-lg transition-all duration-300 z-40`}
-        style={{ 
-          width: isMobile 
-            ? '256px' 
-            : isCollapsed ? '80px' : '256px',
+        className={`fixed top-0 left-0 h-full bg-white shadow-lg transition-all duration-300 z-40 flex flex-col`}
+        style={{
+          width: isMobile
+            ? '280px'
+            : isCollapsed ? '80px' : '280px',
           transform: isMobile && !isOpen ? 'translateX(-100%)' : 'translateX(0)'
         }}
       >
-        <div className="flex flex-col h-full">
-          <div className="flex justify-between items-center p-4 border-b">
-            {!isCollapsed && <h1 className="text-xl font-bold">Budtrack</h1>}
-            {!isMobile && (
-              <button onClick={toggleSidebar} className="p-2 rounded-md hover:bg-gray-100">
-                {isCollapsed ? <FiMenu size={20} /> : <FiX size={20} />}
-              </button>
-            )}
-          </div>
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b bg-gradient-to-r from-blue-600 to-blue-500">
+          {!isCollapsed && (
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+                <CreditCard className="h-5 w-5 text-blue-600" />
+              </div>
+              <h1 className="text-xl font-bold text-white">BudTrack</h1>
+            </div>
+          )}
+          {!isMobile && (
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md hover:bg-blue-700 text-white transition-colors"
+            >
+              {isCollapsed ? <FiMenu size={20} /> : <FiX size={20} />}
+            </button>
+          )}
+        </div>
 
-          {/* User Profile Section - Moved to top */}
-          <div className="p-4 border-b">
-            <div className="flex items-center justify-between">
-              {!isCollapsed || isMobile ? (
-                <div className="flex items-center space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
-                    {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-700 truncate">{session?.user?.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center w-full">
-                  <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center">
-                    {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={16} />}
-                  </div>
-                </div>
-              )}
-              
-              {!isCollapsed && <div className="flex-shrink-0"><AlertCenter /></div>}
+        {/* User Profile Section */}
+        <div className="p-4 border-b bg-gray-50">
+          {!isCollapsed || isMobile ? (
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-full flex items-center justify-center font-semibold text-lg shadow-md">
+                {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={20} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {session?.user?.name || 'User'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
+              </div>
+              <AlertCenter />
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-full flex items-center justify-center font-semibold text-lg shadow-md">
+                {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={20} />}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Search Bar */}
+        {(!isCollapsed || isMobile) && (
+          <div className="p-3 border-b">
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Search menu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
           </div>
+        )}
 
-          <div className="flex-1 overflow-y-auto py-4">
-            <nav className="px-2 space-y-1">
-              {menuItems.map((item) => (
-                <Link
-                  key={item.path}
-                  href={item.path}
-                  onClick={closeSidebar}
-                  className={`flex items-center px-4 py-3 rounded-md transition-colors
-                              ${isActive(item.path) 
-                                ? 'bg-blue-100 text-blue-600' 
-                                : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  <span className="mr-3">{item.icon}</span>
-                  {(!isCollapsed || isMobile) && <span>{item.label}</span>}
-                </Link>
-              ))}
-            </nav>
-          </div>
+        {/* Navigation Groups */}
+        <div className="flex-1 overflow-y-auto py-2">
+          <nav className="px-2 space-y-1">
+            {filteredGroups.map((group) => (
+              <div key={group.label} className="mb-2">
+                {/* Group Header */}
+                {(!isCollapsed || isMobile) && (
+                  <button
+                    onClick={() => toggleGroup(group.label)}
+                    className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors"
+                  >
+                    <span>{group.label}</span>
+                    {openGroups.has(group.label) ? (
+                      <FiChevronUp size={14} />
+                    ) : (
+                      <FiChevronDown size={14} />
+                    )}
+                  </button>
+                )}
 
-          <div className="p-4 border-t">
-            <button
-              onClick={handleLogout}
-              className={`flex items-center w-full px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors ${
-                !isCollapsed ? 'justify-start' : 'justify-center'
-              }`}
-            >
-              <FiLogOut size={20} className="text-gray-500" />
-              {!isCollapsed && <span className="ml-3">Keluar</span>}
-            </button>
-          </div>
+                {/* Group Items */}
+                {(openGroups.has(group.label) || searchQuery || isCollapsed) && (
+                  <div className="space-y-0.5">
+                    {group.items.map((item) => (
+                      <Link
+                        key={item.path}
+                        href={item.path}
+                        onClick={closeSidebar}
+                        className={`flex items-center px-3 py-2.5 rounded-lg transition-all group
+                                    ${isActive(item.path)
+                                      ? 'bg-blue-50 text-blue-600 font-medium shadow-sm'
+                                      : 'text-gray-700 hover:bg-gray-100'}`}
+                        title={isCollapsed && !isMobile ? item.label : undefined}
+                      >
+                        <span className={`${isActive(item.path) ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-700'}`}>
+                          {item.icon}
+                        </span>
+                        {(!isCollapsed || isMobile) && (
+                          <span className="ml-3 text-sm">{item.label}</span>
+                        )}
+                        {item.badge && (!isCollapsed || isMobile) && (
+                          <span className="ml-auto text-xs bg-red-500 text-white px-2 py-0.5 rounded-full">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        {/* Settings & Logout */}
+        <div className="p-3 border-t bg-gray-50 space-y-1">
+          <Link
+            href="/settings"
+            onClick={closeSidebar}
+            className={`flex items-center px-3 py-2.5 rounded-lg transition-colors ${
+              isActive('/settings')
+                ? 'bg-blue-50 text-blue-600 font-medium'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <FiSettings size={20} />
+            {(!isCollapsed || isMobile) && <span className="ml-3 text-sm">Pengaturan</span>}
+          </Link>
+
+          <button
+            onClick={handleLogout}
+            className="flex items-center w-full px-3 py-2.5 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+          >
+            <FiLogOut size={20} />
+            {(!isCollapsed || isMobile) && <span className="ml-3 text-sm">Keluar</span>}
+          </button>
         </div>
       </aside>
 
@@ -227,4 +353,4 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   )
 }
 
-export default Sidebar 
+export default Sidebar
