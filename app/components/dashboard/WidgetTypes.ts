@@ -20,7 +20,8 @@ export type WidgetType =
   | 'quick-actions'
   | 'top-spending'
   | 'summary'
-  | 'safe-to-spend';
+  | 'safe-to-spend'
+  | 'cashflow-forecast';
 
 export interface DashboardWidget {
   id: string;
@@ -122,6 +123,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'medium',
     title: 'Safe to Spend',
     position: 10
+  },
+  {
+    id: 'cashflow-forecast-widget',
+    type: 'cashflow-forecast',
+    size: 'large',
+    title: 'Cash Flow Forecast',
+    position: 11
   }
 ];
 

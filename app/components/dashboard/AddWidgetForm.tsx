@@ -152,6 +152,8 @@ function getWidgetDescription(type: string): string {
       return 'Grafik performa investasi';
     case 'safe-to-spend':
       return 'Hitung berapa yang aman untuk dibelanjakan setelah alokasi';
+    case 'cashflow-forecast':
+      return 'Prediksi cash flow untuk 3-12 bulan ke depan dengan insights';
     default:
       return 'Widget tambahan untuk dashboard';
   }

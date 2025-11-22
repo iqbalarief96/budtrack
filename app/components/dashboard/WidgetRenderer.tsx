@@ -19,6 +19,7 @@ import InvestmentPerformance from '@/components/dashboard/InvestmentPerformance'
 import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
 import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
 import SafeToSpendCard from '@/app/components/dashboard/SafeToSpendCard';
+import CashFlowForecastCard from '@/app/components/dashboard/CashFlowForecastCard';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -443,6 +444,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
 
     case 'safe-to-spend':
       return <SafeToSpendCard />;
+
+    case 'cashflow-forecast':
+      return <CashFlowForecastCard />;
 
     default:
       return (
