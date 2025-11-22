@@ -20,6 +20,7 @@ import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
 import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
 import SafeToSpendCard from '@/app/components/dashboard/SafeToSpendCard';
 import CashFlowForecastCard from '@/app/components/dashboard/CashFlowForecastCard';
+import SubscriptionIntelligenceCard from '@/app/components/dashboard/SubscriptionIntelligenceCard';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -447,6 +448,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
 
     case 'cashflow-forecast':
       return <CashFlowForecastCard />;
+
+    case 'subscription-intelligence':
+      return <SubscriptionIntelligenceCard />;
 
     default:
       return (

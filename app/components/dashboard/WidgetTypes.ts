@@ -21,7 +21,8 @@ export type WidgetType =
   | 'top-spending'
   | 'summary'
   | 'safe-to-spend'
-  | 'cashflow-forecast';
+  | 'cashflow-forecast'
+  | 'subscription-intelligence';
 
 export interface DashboardWidget {
   id: string;
@@ -130,6 +131,13 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
     size: 'large',
     title: 'Cash Flow Forecast',
     position: 11
+  },
+  {
+    id: 'subscription-intelligence-widget',
+    type: 'subscription-intelligence',
+    size: 'large',
+    title: 'Subscription Intelligence',
+    position: 12
   }
 ];
 

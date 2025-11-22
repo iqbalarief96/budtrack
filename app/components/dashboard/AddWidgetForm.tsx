@@ -154,6 +154,8 @@ function getWidgetDescription(type: string): string {
       return 'Hitung berapa yang aman untuk dibelanjakan setelah alokasi';
     case 'cashflow-forecast':
       return 'Prediksi cash flow untuk 3-12 bulan ke depan dengan insights';
+    case 'subscription-intelligence':
+      return 'Detect duplicate subscriptions, price changes, dan savings opportunities';
     default:
       return 'Widget tambahan untuk dashboard';
   }
