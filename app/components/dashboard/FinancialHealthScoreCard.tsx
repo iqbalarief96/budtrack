@@ -26,6 +26,18 @@ interface ScoreComponent {
   message: string;
   details: string;
   recommendation?: string;
+  breakdown?: {
+    currentAmount?: number;
+    targetAmount?: number;
+    monthsCovered?: number;
+    income?: number;
+    expenses?: number;
+    savingsAmount?: number;
+    totalBudgets?: number;
+    budgetsOnTrack?: number;
+    avgMonthlySpending?: number;
+    variance?: number;
+  };
 }
 
 interface Achievement {
@@ -321,8 +333,107 @@ export default function FinancialHealthScoreCard() {
                       </div>
 
                       {expandedComponent === component.name && (
-                        <div className="mt-3 pt-3 border-t">
-                          <p className="text-xs text-gray-600 mb-2">
+                        <div className="mt-3 pt-3 border-t space-y-3">
+                          {/* Breakdown Details */}
+                          {component.breakdown && (
+                            <div className="bg-white/50 p-3 rounded space-y-2">
+                              {/* Emergency Fund breakdown */}
+                              {component.breakdown.currentAmount !== undefined && (
+                                <>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Current Amount:</span>
+                                    <span className="font-medium">
+                                      {component.breakdown.currentAmount.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Target Amount:</span>
+                                    <span className="font-medium">
+                                      {component.breakdown.targetAmount?.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Months Covered:</span>
+                                    <span className="font-medium">{component.breakdown.monthsCovered} months</span>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Savings Rate breakdown */}
+                              {component.breakdown.income !== undefined && (
+                                <>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Income (3 months):</span>
+                                    <span className="font-medium text-green-600">
+                                      +{component.breakdown.income.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Expenses (3 months):</span>
+                                    <span className="font-medium text-red-600">
+                                      -{component.breakdown.expenses?.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs pt-1 border-t">
+                                    <span className="text-gray-700 font-medium">Savings:</span>
+                                    <span className={`font-bold ${(component.breakdown.savingsAmount || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {component.breakdown.savingsAmount?.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Budget Adherence breakdown */}
+                              {component.breakdown.totalBudgets !== undefined && (
+                                <>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Active Budgets:</span>
+                                    <span className="font-medium">{component.breakdown.totalBudgets}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Budgets On Track:</span>
+                                    <span className="font-medium text-green-600">{component.breakdown.budgetsOnTrack}</span>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Spending Consistency breakdown */}
+                              {component.breakdown.avgMonthlySpending !== undefined && (
+                                <>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Avg Monthly Spending:</span>
+                                    <span className="font-medium">
+                                      {component.breakdown.avgMonthlySpending.toLocaleString('id-ID', {
+                                        style: 'currency',
+                                        currency: 'IDR',
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-600">Variance:</span>
+                                    <span className="font-medium">{component.breakdown.variance}%</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          <p className="text-xs text-gray-600">
                             <span className="font-medium">Details:</span> {component.details}
                           </p>
                           <p className="text-xs text-gray-500">
