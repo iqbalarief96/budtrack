@@ -805,7 +805,6 @@ model GoalCategory {
   @@index([goalId])
   @@index([categoryId])
 }
-}
 
 model Debt {
   id                String        @id @default(cuid())
