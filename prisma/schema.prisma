@@ -64,6 +64,7 @@ model User {
   wallets              Wallet[]
   walletEmergencyFunds WalletEmergencyFund[]
   weddings             Wedding[]
+  debts                Debt[]
 }
 
 model Account {
@@ -803,4 +804,43 @@ model GoalCategory {
   @@unique([goalId, categoryId])
   @@index([goalId])
   @@index([categoryId])
+}
+}
+
+model Debt {
+  id                String        @id @default(cuid())
+  userId            String
+  name              String
+  type              String        // CREDIT_CARD, PERSONAL_LOAN, MORTGAGE, STUDENT_LOAN, AUTO_LOAN, OTHER
+  originalAmount    Float
+  currentBalance    Float
+  interestRate      Float         // Annual percentage rate
+  minimumPayment    Float
+  dueDay            Int?          // Day of month payment is due
+  startDate         DateTime
+  isActive          Boolean       @default(true)
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments          DebtPayment[]
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model DebtPayment {
+  id            String   @id @default(cuid())
+  debtId        String
+  amount        Float
+  paymentDate   DateTime
+  principalPaid Float
+  interestPaid  Float
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  debt          Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@index([debtId])
+  @@index([paymentDate])
 }

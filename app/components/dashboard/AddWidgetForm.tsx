@@ -150,6 +150,16 @@ function getWidgetDescription(type: string): string {
       return 'Daftar dan progres target tabungan';
     case 'investment-performance':
       return 'Grafik performa investasi';
+    case 'safe-to-spend':
+      return 'Hitung berapa yang aman untuk dibelanjakan setelah alokasi';
+    case 'cashflow-forecast':
+      return 'Prediksi cash flow untuk 3-12 bulan ke depan dengan insights';
+    case 'subscription-intelligence':
+      return 'Detect duplicate subscriptions, price changes, dan savings opportunities';
+    case 'financial-health':
+      return 'Overall financial health score (0-100) dengan breakdown dan achievements';
+    case 'debt-payoff-planner':
+      return 'Strategi pelunasan hutang dengan metode Snowball/Avalanche dan rekomendasi';
     default:
       return 'Widget tambahan untuk dashboard';
   }

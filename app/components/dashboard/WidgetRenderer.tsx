@@ -18,6 +18,11 @@ import SavingsGoalCard from '@/components/dashboard/SavingsGoalCard';
 import InvestmentPerformance from '@/components/dashboard/InvestmentPerformance';
 import TopSpendingWidget from '@/app/components/dashboard/TopSpendingWidget';
 import SummaryWidget from '@/app/components/dashboard/SummaryWidget';
+import SafeToSpendCard from '@/app/components/dashboard/SafeToSpendCard';
+import CashFlowForecastCard from '@/app/components/dashboard/CashFlowForecastCard';
+import SubscriptionIntelligenceCard from '@/app/components/dashboard/SubscriptionIntelligenceCard';
+import FinancialHealthScoreCard from '@/app/components/dashboard/FinancialHealthScoreCard';
+import DebtPayoffPlannerCard from '@/app/components/dashboard/DebtPayoffPlannerCard';
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
@@ -439,7 +444,22 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     case 'top-spending':
       // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <TopSpendingWidget walletId={walletId} />;
-      
+
+    case 'safe-to-spend':
+      return <SafeToSpendCard />;
+
+    case 'cashflow-forecast':
+      return <CashFlowForecastCard />;
+
+    case 'subscription-intelligence':
+      return <SubscriptionIntelligenceCard />;
+
+    case 'financial-health':
+      return <FinancialHealthScoreCard />;
+
+    case 'debt-payoff-planner':
+      return <DebtPayoffPlannerCard />;
+
     default:
       return (
         <div className="flex items-center justify-center h-full">
