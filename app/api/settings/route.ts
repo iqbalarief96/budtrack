@@ -44,7 +44,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
-    const { currency, language, theme, provider, apiKey, openaiApiKey, geminiApiKey, selectedModel } = body
+    const { currency, language, theme, colorTheme, provider, apiKey, openaiApiKey, geminiApiKey, selectedModel } = body
 
     // First check if user exists
     const user = await prisma.user.findUnique({
@@ -69,6 +69,7 @@ export async function PUT(request: Request) {
         currency,
         language,
         theme,
+        colorTheme,
         provider,
         apiKey,
         openaiApiKey,
@@ -80,6 +81,7 @@ export async function PUT(request: Request) {
         currency,
         language,
         theme,
+        colorTheme,
         provider,
         apiKey,
         openaiApiKey,

@@ -265,6 +265,7 @@ model UserSettings {
   currency      String   @default("IDR")
   language      String   @default("id")
   theme         String   @default("light")
+  colorTheme    String   @default("blue")
   provider      String?
   apiKey        String?
   openaiApiKey  String?
