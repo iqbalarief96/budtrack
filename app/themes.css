@@ -281,3 +281,70 @@
   background-color: var(--bg-secondary, #1e293b);
   border-right: 1px solid var(--border-color, #334155);
 }
+
+/* ============================================
+   LIGHT MODE - Apply Color Themes
+   ============================================ */
+
+/* Primary buttons and links in light mode */
+.light .bg-blue-600 {
+  background-color: var(--primary-color) !important;
+}
+
+.light .bg-blue-600:hover,
+.light .hover\:bg-blue-700:hover {
+  background-color: var(--primary-hover) !important;
+}
+
+.light .text-blue-600 {
+  color: var(--primary-color) !important;
+}
+
+.light .border-blue-600 {
+  border-color: var(--primary-color) !important;
+}
+
+.light .bg-blue-50 {
+  background-color: var(--primary-light) !important;
+}
+
+/* Focus rings */
+.light .focus\:ring-blue-500:focus,
+.light .focus\:border-blue-500:focus {
+  --tw-ring-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* Links and accents */
+.light a:not(.no-theme) {
+  color: var(--primary-color);
+}
+
+.light a:not(.no-theme):hover {
+  color: var(--primary-hover);
+}
+
+/* Gradients */
+.light .from-blue-600 {
+  --tw-gradient-from: var(--primary-color) !important;
+  --tw-gradient-to: rgb(from var(--primary-color) r g b / 0) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.light .from-blue-500 {
+  --tw-gradient-from: var(--primary-color) !important;
+  --tw-gradient-to: rgb(from var(--primary-color) r g b / 0) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.light .to-blue-500 {
+  --tw-gradient-to: var(--primary-hover) !important;
+}
+
+.light .to-blue-600 {
+  --tw-gradient-to: var(--primary-hover) !important;
+}
+
+.light .to-purple-600 {
+  --tw-gradient-to: var(--accent-color) !important;
+}
