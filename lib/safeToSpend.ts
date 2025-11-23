@@ -172,21 +172,50 @@ export async function calculateSafeToSpend(
     0
   )
 
-  // 4. Get emergency fund for this wallet
-  const emergencyFund = await prisma.walletEmergencyFund.findUnique({
+  // 4. Get emergency fund for this wallet (check both wallet-level and user-level)
+  const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
     where: {
       walletId,
+    },
+  })
+
+  // Also check user-level emergency fund as fallback
+  const user = await prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+    include: {
+      emergencyFund: true,
     },
   })
 
   let emergencyBufferTotal = 0
   let emergencyFundDetails = null
 
-  if (emergencyFund && emergencyFund.isActive) {
-    const shortfall = Math.max(emergencyFund.targetAmount - wallet.balance, 0)
+  // Prioritize wallet-level emergency fund
+  if (walletEmergencyFund && walletEmergencyFund.isActive) {
+    const shortfall = Math.max(walletEmergencyFund.targetAmount - wallet.balance, 0)
     emergencyBufferTotal = shortfall
     emergencyFundDetails = {
-      targetAmount: emergencyFund.targetAmount,
+      targetAmount: walletEmergencyFund.targetAmount,
+      currentBalance: wallet.balance,
+      shortfall,
+    }
+  }
+  // Fallback to user-level emergency fund if wallet-level doesn't exist
+  else if (user?.emergencyFund && user.emergencyFund.isActive) {
+    // Calculate proportional target based on this wallet's balance relative to total balance
+    const allWallets = await prisma.wallet.findMany({
+      where: { userId },
+    })
+    const totalBalance = allWallets.reduce((sum, w) => sum + w.balance, 0)
+    const walletProportion = totalBalance > 0 ? wallet.balance / totalBalance : 0
+    const proportionalTarget = user.emergencyFund.targetAmount * walletProportion
+
+    const shortfall = Math.max(proportionalTarget - wallet.balance, 0)
+    emergencyBufferTotal = shortfall
+    emergencyFundDetails = {
+      targetAmount: proportionalTarget,
       currentBalance: wallet.balance,
       shortfall,
     }

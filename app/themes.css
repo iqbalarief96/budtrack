@@ -9,6 +9,13 @@
   --primary-light: #dbeafe;
   --sidebar-bg: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   --accent-color: #3b82f6;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
 }
 
 /* Purple Theme - Light */
@@ -18,6 +25,13 @@
   --primary-light: #f3e8ff;
   --sidebar-bg: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);
   --accent-color: #a855f7;
+  --bg-primary: #ffffff;
+  --bg-secondary: #faf5ff;
+  --bg-tertiary: #f3e8ff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #e9d5ff;
 }
 
 /* Green Theme - Light */
@@ -27,6 +41,13 @@
   --primary-light: #dcfce7;
   --sidebar-bg: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   --accent-color: #22c55e;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7fef9;
+  --bg-tertiary: #dcfce7;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #bbf7d0;
 }
 
 /* Orange Theme - Light */
@@ -36,6 +57,13 @@
   --primary-light: #ffedd5;
   --sidebar-bg: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
   --accent-color: #f97316;
+  --bg-primary: #ffffff;
+  --bg-secondary: #fffbf5;
+  --bg-tertiary: #ffedd5;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #fed7aa;
 }
 
 /* Pink Theme - Light */
@@ -45,6 +73,13 @@
   --primary-light: #fce7f3;
   --sidebar-bg: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
   --accent-color: #f472b6;
+  --bg-primary: #ffffff;
+  --bg-secondary: #fef7fb;
+  --bg-tertiary: #fce7f3;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #fbcfe8;
 }
 
 /* Red Theme - Light */
@@ -54,6 +89,13 @@
   --primary-light: #fee2e2;
   --sidebar-bg: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
   --accent-color: #ef4444;
+  --bg-primary: #ffffff;
+  --bg-secondary: #fef8f8;
+  --bg-tertiary: #fee2e2;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #fecaca;
 }
 
 /* ============================================
