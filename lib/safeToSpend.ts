@@ -176,12 +176,16 @@ export async function calculateSafeToSpend(
   let emergencyBufferTotal = 0
   let emergencyFundDetails = null
 
+  console.log('[SafeToSpend] Checking emergency funds for wallet:', walletId, 'user:', userId)
+
   try {
     const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
       where: {
         walletId,
       },
     })
+
+    console.log('[SafeToSpend] Wallet-level emergency fund:', walletEmergencyFund)
 
     // Prioritize wallet-level emergency fund
     if (walletEmergencyFund && walletEmergencyFund.isActive) {
@@ -192,7 +196,9 @@ export async function calculateSafeToSpend(
         currentBalance: wallet.balance,
         shortfall,
       }
+      console.log('[SafeToSpend] Using wallet-level emergency fund. Shortfall:', shortfall)
     } else {
+      console.log('[SafeToSpend] No active wallet-level emergency fund, checking user-level')
       // Fallback to user-level emergency fund if wallet-level doesn't exist
       try {
         const user = await prisma.user.findUnique({
@@ -204,6 +210,8 @@ export async function calculateSafeToSpend(
           },
         })
 
+        console.log('[SafeToSpend] User emergency fund:', user?.emergencyFund)
+
         if (user?.emergencyFund && user.emergencyFund.isActive) {
           // Calculate proportional target based on this wallet's balance relative to total balance
           const allWallets = await prisma.wallet.findMany({
@@ -213,6 +221,14 @@ export async function calculateSafeToSpend(
           const walletProportion = totalBalance > 0 ? wallet.balance / totalBalance : 0
           const proportionalTarget = user.emergencyFund.targetAmount * walletProportion
 
+          console.log('[SafeToSpend] User-level emergency fund calculation:', {
+            totalBalance,
+            walletBalance: wallet.balance,
+            walletProportion,
+            userTargetAmount: user.emergencyFund.targetAmount,
+            proportionalTarget,
+          })
+
           const shortfall = Math.max(proportionalTarget - wallet.balance, 0)
           emergencyBufferTotal = shortfall
           emergencyFundDetails = {
@@ -220,18 +236,23 @@ export async function calculateSafeToSpend(
             currentBalance: wallet.balance,
             shortfall,
           }
+          console.log('[SafeToSpend] Using user-level emergency fund. Shortfall:', shortfall)
+        } else {
+          console.log('[SafeToSpend] No active user-level emergency fund found')
         }
       } catch (userEmergencyFundError) {
         // If user-level emergency fund check fails, just skip it
-        console.error('Error checking user-level emergency fund:', userEmergencyFundError)
+        console.error('[SafeToSpend] Error checking user-level emergency fund:', userEmergencyFundError)
         emergencyBufferTotal = 0
       }
     }
   } catch (emergencyFundError) {
     // If emergency fund check fails entirely, just skip it
-    console.error('Error checking emergency funds:', emergencyFundError)
+    console.error('[SafeToSpend] Error checking emergency funds:', emergencyFundError)
     emergencyBufferTotal = 0
   }
+
+  console.log('[SafeToSpend] Final emergency buffer total:', emergencyBufferTotal)
 
   // 5. Calculate safe to spend
   const safeToSpend = Math.max(
