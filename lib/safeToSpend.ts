@@ -173,52 +173,64 @@ export async function calculateSafeToSpend(
   )
 
   // 4. Get emergency fund for this wallet (check both wallet-level and user-level)
-  const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
-    where: {
-      walletId,
-    },
-  })
-
-  // Also check user-level emergency fund as fallback
-  const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-    include: {
-      emergencyFund: true,
-    },
-  })
-
   let emergencyBufferTotal = 0
   let emergencyFundDetails = null
 
-  // Prioritize wallet-level emergency fund
-  if (walletEmergencyFund && walletEmergencyFund.isActive) {
-    const shortfall = Math.max(walletEmergencyFund.targetAmount - wallet.balance, 0)
-    emergencyBufferTotal = shortfall
-    emergencyFundDetails = {
-      targetAmount: walletEmergencyFund.targetAmount,
-      currentBalance: wallet.balance,
-      shortfall,
-    }
-  }
-  // Fallback to user-level emergency fund if wallet-level doesn't exist
-  else if (user?.emergencyFund && user.emergencyFund.isActive) {
-    // Calculate proportional target based on this wallet's balance relative to total balance
-    const allWallets = await prisma.wallet.findMany({
-      where: { userId },
+  try {
+    const walletEmergencyFund = await prisma.walletEmergencyFund.findUnique({
+      where: {
+        walletId,
+      },
     })
-    const totalBalance = allWallets.reduce((sum, w) => sum + w.balance, 0)
-    const walletProportion = totalBalance > 0 ? wallet.balance / totalBalance : 0
-    const proportionalTarget = user.emergencyFund.targetAmount * walletProportion
 
-    const shortfall = Math.max(proportionalTarget - wallet.balance, 0)
-    emergencyBufferTotal = shortfall
-    emergencyFundDetails = {
-      targetAmount: proportionalTarget,
-      currentBalance: wallet.balance,
-      shortfall,
+    // Prioritize wallet-level emergency fund
+    if (walletEmergencyFund && walletEmergencyFund.isActive) {
+      const shortfall = Math.max(walletEmergencyFund.targetAmount - wallet.balance, 0)
+      emergencyBufferTotal = shortfall
+      emergencyFundDetails = {
+        targetAmount: walletEmergencyFund.targetAmount,
+        currentBalance: wallet.balance,
+        shortfall,
+      }
+    } else {
+      // Fallback to user-level emergency fund if wallet-level doesn't exist
+      try {
+        const user = await prisma.user.findUnique({
+          where: {
+            id: userId,
+          },
+          include: {
+            emergencyFund: true,
+          },
+        })
+
+        if (user?.emergencyFund && user.emergencyFund.isActive) {
+          // Calculate proportional target based on this wallet's balance relative to total balance
+          const allWallets = await prisma.wallet.findMany({
+            where: { userId },
+          })
+          const totalBalance = allWallets.reduce((sum, w) => sum + w.balance, 0)
+          const walletProportion = totalBalance > 0 ? wallet.balance / totalBalance : 0
+          const proportionalTarget = user.emergencyFund.targetAmount * walletProportion
+
+          const shortfall = Math.max(proportionalTarget - wallet.balance, 0)
+          emergencyBufferTotal = shortfall
+          emergencyFundDetails = {
+            targetAmount: proportionalTarget,
+            currentBalance: wallet.balance,
+            shortfall,
+          }
+        }
+      } catch (userEmergencyFundError) {
+        // If user-level emergency fund check fails, just skip it
+        console.error('Error checking user-level emergency fund:', userEmergencyFundError)
+        emergencyBufferTotal = 0
+      }
     }
+  } catch (emergencyFundError) {
+    // If emergency fund check fails entirely, just skip it
+    console.error('Error checking emergency funds:', emergencyFundError)
+    emergencyBufferTotal = 0
   }
 
   // 5. Calculate safe to spend
