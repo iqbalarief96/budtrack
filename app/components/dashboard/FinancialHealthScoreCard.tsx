@@ -16,7 +16,9 @@ import {
   BarChart3,
   Activity,
   Lock,
+  Calendar,
 } from 'lucide-react';
+import { useWallet } from '@/app/providers/WalletProvider';
 
 interface ScoreComponent {
   name: string;
@@ -68,11 +70,13 @@ interface HealthScoreData {
 }
 
 export default function FinancialHealthScoreCard() {
+  const { selectedWallet } = useWallet();
   const [healthData, setHealthData] = useState<HealthScoreData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [expandedComponent, setExpandedComponent] = useState<string | null>(null);
+  const [period, setPeriod] = useState<number>(3); // 1, 3, 6, 12 months
 
   useEffect(() => {
     const fetchHealthScore = async () => {
@@ -80,7 +84,14 @@ export default function FinancialHealthScoreCard() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch('/api/financial-health');
+        // Build query params
+        const params = new URLSearchParams();
+        params.append('period', period.toString());
+        if (selectedWallet) {
+          params.append('walletId', selectedWallet.id);
+        }
+
+        const response = await fetch(`/api/financial-health?${params.toString()}`);
 
         if (!response.ok) {
           throw new Error('Failed to fetch financial health score');
@@ -97,7 +108,7 @@ export default function FinancialHealthScoreCard() {
     };
 
     fetchHealthScore();
-  }, []);
+  }, [selectedWallet, period]);
 
   if (isLoading) {
     return (
@@ -200,6 +211,20 @@ export default function FinancialHealthScoreCard() {
             {showDetails ? 'Hide' : 'Show'} Details
           </button>
         </CardTitle>
+        <div className="flex items-center gap-2 mt-2">
+          <Calendar className="h-4 w-4 text-gray-500" />
+          <span className="text-sm text-gray-600">Period:</span>
+          <select
+            value={period}
+            onChange={(e) => setPeriod(Number(e.target.value))}
+            className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value={1}>1 Month</option>
+            <option value={3}>3 Months</option>
+            <option value={6}>6 Months</option>
+            <option value={12}>12 Months</option>
+          </select>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Overall Score - Large circular display */}
@@ -369,7 +394,7 @@ export default function FinancialHealthScoreCard() {
                               {component.breakdown.income !== undefined && (
                                 <>
                                   <div className="flex justify-between text-xs">
-                                    <span className="text-gray-600">Income (3 months):</span>
+                                    <span className="text-gray-600">Income ({period} {period === 1 ? 'month' : 'months'}):</span>
                                     <span className="font-medium text-green-600">
                                       +{component.breakdown.income.toLocaleString('id-ID', {
                                         style: 'currency',
@@ -378,7 +403,7 @@ export default function FinancialHealthScoreCard() {
                                     </span>
                                   </div>
                                   <div className="flex justify-between text-xs">
-                                    <span className="text-gray-600">Expenses (3 months):</span>
+                                    <span className="text-gray-600">Expenses ({period} {period === 1 ? 'month' : 'months'}):</span>
                                     <span className="font-medium text-red-600">
                                       -{component.breakdown.expenses?.toLocaleString('id-ID', {
                                         style: 'currency',

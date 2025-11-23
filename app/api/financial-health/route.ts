@@ -7,6 +7,10 @@ import { calculateFinancialHealthScore } from '@/lib/financialHealthScore'
  * GET /api/financial-health
  * Calculate comprehensive financial health score for the current user
  *
+ * Query Parameters:
+ * - walletId (optional): Specific wallet ID to calculate score for
+ * - period (optional): Number of months to look back (1, 3, 6, 12). Default: 3
+ *
  * Returns:
  * - Overall health score (0-100)
  * - Grade (A+, A, B, C, D, F)
@@ -24,7 +28,18 @@ export async function GET(req: NextRequest) {
 
     const userId = session.user.id
 
-    const healthScore = await calculateFinancialHealthScore(userId)
+    // Get query parameters
+    const { searchParams } = new URL(req.url)
+    const walletId = searchParams.get('walletId') || undefined
+    const periodStr = searchParams.get('period')
+    const period = periodStr ? parseInt(periodStr, 10) : 3
+
+    // Validate period
+    if (![1, 3, 6, 12].includes(period)) {
+      return NextResponse.json({ error: 'Invalid period. Must be 1, 3, 6, or 12' }, { status: 400 })
+    }
+
+    const healthScore = await calculateFinancialHealthScore(userId, walletId, period)
 
     return NextResponse.json(healthScore)
   } catch (error: any) {
