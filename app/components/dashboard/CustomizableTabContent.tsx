@@ -72,6 +72,12 @@ export default function CustomizableTabContent({
     { id: 'investment-performance-widget', type: 'investment-performance', size: 'medium', title: 'Performa Investasi', position: 12 },
     { id: 'summary-stats-widget', type: 'summary-stats', size: 'full', title: 'Ringkasan Keuangan', position: 13 },
     { id: 'quick-actions-widget', type: 'quick-actions', size: 'large', title: 'Aksi Cepat', position: 14 },
+    // NEW PREMIUM FEATURES
+    { id: 'safe-to-spend-widget', type: 'safe-to-spend', size: 'medium', title: 'Safe to Spend', position: 15 },
+    { id: 'cashflow-forecast-widget', type: 'cashflow-forecast', size: 'large', title: 'Cash Flow Forecast', position: 16 },
+    { id: 'subscription-intelligence-widget', type: 'subscription-intelligence', size: 'large', title: 'Subscription Intelligence', position: 17 },
+    { id: 'financial-health-widget', type: 'financial-health', size: 'medium', title: 'Financial Health Score', position: 18 },
+    { id: 'debt-payoff-planner-widget', type: 'debt-payoff-planner', size: 'large', title: 'Debt Payoff Planner', position: 19 },
   ];
 
   // Add a new widget

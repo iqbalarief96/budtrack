@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react'
 import {
   FiSave, FiCheck, FiRefreshCw, FiUser, FiMoon, FiBell, FiCpu, FiShield,
-  FiMail, FiLock, FiTrash2, FiDownload, FiUpload, FiGlobe, FiDollarSign
+  FiMail, FiLock, FiTrash2, FiDownload, FiUpload, FiGlobe, FiDollarSign, FiSun, FiMonitor
 } from 'react-icons/fi'
 import { useSession } from 'next-auth/react'
+import { useTheme } from '../providers/ThemeProvider'
 
 interface AISettings {
   provider: 'deepseek' | 'openrouter'
@@ -41,6 +42,7 @@ const models = {
 
 const SettingsPage = () => {
   const { data: session } = useSession()
+  const { theme, setTheme, colorTheme, setColorTheme, effectiveTheme } = useTheme()
   const [activeTab, setActiveTab] = useState<TabType>('profile')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,8 +64,7 @@ const SettingsPage = () => {
   const [verifiedGemini, setVerifiedGemini] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>(models.deepseek)
 
-  // Appearance Settings State
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light')
+  // Appearance Settings State (using theme from context)
   const [language, setLanguage] = useState('id')
   const [currency, setCurrency] = useState('IDR')
   const [dateFormat, setDateFormat] = useState('DD/MM/YYYY')
@@ -105,7 +106,8 @@ const SettingsPage = () => {
       }
 
       // Load other settings
-      setTheme(data.theme || 'light')
+      if (data.theme) setTheme(data.theme)
+      if (data.colorTheme) setColorTheme(data.colorTheme)
       setLanguage(data.language || 'id')
       setCurrency(data.currency || 'IDR')
     } catch (err) {
@@ -173,6 +175,7 @@ const SettingsPage = () => {
           currency,
           language,
           theme,
+          colorTheme,
         }),
       })
 
@@ -301,22 +304,67 @@ const SettingsPage = () => {
               <div>
                 <h2 className="text-xl font-semibold mb-4">Appearance Settings</h2>
                 <div className="space-y-6">
-                  {/* Theme */}
+                  {/* Theme Mode */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Theme</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Theme Mode</label>
                     <div className="grid grid-cols-3 gap-3">
-                      {(['light', 'dark', 'system'] as const).map((themeOpt) => (
+                      {([
+                        { value: 'light', icon: FiSun, label: 'Light' },
+                        { value: 'dark', icon: FiMoon, label: 'Dark' },
+                        { value: 'system', icon: FiMonitor, label: 'System' }
+                      ] as const).map((themeOpt) => {
+                        const Icon = themeOpt.icon
+                        return (
+                          <button
+                            key={themeOpt.value}
+                            onClick={() => setTheme(themeOpt.value)}
+                            className={`p-4 border-2 rounded-lg transition-all ${
+                              theme === themeOpt.value
+                                ? 'border-blue-600 bg-blue-50 shadow-sm'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <Icon className={`mx-auto mb-2 ${theme === themeOpt.value ? 'text-blue-600' : 'text-gray-400'}`} size={24} />
+                            <p className={`text-sm font-medium ${theme === themeOpt.value ? 'text-blue-600' : 'text-gray-600'}`}>
+                              {themeOpt.label}
+                            </p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Current: <span className="font-medium capitalize">{effectiveTheme}</span> mode
+                    </p>
+                  </div>
+
+                  {/* Color Theme */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Color Theme</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {([
+                        { value: 'blue', color: 'from-blue-500 to-blue-600', label: 'Blue' },
+                        { value: 'purple', color: 'from-purple-500 to-purple-600', label: 'Purple' },
+                        { value: 'green', color: 'from-green-500 to-green-600', label: 'Green' },
+                        { value: 'orange', color: 'from-orange-500 to-orange-600', label: 'Orange' },
+                        { value: 'pink', color: 'from-pink-500 to-pink-600', label: 'Pink' },
+                        { value: 'red', color: 'from-red-500 to-red-600', label: 'Red' }
+                      ] as const).map((colorOpt) => (
                         <button
-                          key={themeOpt}
-                          onClick={() => setTheme(themeOpt)}
+                          key={colorOpt.value}
+                          onClick={() => setColorTheme(colorOpt.value)}
                           className={`p-4 border-2 rounded-lg transition-all ${
-                            theme === themeOpt
-                              ? 'border-blue-600 bg-blue-50'
+                            colorTheme === colorOpt.value
+                              ? 'border-gray-800 shadow-md'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <FiMoon className={`mx-auto mb-2 ${theme === themeOpt ? 'text-blue-600' : 'text-gray-400'}`} size={24} />
-                          <p className="text-sm font-medium capitalize">{themeOpt}</p>
+                          <div className={`w-full h-12 rounded-lg bg-gradient-to-r ${colorOpt.color} mb-2`} />
+                          <p className={`text-sm font-medium ${colorTheme === colorOpt.value ? 'text-gray-900' : 'text-gray-600'}`}>
+                            {colorOpt.label}
+                          </p>
+                          {colorTheme === colorOpt.value && (
+                            <FiCheck className="mx-auto mt-1 text-green-600" size={16} />
+                          )}
                         </button>
                       ))}
                     </div>

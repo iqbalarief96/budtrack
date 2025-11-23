@@ -1,0 +1,241 @@
+/* ============================================
+   LIGHT MODE - Color Themes
+   ============================================ */
+
+/* Blue Theme (Default) - Light */
+.light.theme-blue {
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #dbeafe;
+  --sidebar-bg: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  --accent-color: #3b82f6;
+}
+
+/* Purple Theme - Light */
+.light.theme-purple {
+  --primary-color: #9333ea;
+  --primary-hover: #7e22ce;
+  --primary-light: #f3e8ff;
+  --sidebar-bg: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);
+  --accent-color: #a855f7;
+}
+
+/* Green Theme - Light */
+.light.theme-green {
+  --primary-color: #16a34a;
+  --primary-hover: #15803d;
+  --primary-light: #dcfce7;
+  --sidebar-bg: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  --accent-color: #22c55e;
+}
+
+/* Orange Theme - Light */
+.light.theme-orange {
+  --primary-color: #ea580c;
+  --primary-hover: #c2410c;
+  --primary-light: #ffedd5;
+  --sidebar-bg: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  --accent-color: #f97316;
+}
+
+/* Pink Theme - Light */
+.light.theme-pink {
+  --primary-color: #ec4899;
+  --primary-hover: #db2777;
+  --primary-light: #fce7f3;
+  --sidebar-bg: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  --accent-color: #f472b6;
+}
+
+/* Red Theme - Light */
+.light.theme-red {
+  --primary-color: #dc2626;
+  --primary-hover: #b91c1c;
+  --primary-light: #fee2e2;
+  --sidebar-bg: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  --accent-color: #ef4444;
+}
+
+/* ============================================
+   DARK MODE - Color Themes
+   ============================================ */
+
+/* Blue Theme - Dark */
+.dark.theme-blue {
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-light: #1e40af;
+  --sidebar-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --accent-color: #60a5fa;
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+}
+
+/* Purple Theme - Dark */
+.dark.theme-purple {
+  --primary-color: #a855f7;
+  --primary-hover: #9333ea;
+  --primary-light: #7e22ce;
+  --sidebar-bg: linear-gradient(135deg, #1e1b4b 0%, #0f0a1f 100%);
+  --accent-color: #c084fc;
+  --bg-primary: #0f0a1f;
+  --bg-secondary: #1e1b4b;
+  --bg-tertiary: #312e81;
+  --text-primary: #f5f3ff;
+  --text-secondary: #ddd6fe;
+  --text-muted: #a78bfa;
+  --border-color: #312e81;
+}
+
+/* Green Theme - Dark */
+.dark.theme-green {
+  --primary-color: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-light: #15803d;
+  --sidebar-bg: linear-gradient(135deg, #14532d 0%, #052e16 100%);
+  --accent-color: #4ade80;
+  --bg-primary: #052e16;
+  --bg-secondary: #14532d;
+  --bg-tertiary: #166534;
+  --text-primary: #f0fdf4;
+  --text-secondary: #dcfce7;
+  --text-muted: #86efac;
+  --border-color: #166534;
+}
+
+/* Orange Theme - Dark */
+.dark.theme-orange {
+  --primary-color: #f97316;
+  --primary-hover: #ea580c;
+  --primary-light: #c2410c;
+  --sidebar-bg: linear-gradient(135deg, #7c2d12 0%, #431407 100%);
+  --accent-color: #fb923c;
+  --bg-primary: #431407;
+  --bg-secondary: #7c2d12;
+  --bg-tertiary: #9a3412;
+  --text-primary: #fff7ed;
+  --text-secondary: #ffedd5;
+  --text-muted: #fdba74;
+  --border-color: #9a3412;
+}
+
+/* Pink Theme - Dark */
+.dark.theme-pink {
+  --primary-color: #f472b6;
+  --primary-hover: #ec4899;
+  --primary-light: #db2777;
+  --sidebar-bg: linear-gradient(135deg, #831843 0%, #500724 100%);
+  --accent-color: #f9a8d4;
+  --bg-primary: #500724;
+  --bg-secondary: #831843;
+  --bg-tertiary: #9f1239;
+  --text-primary: #fdf2f8;
+  --text-secondary: #fce7f3;
+  --text-muted: #fbcfe8;
+  --border-color: #9f1239;
+}
+
+/* Red Theme - Dark */
+.dark.theme-red {
+  --primary-color: #ef4444;
+  --primary-hover: #dc2626;
+  --primary-light: #b91c1c;
+  --sidebar-bg: linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%);
+  --accent-color: #f87171;
+  --bg-primary: #450a0a;
+  --bg-secondary: #7f1d1d;
+  --bg-tertiary: #991b1b;
+  --text-primary: #fef2f2;
+  --text-secondary: #fee2e2;
+  --text-muted: #fecaca;
+  --border-color: #991b1b;
+}
+
+/* ============================================
+   Dark Mode Base Styles
+   ============================================ */
+
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: var(--bg-primary, #0f172a);
+  color: var(--text-primary, #f1f5f9);
+}
+
+.dark .content-area {
+  background-color: var(--bg-primary, #0f172a);
+}
+
+.dark .bg-white {
+  background-color: var(--bg-secondary, #1e293b);
+}
+
+.dark .bg-gray-50 {
+  background-color: var(--bg-tertiary, #334155);
+}
+
+.dark .bg-gray-100 {
+  background-color: var(--bg-tertiary, #334155);
+}
+
+.dark .text-gray-900 {
+  color: var(--text-primary, #f1f5f9);
+}
+
+.dark .text-gray-700 {
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.dark .text-gray-600 {
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.dark .text-gray-500 {
+  color: var(--text-muted, #94a3b8);
+}
+
+.dark .border-gray-200 {
+  border-color: var(--border-color, #334155);
+}
+
+.dark .border-gray-300 {
+  border-color: var(--border-color, #334155);
+}
+
+/* Card styles in dark mode */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+}
+
+/* Input and form elements in dark mode */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: var(--bg-tertiary, #334155);
+  color: var(--text-primary, #f1f5f9);
+  border-color: var(--border-color, #334155);
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: var(--primary-color);
+  ring-color: var(--primary-color);
+}
+
+/* Sidebar dark mode */
+.dark aside {
+  background-color: var(--bg-secondary, #1e293b);
+  border-right: 1px solid var(--border-color, #334155);
+}
