@@ -49,7 +49,7 @@ export interface FinancialHealthScore {
  */
 async function calculateEmergencyFundScore(userId: string): Promise<ScoreComponent> {
   // Get all wallet emergency funds
-  const emergencyFunds = await prisma.walletEmergencyFund.findMany({
+  const walletEmergencyFunds = await prisma.walletEmergencyFund.findMany({
     where: {
       userId,
       isActive: true,
@@ -59,9 +59,28 @@ async function calculateEmergencyFundScore(userId: string): Promise<ScoreCompone
     },
   })
 
-  // Calculate total target and current
-  const totalTarget = emergencyFunds.reduce((sum, ef) => sum + ef.targetAmount, 0)
-  const totalCurrent = emergencyFunds.reduce((sum, ef) => sum + ef.wallet.balance, 0)
+  let totalTarget = 0
+  let totalCurrent = 0
+
+  // Check wallet-level emergency funds first
+  if (walletEmergencyFunds.length > 0) {
+    totalTarget = walletEmergencyFunds.reduce((sum, ef) => sum + ef.targetAmount, 0)
+    totalCurrent = walletEmergencyFunds.reduce((sum, ef) => sum + ef.wallet.balance, 0)
+  } else {
+    // If no wallet-level emergency fund, check for user-level emergency fund
+    const userEmergencyFund = await prisma.emergencyFund.findUnique({
+      where: { userId },
+    })
+
+    if (userEmergencyFund && userEmergencyFund.isActive) {
+      totalTarget = userEmergencyFund.targetAmount
+      // For user-level emergency fund, use total wallet balance as current amount
+      const wallets = await prisma.wallet.findMany({
+        where: { userId },
+      })
+      totalCurrent = wallets.reduce((sum, w) => sum + w.balance, 0)
+    }
+  }
 
   // Get average monthly expenses (last 3 months)
   const threeMonthsAgo = new Date()
