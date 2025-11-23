@@ -169,13 +169,35 @@ async function calculateSavingsRateScore(userId: string): Promise<ScoreComponent
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
 
+  // Get savings/investment categories to exclude from expenses
+  const savingsCategories = await prisma.category.findMany({
+    where: {
+      userId,
+      OR: [
+        { name: { contains: 'Saving' } },
+        { name: { contains: 'saving' } },
+        { name: { contains: 'Investment' } },
+        { name: { contains: 'investment' } },
+      ],
+    },
+    select: { id: true },
+  })
+
+  const savingsCategoryIds = savingsCategories.map((c) => c.id)
+
   const [income, expenses] = await Promise.all([
     prisma.transaction.aggregate({
       where: { userId, type: 'INCOME', date: { gte: threeMonthsAgo } },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { userId, type: 'EXPENSE', date: { gte: threeMonthsAgo } },
+      where: {
+        userId,
+        type: 'EXPENSE',
+        date: { gte: threeMonthsAgo },
+        // Exclude savings/investment categories from expenses
+        categoryId: { notIn: savingsCategoryIds.length > 0 ? savingsCategoryIds : undefined },
+      },
       _sum: { amount: true },
     }),
   ])
