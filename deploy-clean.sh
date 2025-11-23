@@ -22,7 +22,7 @@ echo ""
 echo "2. Pulling latest code from main..."
 git fetch origin main
 git reset --hard origin/main
-git clean -fdx -e node_modules -e .env.local
+git clean -fdx -e node_modules -e .env.local -e .env -e prisma/prod.db
 
 # Show current commit
 echo ""
