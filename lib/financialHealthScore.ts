@@ -77,8 +77,22 @@ async function calculateEmergencyFundScore(userId: string): Promise<ScoreCompone
 
     if (userEmergencyFund) {
       totalTarget = userEmergencyFund.targetAmount
-      // For user-level emergency fund, use the currentAmount field which tracks actual emergency fund balance
-      totalCurrent = userEmergencyFund.currentAmount
+      // For user-level emergency fund, use the default/main wallet balance as current amount
+      // (same logic as Safe to Spend)
+      const defaultWallet = await prisma.wallet.findFirst({
+        where: {
+          userId,
+          isDefault: true,
+        },
+      })
+
+      // If no default wallet, use the first wallet
+      const wallet = defaultWallet || await prisma.wallet.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      totalCurrent = wallet?.balance || 0
     }
   }
 
