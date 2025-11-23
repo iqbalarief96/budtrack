@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { calculateSafeToSpend } from '@/lib/safeToSpend'
+import prisma from '@/lib/prisma'
 
 /**
  * GET /api/wallets/[walletId]/safe-to-spend
@@ -27,7 +28,33 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    console.log('[SafeToSpend API] Session user:', {
+      id: session.user.id,
+      email: session.user.email,
+      hasId: !!session.user.id
+    })
+
+    let userId = session.user.id
+
+    // If userId is not in session (e.g., old JWT token), query from database
+    if (!userId) {
+      console.log('[SafeToSpend API] User ID not in session, querying from database')
+      const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true }
+      })
+
+      if (!user) {
+        console.error('[SafeToSpend API] User not found in database')
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        )
+      }
+
+      userId = user.id
+      console.log('[SafeToSpend API] Retrieved user ID from database:', userId)
+    }
 
     const safeToSpendData = await calculateSafeToSpend(params.walletId, userId)
 
