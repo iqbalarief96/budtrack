@@ -305,7 +305,7 @@ const SettingsPage = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">Theme</label>
                     <div className="grid grid-cols-3 gap-3">
-                      {(['light', 'dark', 'system'] as const).map((themOpt) => (
+                      {(['light', 'dark', 'system'] as const).map((themeOpt) => (
                         <button
                           key={themeOpt}
                           onClick={() => setTheme(themeOpt)}

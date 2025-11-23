@@ -6,7 +6,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: 256px; /* Default expanded sidebar width */
+  left: 280px; /* Default expanded sidebar width */
   padding: 1rem;
   overflow-y: auto;
   transition: left 0.3s ease-in-out;
@@ -20,7 +20,7 @@ body[data-sidebar="collapsed"] .content-area {
 
 /* When sidebar is expanded */
 body[data-sidebar="expanded"] .content-area {
-  left: 256px; /* Width of expanded sidebar */
+  left: 280px; /* Width of expanded sidebar */
 }
 
 /* Mobile view */
