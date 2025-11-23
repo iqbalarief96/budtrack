@@ -8,6 +8,22 @@ export interface ScoreComponent {
   message: string
   details: string
   recommendation?: string
+  breakdown?: {
+    // For Emergency Fund
+    currentAmount?: number
+    targetAmount?: number
+    monthsCovered?: number
+    // For Savings Rate
+    income?: number
+    expenses?: number
+    savingsAmount?: number
+    // For Budget Adherence
+    totalBudgets?: number
+    budgetsOnTrack?: number
+    // For Spending Consistency
+    avgMonthlySpending?: number
+    variance?: number
+  }
 }
 
 export interface Achievement {
@@ -153,6 +169,11 @@ async function calculateEmergencyFundScore(userId: string): Promise<ScoreCompone
       monthsCovered < 3
         ? `Build emergency fund to cover 3-6 months expenses (target: ${(avgMonthlyExpense * 3).toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })})`
         : undefined,
+    breakdown: {
+      currentAmount: totalCurrent,
+      targetAmount: totalTarget,
+      monthsCovered: Math.round(monthsCovered * 10) / 10,
+    },
   }
 }
 
@@ -245,6 +266,11 @@ async function calculateSavingsRateScore(userId: string): Promise<ScoreComponent
     details: `${savingsRate.toFixed(1)}% of income saved`,
     recommendation:
       savingsRate < 20 ? 'Aim for 20% savings rate by reducing non-essential expenses' : undefined,
+    breakdown: {
+      income: totalIncome,
+      expenses: totalExpenses,
+      savingsAmount: totalIncome - totalExpenses,
+    },
   }
 }
 
@@ -329,6 +355,10 @@ async function calculateBudgetAdherenceScore(userId: string): Promise<ScoreCompo
     details: `${withinBudgetCount}/${activeBudgets.length} budgets on track`,
     recommendation:
       adherenceRate < 70 ? 'Review and adjust budgets to match actual spending patterns' : undefined,
+    breakdown: {
+      totalBudgets: activeBudgets.length,
+      budgetsOnTrack: withinBudgetCount,
+    },
   }
 }
 
@@ -423,6 +453,10 @@ async function calculateSpendingConsistencyScore(userId: string): Promise<ScoreC
       coefficientOfVariation > 30
         ? 'Create consistent spending habits and budgets to reduce variance'
         : undefined,
+    breakdown: {
+      avgMonthlySpending: Math.round(mean),
+      variance: Math.round(coefficientOfVariation * 10) / 10,
+    },
   }
 }
 
