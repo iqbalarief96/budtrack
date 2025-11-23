@@ -213,27 +213,23 @@ export async function calculateSafeToSpend(
         console.log('[SafeToSpend] User emergency fund:', user?.emergencyFund)
 
         if (user?.emergencyFund && user.emergencyFund.isActive) {
-          // Calculate proportional target based on this wallet's balance relative to total balance
-          const allWallets = await prisma.wallet.findMany({
-            where: { userId },
-          })
-          const totalBalance = allWallets.reduce((sum, w) => sum + w.balance, 0)
-          const walletProportion = totalBalance > 0 ? wallet.balance / totalBalance : 0
-          const proportionalTarget = user.emergencyFund.targetAmount * walletProportion
+          // For user-level emergency fund, use the wallet balance as current emergency fund amount
+          // and calculate shortfall against the full target amount
+          const targetAmount = user.emergencyFund.targetAmount
+          const currentAmount = wallet.balance
 
           console.log('[SafeToSpend] User-level emergency fund calculation:', {
-            totalBalance,
+            targetAmount,
+            currentAmount,
             walletBalance: wallet.balance,
-            walletProportion,
-            userTargetAmount: user.emergencyFund.targetAmount,
-            proportionalTarget,
           })
 
-          const shortfall = Math.max(proportionalTarget - wallet.balance, 0)
+          // Shortfall is the amount still needed to reach the emergency fund target
+          const shortfall = Math.max(targetAmount - currentAmount, 0)
           emergencyBufferTotal = shortfall
           emergencyFundDetails = {
-            targetAmount: proportionalTarget,
-            currentBalance: wallet.balance,
+            targetAmount,
+            currentBalance: currentAmount,
             shortfall,
           }
           console.log('[SafeToSpend] Using user-level emergency fund. Shortfall:', shortfall)
