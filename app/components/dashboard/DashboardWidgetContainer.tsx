@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle, Save } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AddWidgetForm from './AddWidgetForm';
+import { migrateDashboardLayoutToDatabase, needsDashboardMigration } from '@/lib/migrate-dashboard-layout';
 
 // Custom hook to handle hydration mismatch
 function useMounted() {
@@ -54,7 +55,39 @@ export default function DashboardWidgetContainer({
   const [activeWidget, setActiveWidget] = useState<DashboardWidget | null>(null);
   const [isAddWidgetOpen, setIsAddWidgetOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const isMounted = useMounted();
+
+  // Load layout from database on mount and handle migration
+  useEffect(() => {
+    const loadLayout = async () => {
+      try {
+        // Check if migration is needed
+        if (needsDashboardMigration()) {
+          console.log('Migrating dashboard layout from localStorage to database...');
+          const migrationResult = await migrateDashboardLayoutToDatabase();
+          if (migrationResult.migrated) {
+            console.log('Migration completed successfully');
+          }
+        }
+
+        // Load from database
+        const response = await fetch('/api/dashboard/layout');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.layout && data.layout.widgets) {
+            setWidgets(data.layout.widgets);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading dashboard layout:', error);
+      }
+    };
+
+    if (isMounted) {
+      loadLayout();
+    }
+  }, [isMounted]);
 
   // Configure DnD sensors
   const sensors = useSensors(
@@ -170,14 +203,44 @@ export default function DashboardWidgetContainer({
   };
 
   // Save dashboard layout and widget configurations
-  const handleSaveDashboard = () => {
+  const handleSaveDashboard = async () => {
     console.log('handleSaveDashboard called, saving widgets:', widgets);
-    onSave({
-      ...currentView,
-      widgets,
-      updatedAt: new Date()
-    });
-    setHasChanges(false);
+    setIsSaving(true);
+    
+    try {
+      // Save to database
+      const response = await fetch('/api/dashboard/layout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          layout: {
+            ...currentView,
+            widgets,
+            updatedAt: new Date()
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save layout');
+      }
+
+      // Also call the onSave callback for local state update
+      onSave({
+        ...currentView,
+        widgets,
+        updatedAt: new Date()
+      });
+      
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Error saving dashboard layout:', error);
+      alert('Failed to save dashboard layout. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Return loading state before mounting to prevent hydration mismatch
@@ -204,10 +267,11 @@ export default function DashboardWidgetContainer({
         ) : hasChanges && (
           <Button
             onClick={handleSaveDashboard}
+            disabled={isSaving}
             className="flex items-center"
           >
             <Save className="mr-2 h-4 w-4" />
-            Save Layout
+            {isSaving ? 'Saving...' : 'Save Layout'}
           </Button>
         )}
       </div>

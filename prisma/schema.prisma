@@ -39,6 +39,7 @@ model User {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   riskProfile          String?
+  dashboardLayout      String?
   accounts             Account[]
   alerts               Alert[]
   budgets              Budget[]
