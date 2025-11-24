@@ -58,6 +58,12 @@ export default function DashboardWidgetContainer({
   const [isSaving, setIsSaving] = useState(false);
   const isMounted = useMounted();
 
+  // Sync widgets with currentView.widgets when it changes
+  useEffect(() => {
+    console.log('DashboardWidgetContainer: currentView.widgets changed', currentView.widgets);
+    setWidgets(currentView.widgets);
+  }, [currentView.widgets]);
+
   // Load layout from database on mount and handle migration
   useEffect(() => {
     const loadLayout = async () => {
@@ -264,7 +270,6 @@ export default function DashboardWidgetContainer({
                 widget={widget}
                 onRemove={isEditMode ? handleRemoveWidget : undefined}
                 onResize={isEditMode ? handleResizeWidget : undefined}
-                isDraggable={isEditMode}
               >
                 <WidgetRenderer widget={widget} selectedWalletId={selectedWalletId} />
               </SortableWidget>
