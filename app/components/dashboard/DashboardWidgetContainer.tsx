@@ -250,31 +250,6 @@ export default function DashboardWidgetContainer({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold">{currentView.name}</h2>
-        
-        {isEditMode ? (
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsAddWidgetOpen(true)}
-              className="flex items-center"
-            >
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Widget
-            </Button>
-          </div>
-        ) : hasChanges && (
-          <Button
-            onClick={handleSaveDashboard}
-            disabled={isSaving}
-            className="flex items-center"
-          >
-            <Save className="mr-2 h-4 w-4" />
-            {isSaving ? 'Saving...' : 'Save Layout'}
-          </Button>
-        )}
-      </div>
 
       <DndContext
         sensors={sensors}
