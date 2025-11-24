@@ -14,6 +14,7 @@ interface AISettings {
   selectedModel: string
   openaiApiKey?: string
   geminiApiKey?: string
+  googleVisionCredentials?: string
 }
 
 type TabType = 'profile' | 'appearance' | 'notifications' | 'ai' | 'security'
@@ -55,6 +56,7 @@ const SettingsPage = () => {
     selectedModel: models.deepseek[0],
     openaiApiKey: '',
     geminiApiKey: '',
+    googleVisionCredentials: '',
   })
   const [verifying, setVerifying] = useState(false)
   const [verified, setVerified] = useState(false)
@@ -63,6 +65,8 @@ const SettingsPage = () => {
   const [verifyingGemini, setVerifyingGemini] = useState(false)
   const [verifiedGemini, setVerifiedGemini] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>(models.deepseek)
+  const [uploadingVision, setUploadingVision] = useState(false)
+  const [visionFileName, setVisionFileName] = useState<string | null>(null)
 
   // Appearance Settings State (using theme from context)
   const [language, setLanguage] = useState('id')
@@ -99,6 +103,7 @@ const SettingsPage = () => {
           selectedModel: data.selectedModel || defaultModel,
           openaiApiKey: data.openaiApiKey || '',
           geminiApiKey: data.geminiApiKey || '',
+          googleVisionCredentials: data.googleVisionCredentials || '',
         })
         setVerified(true)
         if (data.openaiApiKey) setVerifiedOpenAI(true)
@@ -172,6 +177,7 @@ const SettingsPage = () => {
           selectedModel: aiSettings.selectedModel,
           openaiApiKey: aiSettings.openaiApiKey,
           geminiApiKey: aiSettings.geminiApiKey,
+          googleVisionCredentials: aiSettings.googleVisionCredentials,
           currency,
           language,
           theme,
@@ -563,6 +569,98 @@ const SettingsPage = () => {
                         >
                           {verifyingGemini ? 'Verifying...' : verifiedGemini ? '✓ Verified' : 'Verify'}
                         </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Google Cloud Vision */}
+                  <div className="border-t pt-6">
+                    <h3 className="font-medium text-gray-900 mb-2">Google Cloud Vision (Receipt OCR)</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Upload file JSON credentials Google Cloud Vision untuk fitur scan struk yang lebih cepat
+                    </p>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Upload Credentials JSON
+                      </label>
+                      
+                      {/* File Upload Button */}
+                      <div className="flex items-center space-x-3">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+
+                              if (!file.name.endsWith('.json')) {
+                                setError('File harus berformat .json')
+                                return
+                              }
+
+                              setUploadingVision(true)
+                              setError(null)
+
+                              try {
+                                const formData = new FormData()
+                                formData.append('file', file)
+
+                                const response = await fetch('/api/settings/upload-vision-credentials', {
+                                  method: 'POST',
+                                  body: formData
+                                })
+
+                                if (!response.ok) {
+                                  const error = await response.json()
+                                  throw new Error(error.error || 'Failed to upload file')
+                                }
+
+                                const data = await response.json()
+                                setAiSettings((prev) => ({ ...prev, googleVisionCredentials: data.path }))
+                                setVisionFileName(file.name)
+                                setSuccess(true)
+                                setTimeout(() => setSuccess(false), 3000)
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : 'Failed to upload file')
+                              } finally {
+                                setUploadingVision(false)
+                              }
+                            }}
+                          />
+                          <div className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors">
+                            {uploadingVision ? (
+                              <>
+                                <FiRefreshCw className="animate-spin mr-2" size={16} />
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <FiUpload className="mr-2" size={16} />
+                                Upload JSON File
+                              </>
+                            )}
+                          </div>
+                        </label>
+
+                        {(visionFileName || aiSettings.googleVisionCredentials) && (
+                          <div className="flex items-center text-sm text-green-600">
+                            <FiCheck className="mr-1" size={16} />
+                            {visionFileName || 'File uploaded'}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="mt-2 text-xs text-gray-500">
+                        File akan disimpan di: <code className="bg-gray-100 px-2 py-1 rounded">credentials/google-vision-credentials.json</code>
+                      </p>
+                      
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-xs text-blue-800">
+                          💡 <strong>Tip:</strong> Google Vision memberikan OCR yang sangat cepat (1-2 detik) untuk scan struk. 
+                          Free tier: 1,000 scan/bulan. <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline">Setup di sini</a>
+                        </p>
                       </div>
                     </div>
                   </div>

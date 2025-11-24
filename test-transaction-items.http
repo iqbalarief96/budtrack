@@ -1,0 +1,176 @@
+### Transaction Items API Testing
+### Prerequisites:
+### 1. Start dev server: npm run dev
+### 2. Sign in and get session cookie
+### 3. Create a transaction first
+### 4. Replace {{transactionId}} and {{itemId}} with actual IDs
+
+###
+### TEST SETUP
+### First, let's create a test transaction to work with
+###
+
+### 1. Sign In (Get Session Cookie)
+POST http://localhost:3000/api/auth/signin
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "password123"
+}
+
+###
+### 2. Create Test Transaction
+POST http://localhost:3000/api/transactions
+Content-Type: application/json
+
+{
+  "description": "Test Transaction for Items",
+  "amount": 100000,
+  "type": "EXPENSE",
+  "date": "2025-11-21",
+  "walletId": "YOUR_WALLET_ID_HERE",
+  "categoryId": "YOUR_CATEGORY_ID_HERE"
+}
+
+# Save the transaction ID from response!
+
+###
+### TRANSACTION ITEMS TESTS
+###
+
+### 3. GET Items (Should be empty initially)
+GET http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+
+###
+### 4. POST - Add First Item
+POST http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+Content-Type: application/json
+
+{
+  "name": "Susu Ultra 1L",
+  "quantity": 2,
+  "unitPrice": 15000,
+  "category": "Dairy",
+  "notes": "Fresh milk"
+}
+
+# Expected: Returns item object with totalPrice = 30000
+# Expected: Transaction amount updated to 30000
+
+###
+### 5. POST - Add Second Item
+POST http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+Content-Type: application/json
+
+{
+  "name": "Roti Tawar",
+  "quantity": 3,
+  "unitPrice": 12000,
+  "notes": "Whole wheat bread"
+}
+
+# Expected: Returns item object with totalPrice = 36000
+# Expected: Transaction amount updated to 66000 (30000 + 36000)
+
+###
+### 6. POST - Add Third Item
+POST http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+Content-Type: application/json
+
+{
+  "name": "Minyak Goreng",
+  "quantity": 1,
+  "unitPrice": 25000
+}
+
+# Expected: totalPrice = 25000
+# Expected: Transaction amount = 91000 (30000 + 36000 + 25000)
+
+###
+### 7. GET Items (Should return 3 items)
+GET http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+
+# Expected: Array of 3 items ordered by 'order' field
+
+###
+### 8. PUT - Update Second Item (Change quantity)
+PUT http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items/YOUR_ITEM_ID_HERE
+Content-Type: application/json
+
+{
+  "name": "Roti Tawar",
+  "quantity": 5,
+  "unitPrice": 12000,
+  "notes": "Updated quantity"
+}
+
+# Expected: totalPrice = 60000 (5 * 12000)
+# Expected: Transaction amount = 115000 (30000 + 60000 + 25000)
+
+###
+### 9. PUT - Update First Item (Change price)
+PUT http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items/YOUR_ITEM_ID_HERE
+Content-Type: application/json
+
+{
+  "name": "Susu Ultra 1L",
+  "quantity": 2,
+  "unitPrice": 20000,
+  "notes": "Price increased"
+}
+
+# Expected: totalPrice = 40000 (2 * 20000)
+# Expected: Transaction amount = 125000 (40000 + 60000 + 25000)
+
+###
+### 10. DELETE - Remove Third Item
+DELETE http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items/YOUR_ITEM_ID_HERE
+
+# Expected: Success message
+# Expected: Transaction amount = 100000 (40000 + 60000)
+
+###
+### 11. GET Items (Should return 2 items now)
+GET http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+
+# Expected: Array of 2 items
+
+###
+### ERROR CASES
+###
+
+### 12. GET Items - Invalid Transaction ID (404)
+GET http://localhost:3000/api/transactions/invalid-id-123/items
+
+# Expected: 404 Transaction not found
+
+###
+### 13. POST Item - Missing Required Fields (400)
+POST http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items
+Content-Type: application/json
+
+{
+  "quantity": 1
+}
+
+# Expected: 400 Name and unitPrice are required
+
+###
+### 14. PUT Item - Invalid Item ID (500 or 404)
+PUT http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items/invalid-item-id
+Content-Type: application/json
+
+{
+  "name": "Test",
+  "quantity": 1,
+  "unitPrice": 1000
+}
+
+# Expected: Error
+
+###
+### 15. DELETE Item - Invalid Item ID (500 or 404)
+DELETE http://localhost:3000/api/transactions/YOUR_TRANSACTION_ID_HERE/items/invalid-item-id
+
+# Expected: Error

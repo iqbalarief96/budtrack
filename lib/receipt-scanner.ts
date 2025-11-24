@@ -1,4 +1,5 @@
 import { generateVisionResponse } from './ai';
+import { processReceiptWithGoogleVision, processReceiptWithGoogleVisionAI } from './google-vision-ocr';
 
 export type ReceiptItem = {
     name: string;
@@ -29,8 +30,92 @@ export async function processReceipt(
         geminiApiKey?: string | null;
         defaultApiKey?: string | null;
         defaultProvider?: string | null;
+        googleVisionCredentials?: string | null;
     }
 ): Promise<ReceiptData> {
+    // Check if Google Cloud Vision + AI hybrid is requested
+    if (model === 'google-vision-ai' || model === 'google-vision-deepseek') {
+        console.log('[RECEIPT-SCANNER] Using Google Cloud Vision + AI hybrid');
+        
+        if (!keys.googleVisionCredentials) {
+            throw new Error('Google Vision credentials belum diupload. Silakan upload di Settings.');
+        }
+        
+        if (!keys.defaultApiKey) {
+            throw new Error('DeepSeek API key belum disetup. Silakan setup di Settings.');
+        }
+        
+        try {
+            const receiptData = await processReceiptWithGoogleVisionAI(
+                imageBase64,
+                keys.googleVisionCredentials,
+                keys.defaultProvider || 'deepseek',
+                keys.defaultApiKey,
+                'deepseek-chat'
+            );
+            
+            console.log('[RECEIPT-SCANNER] Hybrid processing successful');
+            return receiptData;
+        } catch (error) {
+            console.error('[RECEIPT-SCANNER] Hybrid failed:', error);
+            throw error;
+        }
+    }
+    
+    // Check if Google Cloud Vision is requested
+    if (model === 'google-vision' || model === 'google-cloud-vision') {
+        console.log('[RECEIPT-SCANNER] Using Google Cloud Vision API');
+        
+        // Check if credentials are configured
+        if (!keys.googleVisionCredentials) {
+            console.warn('[RECEIPT-SCANNER] Google Vision credentials not configured');
+            
+            // Check if we have fallback API keys
+            if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+                throw new Error(
+                    'Google Vision credentials belum diupload. ' +
+                    'Silakan upload credentials di Settings → AI & Integrations, ' +
+                    'atau gunakan model AI lain (Gemini/GPT).'
+                );
+            }
+            
+            // Fallback to AI-based OCR
+            console.log('[RECEIPT-SCANNER] Falling back to AI-based OCR (no Google Vision credentials)...');
+            // Change model to a valid AI model for fallback
+            model = 'google/gemini-2.0-flash-exp:free'; // Use free Gemini model as fallback
+            console.log('[RECEIPT-SCANNER] Using fallback model:', model);
+            // Continue to AI-based processing below
+        } else {
+            try {
+                const receiptData = await processReceiptWithGoogleVision(
+                    imageBase64,
+                    keys.googleVisionCredentials
+                );
+                
+                console.log('[RECEIPT-SCANNER] Google Vision processing successful');
+                return receiptData;
+            } catch (error) {
+                console.error('[RECEIPT-SCANNER] Google Vision failed:', error);
+                
+                // Check if we have fallback API keys
+                if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+                    // No fallback available, throw the error
+                    throw new Error(
+                        'Google Vision gagal: ' + (error instanceof Error ? error.message : 'Unknown error') +
+                        '. Tidak ada API key fallback. Silakan setup API key di Settings.'
+                    );
+                }
+                
+                // Fallback to AI-based OCR if Google Vision fails
+                console.log('[RECEIPT-SCANNER] Falling back to AI-based OCR...');
+                // Change model to a valid AI model for fallback
+                model = 'google/gemini-2.0-flash-exp:free'; // Use free Gemini model as fallback
+                console.log('[RECEIPT-SCANNER] Using fallback model:', model);
+                // Continue to AI-based processing below
+            }
+        }
+    }
+
     // Determine which key to use based on the model
     let apiKey = keys.defaultApiKey;
     let provider = keys.defaultProvider || 'openrouter';

@@ -1,0 +1,1189 @@
+================================================================================
+RECEIPT SCANNER + TRANSACTION ITEMS INTEGRATION PLAN
+================================================================================
+
+OVERVIEW:
+Update receipt scanner untuk create 1 parent transaction dengan items breakdown,
+instead of creating multiple separate transactions.
+
+CURRENT FLOW (PROBLEM):
+Scan Receipt → Extract 5 items → Create 5 SEPARATE transactions ❌
+Result: Transaction list berantakan, 1 struk = banyak transactions
+
+NEW FLOW (SOLUTION):
+Scan Receipt → Create 1 parent transaction + 5 transaction items ✅
+Result: 1 transaction "Belanja Indomaret Rp 500k" → expandable untuk show items
+
+PREREQUISITES:
+⚠️ MUST implement Transaction Items feature first!
+   (See TRANSACTION_ITEMS_FEATURE_PLAN.txt Phase 1-3)
+   - TransactionItem model must exist in database
+   - API routes for transaction items must be ready
+
+================================================================================
+PHASE 1: UPDATE AI PROMPT & RESPONSE FORMAT
+================================================================================
+
+Task 1.1: Update Receipt Scanner Prompt
+----------------------------------------
+File: lib/receipt-scanner.ts
+
+Current prompt asks for "items_as_transactions" → Change to request items data
+
+OLD PROMPT (lines 59-100):
+```
+{
+  "header": {...},
+  "items_as_transactions": [...]  // Creates separate transactions
+}
+```
+
+NEW PROMPT:
+```javascript
+const prompt = `
+Dari gambar struk belanja ini, ekstrak informasi berikut dalam format JSON:
+
+{
+  "transaction": {
+    "store_name": "Nama Toko",
+    "date": "YYYY-MM-DD",
+    "total_amount": 500000,
+    "category": "Belanja",
+    "description": "Belanja [Nama Toko]",
+    "payment_method": "Cash/Debit/Credit" (optional)
+  },
+  "items": [
+    {
+      "name": "Nama Item",
+      "quantity": 2,
+      "unit_price": 15000,
+      "total_price": 30000,
+      "notes": "ukuran/varian jika ada"
+    }
+  ]
+}
+
+ATURAN:
+1. transaction.total_amount HARUS sama dengan SUM dari semua items.total_price
+2. Jika quantity tidak jelas, set 1
+3. Format tanggal: YYYY-MM-DD
+4. Semua harga dalam angka (no currency symbol)
+5. Jika item tidak ada harga detail, masukkan ke 1 item "Lain-lain" dengan total_price = total_amount
+
+Balas HANYA dengan JSON yang valid, tanpa backticks atau penjelasan tambahan.
+`;
+```
+
+Verification: Prompt updated correctly
+
+
+Task 1.2: Update ReceiptData TypeScript Type
+---------------------------------------------
+File: lib/receipt-scanner.ts (lines 3-18)
+
+OLD TYPE:
+```typescript
+export type ReceiptData = {
+    header: {
+        store_name: string;
+        transaction_date: string;
+        total_amount: number;
+        category: string;
+        description_default: string;
+    };
+    items_as_transactions: Array<{
+        tanggal: string;
+        deskripsi: string;
+        kategori: string;
+        dompet: string;
+        jumlah: number;
+    }>;
+};
+```
+
+NEW TYPE:
+```typescript
+export type ReceiptItem = {
+    name: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    notes?: string;
+    category?: string;
+};
+
+export type ReceiptData = {
+    transaction: {
+        store_name: string;
+        date: string;
+        total_amount: number;
+        category: string;
+        description: string;
+        payment_method?: string;
+    };
+    items: ReceiptItem[];
+};
+```
+
+Verification: TypeScript compiles without errors
+
+
+Task 1.3: Update Response Parsing & Validation
+-----------------------------------------------
+File: lib/receipt-scanner.ts (after generateVisionResponse call)
+
+Add validation logic:
+
+```typescript
+export async function processReceipt(
+    imageBase64: string,
+    model: string,
+    keys: {...}
+): Promise<ReceiptData> {
+    // ... existing code to get apiKey and provider ...
+
+    const prompt = `...`; // Updated prompt from Task 1.1
+
+    console.log('[RECEIPT-SCANNER] Calling AI vision API...');
+    const response = await generateVisionResponse(
+        prompt,
+        imageBase64,
+        model,
+        apiKey,
+        provider
+    );
+
+    console.log('[RECEIPT-SCANNER] Raw AI response:', response);
+
+    // Parse JSON response
+    let data: ReceiptData;
+    try {
+        // Remove markdown code blocks if present
+        let cleanResponse = response.trim();
+        if (cleanResponse.startsWith('```')) {
+            cleanResponse = cleanResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        }
+
+        data = JSON.parse(cleanResponse);
+    } catch (parseError) {
+        console.error('[RECEIPT-SCANNER] JSON parse error:', parseError);
+        throw new Error('Failed to parse AI response as JSON');
+    }
+
+    // Validate response structure
+    if (!data.transaction || !data.items || !Array.isArray(data.items)) {
+        console.error('[RECEIPT-SCANNER] Invalid response structure:', data);
+        throw new Error('Invalid receipt data structure from AI');
+    }
+
+    // Validate required fields
+    if (!data.transaction.store_name || !data.transaction.date || !data.transaction.total_amount) {
+        throw new Error('Missing required transaction fields');
+    }
+
+    // Validate items
+    if (data.items.length === 0) {
+        console.warn('[RECEIPT-SCANNER] No items found, creating default item');
+        // Create a single item with total amount
+        data.items = [{
+            name: 'Belanja (detail tidak tersedia)',
+            quantity: 1,
+            unit_price: data.transaction.total_amount,
+            total_price: data.transaction.total_amount
+        }];
+    }
+
+    // Validate total matches sum of items
+    const itemsTotal = data.items.reduce((sum, item) => sum + item.total_price, 0);
+    const difference = Math.abs(itemsTotal - data.transaction.total_amount);
+
+    if (difference > 1) { // Allow 1 rupiah rounding difference
+        console.warn('[RECEIPT-SCANNER] Total mismatch!', {
+            transactionTotal: data.transaction.total_amount,
+            itemsTotal,
+            difference
+        });
+
+        // Auto-adjust: add/subtract difference to first item
+        if (data.items.length > 0) {
+            const adjustment = data.transaction.total_amount - itemsTotal;
+            data.items[0].total_price += adjustment;
+            data.items[0].notes = (data.items[0].notes || '') + ' (disesuaikan)';
+            console.log('[RECEIPT-SCANNER] Adjusted first item by:', adjustment);
+        }
+    }
+
+    console.log('[RECEIPT-SCANNER] Validated receipt data:', data);
+    return data;
+}
+```
+
+Verification: Validation catches invalid responses
+
+
+================================================================================
+PHASE 2: UPDATE API ROUTE TO CREATE TRANSACTION + ITEMS
+================================================================================
+
+Task 2.1: Update Scan Receipt API Route
+----------------------------------------
+File: app/api/scan-receipt/route.ts
+
+CURRENT CODE (lines 76-114):
+- Calls processReceipt()
+- Returns data to frontend
+- Frontend creates transactions
+
+NEW CODE:
+Replace the entire route with this:
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/prisma';
+import { processReceipt } from '@/lib/receipt-scanner';
+
+export async function POST(request: NextRequest) {
+    try {
+        console.log('[SCAN-RECEIPT] Request received');
+
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) {
+            console.log('[SCAN-RECEIPT] Unauthorized - no session');
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        console.log('[SCAN-RECEIPT] User authenticated:', session.user.id);
+
+        // Parse request (JSON or FormData)
+        const contentType = request.headers.get('content-type') || '';
+        let imageBase64: string;
+        let model: string | null = null;
+        let walletId: string | null = null;
+        let categoryId: string | null = null;
+
+        if (contentType.includes('application/json')) {
+            const body = await request.json();
+            imageBase64 = body.imageBase64;
+            model = body.model || null;
+            walletId = body.walletId || null;
+            categoryId = body.categoryId || null;
+
+            if (!imageBase64) {
+                return NextResponse.json({ error: 'Image base64 is required' }, { status: 400 });
+            }
+
+            if (!imageBase64.startsWith('data:image')) {
+                imageBase64 = `data:image/jpeg;base64,${imageBase64}`;
+            }
+        } else {
+            const formData = await request.formData();
+            const file = formData.get('file') as File;
+            model = formData.get('model') as string | null;
+            walletId = formData.get('walletId') as string | null;
+            categoryId = formData.get('categoryId') as string | null;
+
+            if (!file) {
+                return NextResponse.json({ error: 'Image file is required' }, { status: 400 });
+            }
+
+            const bytes = await file.arrayBuffer();
+            const buffer = Buffer.from(bytes);
+            imageBase64 = `data:${file.type};base64,${buffer.toString('base64')}`;
+        }
+
+        // Fetch user settings for API keys
+        const userSettings = await prisma.userSettings.findUnique({
+            where: { userId: session.user.id }
+        });
+
+        if (!userSettings) {
+            return NextResponse.json({
+                error: 'Settings not found. Please configure your AI settings first.'
+            }, { status: 404 });
+        }
+
+        const keys = {
+            openaiApiKey: userSettings.openaiApiKey,
+            geminiApiKey: userSettings.geminiApiKey,
+            defaultApiKey: userSettings.apiKey,
+            defaultProvider: userSettings.provider
+        };
+
+        // Process receipt with AI
+        console.log('[SCAN-RECEIPT] Processing receipt...');
+        const receiptData = await processReceipt(
+            imageBase64,
+            model || 'google/gemini-2.0-flash-exp:free',
+            keys
+        );
+
+        // Get default wallet if not provided
+        if (!walletId) {
+            const defaultWallet = await prisma.wallet.findFirst({
+                where: {
+                    userId: session.user.id,
+                    isDefault: true
+                }
+            });
+
+            if (!defaultWallet) {
+                // Get any wallet
+                const anyWallet = await prisma.wallet.findFirst({
+                    where: { userId: session.user.id }
+                });
+
+                if (!anyWallet) {
+                    return NextResponse.json({
+                        error: 'No wallet found. Please create a wallet first.'
+                    }, { status: 400 });
+                }
+
+                walletId = anyWallet.id;
+            } else {
+                walletId = defaultWallet.id;
+            }
+        }
+
+        // Get category ID if not provided
+        if (!categoryId) {
+            // Try to find "Belanja" category
+            const category = await prisma.category.findFirst({
+                where: {
+                    userId: session.user.id,
+                    name: receiptData.transaction.category || 'Belanja',
+                    type: 'EXPENSE'
+                }
+            });
+
+            if (category) {
+                categoryId = category.id;
+            }
+        }
+
+        // Create transaction with items in a single transaction
+        const transaction = await prisma.transaction.create({
+            data: {
+                userId: session.user.id,
+                walletId: walletId,
+                categoryId: categoryId,
+                description: receiptData.transaction.description,
+                amount: receiptData.transaction.total_amount,
+                date: new Date(receiptData.transaction.date),
+                type: 'EXPENSE',
+                // Create items inline
+                items: {
+                    create: receiptData.items.map((item, index) => ({
+                        name: item.name,
+                        quantity: item.quantity,
+                        unitPrice: item.unit_price,
+                        totalPrice: item.total_price,
+                        notes: item.notes,
+                        category: item.category,
+                        order: index
+                    }))
+                }
+            },
+            include: {
+                items: true,
+                wallet: true,
+                category: true
+            }
+        });
+
+        console.log('[SCAN-RECEIPT] Success! Created transaction:', transaction.id);
+        console.log('[SCAN-RECEIPT] Created items:', transaction.items.length);
+
+        return NextResponse.json({
+            success: true,
+            transaction,
+            message: `Receipt scanned! Created 1 transaction with ${transaction.items.length} items.`
+        });
+
+    } catch (error) {
+        console.error('[SCAN-RECEIPT] Error:', error);
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Failed to scan receipt' },
+            { status: 500 }
+        );
+    }
+}
+```
+
+Verification: API creates transaction with items
+
+
+Task 2.2: Add Optional Parameters to Receipt Scanner
+-----------------------------------------------------
+File: components/ReceiptScanner.tsx
+
+Update to accept walletId and categoryId:
+
+```typescript
+interface ReceiptScannerProps {
+    onScanComplete: (transaction: any) => void;
+    defaultWalletId?: string;
+    defaultCategoryId?: string;
+}
+
+export function ReceiptScanner({
+    onScanComplete,
+    defaultWalletId,
+    defaultCategoryId
+}: ReceiptScannerProps) {
+    // ... existing state ...
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        // ... existing code ...
+
+        // When sending to API (both iOS and non-iOS paths):
+        const formData = new FormData();
+        formData.append('file', blob, 'receipt.jpg');
+        formData.append('model', selectedModel);
+
+        // NEW: Add wallet and category
+        if (defaultWalletId) {
+            formData.append('walletId', defaultWalletId);
+        }
+        if (defaultCategoryId) {
+            formData.append('categoryId', defaultCategoryId);
+        }
+
+        const response = await fetch('/api/scan-receipt', {
+            method: 'POST',
+            body: formData
+        });
+
+        // ... handle response ...
+
+        const data = await response.json();
+
+        if (data.success) {
+            onScanComplete(data.transaction);
+            toast.success(data.message);
+        }
+    };
+}
+```
+
+Verification: Component accepts and sends wallet/category
+
+
+================================================================================
+PHASE 3: UPDATE FRONTEND TO HANDLE NEW RESPONSE
+================================================================================
+
+Task 3.1: Update Transaction Page to Use New Scanner
+-----------------------------------------------------
+File: app/transactions/page.tsx (or wherever ReceiptScanner is used)
+
+OLD WAY:
+```typescript
+const handleScanComplete = (data: any) => {
+    // Data contains items_as_transactions array
+    // Create multiple transactions
+    data.items_as_transactions.forEach(async (item) => {
+        await fetch('/api/transactions', {
+            method: 'POST',
+            body: JSON.stringify(item)
+        });
+    });
+};
+```
+
+NEW WAY:
+```typescript
+const handleScanComplete = (transaction: any) => {
+    // Transaction already created by API
+    console.log('Receipt scanned!', transaction);
+
+    // Show success message
+    toast.success(`Transaction created with ${transaction.items?.length || 0} items`);
+
+    // Refresh transaction list
+    refreshTransactions();
+
+    // Optional: Navigate to transaction detail
+    // router.push(`/transactions/${transaction.id}`);
+};
+
+// Usage
+<ReceiptScanner
+    onScanComplete={handleScanComplete}
+    defaultWalletId={selectedWalletId}
+    defaultCategoryId={selectedCategoryId}
+/>
+```
+
+Verification: Frontend receives and displays new transaction
+
+
+Task 3.2: Add Transaction Detail Preview After Scan
+----------------------------------------------------
+File: components/ReceiptScanResult.tsx (NEW COMPONENT)
+
+Create preview dialog to show scanned transaction:
+
+```typescript
+'use client';
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { Check, Edit, X } from 'lucide-react';
+
+interface ReceiptScanResultProps {
+    open: boolean;
+    onClose: () => void;
+    transaction: {
+        id: string;
+        description: string;
+        amount: number;
+        date: string;
+        items: Array<{
+            id: string;
+            name: string;
+            quantity: number;
+            unitPrice: number;
+            totalPrice: number;
+        }>;
+    } | null;
+}
+
+export default function ReceiptScanResult({
+    open,
+    onClose,
+    transaction
+}: ReceiptScanResultProps) {
+    if (!transaction) return null;
+
+    return (
+        <Dialog open={open} onOpenChange={onClose}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Check className="h-5 w-5 text-green-500" />
+                        Receipt Scanned Successfully!
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                    {/* Transaction Summary */}
+                    <div className="bg-muted p-4 rounded-lg">
+                        <h3 className="font-semibold">{transaction.description}</h3>
+                        <p className="text-sm text-muted-foreground">
+                            {formatDate(transaction.date)}
+                        </p>
+                        <p className="text-2xl font-bold mt-2">
+                            {formatCurrency(transaction.amount)}
+                        </p>
+                    </div>
+
+                    {/* Items List */}
+                    <div>
+                        <h4 className="font-medium mb-2">
+                            Items ({transaction.items.length})
+                        </h4>
+                        <div className="max-h-60 overflow-y-auto space-y-2">
+                            {transaction.items.map((item) => (
+                                <div
+                                    key={item.id}
+                                    className="flex justify-between items-start p-2 bg-muted/50 rounded"
+                                >
+                                    <div className="flex-1">
+                                        <p className="font-medium text-sm">{item.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {item.quantity}x @ {formatCurrency(item.unitPrice)}
+                                        </p>
+                                    </div>
+                                    <p className="font-semibold">
+                                        {formatCurrency(item.totalPrice)}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                                // Navigate to edit transaction
+                                window.location.href = `/transactions/${transaction.id}/edit`;
+                            }}
+                        >
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit
+                        </Button>
+                        <Button
+                            className="flex-1"
+                            onClick={onClose}
+                        >
+                            <Check className="h-4 w-4 mr-2" />
+                            Done
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+```
+
+Verification: Preview dialog shows transaction details
+
+
+Task 3.3: Update ReceiptScanner to Show Result Preview
+-------------------------------------------------------
+File: components/ReceiptScanner.tsx
+
+```typescript
+import ReceiptScanResult from './ReceiptScanResult';
+
+export function ReceiptScanner({ onScanComplete, ... }: ReceiptScannerProps) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scannedTransaction, setScannedTransaction] = useState(null);
+    const [showResult, setShowResult] = useState(false);
+
+    // ... existing code ...
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        // ... existing scan logic ...
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Show result preview
+            setScannedTransaction(data.transaction);
+            setShowResult(true);
+            setIsOpen(false); // Close scanner dialog
+
+            // Call parent callback
+            onScanComplete(data.transaction);
+
+            toast.success(data.message);
+        }
+    };
+
+    return (
+        <>
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                {/* Existing scanner UI */}
+            </Dialog>
+
+            {/* NEW: Result preview */}
+            <ReceiptScanResult
+                open={showResult}
+                onClose={() => setShowResult(false)}
+                transaction={scannedTransaction}
+            />
+        </>
+    );
+}
+```
+
+Verification: Scanner shows result after successful scan
+
+
+================================================================================
+PHASE 4: BACKWARD COMPATIBILITY & MIGRATION
+================================================================================
+
+Task 4.1: Add Feature Flag for Old vs New Behavior
+---------------------------------------------------
+File: lib/receipt-scanner.ts
+
+Add option to choose behavior:
+
+```typescript
+export async function processReceipt(
+    imageBase64: string,
+    model: string,
+    keys: {...},
+    options?: {
+        mode: 'items' | 'transactions'; // NEW: Choose behavior
+    }
+): Promise<ReceiptData> {
+    const mode = options?.mode || 'items'; // Default to new behavior
+
+    let prompt;
+
+    if (mode === 'items') {
+        // Use new prompt (single transaction + items)
+        prompt = `...`; // Task 1.1
+    } else {
+        // Use old prompt (multiple transactions)
+        prompt = `...`; // Original prompt
+    }
+
+    // ... rest of code ...
+}
+```
+
+Verification: Both modes work
+
+
+Task 4.2: Add User Setting to Choose Scanner Mode
+--------------------------------------------------
+File: app/settings/page.tsx
+
+Add toggle in settings:
+
+```typescript
+<div className="space-y-2">
+    <Label>Receipt Scanner Mode</Label>
+    <RadioGroup value={scannerMode} onValueChange={setScannerMode}>
+        <div className="flex items-center space-x-2">
+            <RadioGroupItem value="items" id="items" />
+            <Label htmlFor="items">
+                Single Transaction with Items (Recommended)
+            </Label>
+        </div>
+        <div className="flex items-center space-x-2">
+            <RadioGroupItem value="transactions" id="transactions" />
+            <Label htmlFor="transactions">
+                Multiple Transactions (Legacy)
+            </Label>
+        </div>
+    </RadioGroup>
+    <p className="text-xs text-muted-foreground">
+        "Single Transaction" creates 1 transaction with expandable items.
+        Cleaner and easier to manage.
+    </p>
+</div>
+```
+
+Save to UserSettings table (add new field: `receiptScannerMode`)
+
+Verification: User can choose mode in settings
+
+
+Task 4.3: Create Migration Script for Old Transactions
+-------------------------------------------------------
+File: scripts/migrate-receipt-transactions.ts (OPTIONAL)
+
+Script to convert old multi-transaction receipts to new format:
+
+```typescript
+import { prisma } from '@/lib/prisma';
+
+async function migrateReceiptTransactions() {
+    console.log('Finding receipt transactions to migrate...');
+
+    // Find transactions that look like receipt items
+    // (description starts with "Belanja [Store] -")
+    const receiptTransactions = await prisma.transaction.findMany({
+        where: {
+            description: {
+                contains: 'Belanja'
+            }
+        },
+        orderBy: {
+            date: 'asc'
+        }
+    });
+
+    // Group by date + store name
+    const groups = new Map();
+
+    for (const tx of receiptTransactions) {
+        const match = tx.description.match(/Belanja (.+?) - (.+)/);
+        if (match) {
+            const storeName = match[1];
+            const itemName = match[2];
+            const key = `${tx.date.toISOString()}-${storeName}-${tx.userId}`;
+
+            if (!groups.has(key)) {
+                groups.set(key, []);
+            }
+
+            groups.get(key).push({
+                transaction: tx,
+                itemName
+            });
+        }
+    }
+
+    console.log(`Found ${groups.size} receipt groups to migrate`);
+
+    // For each group, create 1 parent transaction + items
+    for (const [key, items] of groups.entries()) {
+        if (items.length < 2) continue; // Skip single transactions
+
+        const first = items[0].transaction;
+        const totalAmount = items.reduce((sum, i) => sum + i.transaction.amount, 0);
+
+        console.log(`Migrating group: ${key}, ${items.length} items, total: ${totalAmount}`);
+
+        // Create parent transaction
+        const parent = await prisma.transaction.create({
+            data: {
+                userId: first.userId,
+                walletId: first.walletId,
+                categoryId: first.categoryId,
+                description: `Belanja ${items[0].transaction.description.split(' - ')[0].replace('Belanja ', '')}`,
+                amount: totalAmount,
+                date: first.date,
+                type: 'EXPENSE',
+                // Create items
+                items: {
+                    create: items.map((item, index) => ({
+                        name: item.itemName,
+                        quantity: 1,
+                        unitPrice: item.transaction.amount,
+                        totalPrice: item.transaction.amount,
+                        order: index
+                    }))
+                }
+            }
+        });
+
+        // Delete old transactions
+        await prisma.transaction.deleteMany({
+            where: {
+                id: {
+                    in: items.map(i => i.transaction.id)
+                }
+            }
+        });
+
+        console.log(`Created parent transaction ${parent.id}, deleted ${items.length} old transactions`);
+    }
+
+    console.log('Migration complete!');
+}
+
+// Run: ts-node scripts/migrate-receipt-transactions.ts
+migrateReceiptTransactions();
+```
+
+Verification: Old transactions converted to new format
+
+
+================================================================================
+PHASE 5: TESTING & VALIDATION
+================================================================================
+
+Task 5.1: Test Cases - Receipt Scanning
+----------------------------------------
+
+Test different receipt types:
+
+1. ✅ Simple receipt (2-3 items)
+   - Scan → verify 1 transaction created
+   - Verify items count matches
+   - Verify total amount matches
+
+2. ✅ Complex receipt (10+ items)
+   - Scan → verify 1 transaction created
+   - Verify all items extracted
+   - Verify total calculation correct
+
+3. ✅ Receipt with no item details
+   - Scan → verify creates 1 item "Belanja (detail tidak tersedia)"
+   - Amount = total amount
+
+4. ✅ Receipt with discounts
+   - Items should reflect discount in total_price
+   - Transaction total should match final amount
+
+5. ✅ Blurry receipt / Poor quality
+   - Should still extract basic info
+   - Or return error with helpful message
+
+6. ✅ Receipt in different languages
+   - Indonesian → works
+   - English → works
+   - Other → test and document
+
+
+Task 5.2: Test Cases - API Integration
+---------------------------------------
+
+1. ✅ Create transaction without wallet
+   - Should use default wallet
+   - Or return error if no wallet
+
+2. ✅ Create transaction without category
+   - Should use default "Belanja" category
+   - Or null if not found
+
+3. ✅ Items total ≠ transaction total
+   - Should auto-adjust first item
+   - Log warning
+
+4. ✅ Invalid AI response
+   - Should return clear error message
+   - Not crash
+
+5. ✅ Network error / AI timeout
+   - Should handle gracefully
+   - Show user-friendly error
+
+
+Task 5.3: Test Cases - UI/UX
+-----------------------------
+
+1. ✅ Scan receipt → show preview
+   - Preview displays correctly
+   - Items list scrollable
+   - Actions work (Edit, Done)
+
+2. ✅ Edit transaction after scan
+   - Can add more items
+   - Can edit item details
+   - Can delete items
+   - Total updates correctly
+
+3. ✅ Transaction list shows item count
+   - "5 items" badge visible
+   - Expand/collapse works
+   - Items display correctly
+
+4. ✅ Mobile responsive
+   - Scanner works on mobile
+   - Camera capture works
+   - Preview looks good
+
+
+Task 5.4: Performance Testing
+------------------------------
+
+1. ✅ Large receipt (50+ items)
+   - Scan time acceptable (<30s)
+   - Transaction creation fast (<3s)
+   - UI remains responsive
+
+2. ✅ Multiple concurrent scans
+   - No race conditions
+   - Each scan creates correct data
+
+3. ✅ Database performance
+   - Transaction + items creation atomic
+   - No orphaned records
+
+
+================================================================================
+PHASE 6: DOCUMENTATION & ROLLOUT
+================================================================================
+
+Task 6.1: Update User Documentation
+------------------------------------
+File: docs/receipt-scanner-guide.md
+
+Create guide:
+- How to scan receipts
+- What information is extracted
+- How to view/edit items
+- Troubleshooting tips
+
+Verification: Documentation clear and helpful
+
+
+Task 6.2: Add In-App Tutorial
+------------------------------
+File: components/ReceiptScannerTutorial.tsx
+
+First-time user tutorial:
+1. "Scan your receipt"
+2. "AI extracts items automatically"
+3. "Review and edit if needed"
+4. "Done! One clean transaction with details"
+
+Verification: Tutorial shows on first scan
+
+
+Task 6.3: Changelog & Release Notes
+------------------------------------
+File: CHANGELOG.md
+
+```markdown
+## [v2.0.0] - Receipt Scanner Upgrade
+
+### 🎉 Major Changes
+- Receipt scanner now creates **1 transaction with items** instead of multiple transactions
+- Cleaner transaction list
+- Better expense tracking
+
+### ✨ New Features
+- Expandable transaction items view
+- Item-level editing
+- Receipt scan result preview
+- Auto-validation of totals
+
+### 🔄 Migration
+- Existing transactions unaffected
+- Optional: Run migration script to convert old receipt transactions
+
+### ⚙️ Settings
+- Choose scanner mode (new vs legacy) in Settings
+```
+
+Verification: Changelog complete
+
+
+Task 6.4: Gradual Rollout Plan
+-------------------------------
+
+PHASE A: Beta Testing (Week 1)
+- Enable for select users
+- Gather feedback
+- Fix critical bugs
+
+PHASE B: Opt-in (Week 2-3)
+- All users can enable in settings
+- Default: old behavior
+- Monitor adoption
+
+PHASE C: Full Release (Week 4+)
+- New users: new behavior by default
+- Existing users: migrate on their terms
+- Deprecate old mode after 3 months
+
+Verification: Rollout smooth, no major issues
+
+
+================================================================================
+IMPLEMENTATION CHECKLIST
+================================================================================
+
+PREREQUISITES:
+☐ TransactionItem model exists in database
+☐ Transaction items API routes working
+☐ Transaction items UI components ready
+
+PHASE 1: AI & PROMPT
+☐ Update receipt scanner prompt
+☐ Update TypeScript types
+☐ Add response validation
+☐ Test with sample receipts
+
+PHASE 2: API INTEGRATION
+☐ Update scan-receipt API route
+☐ Create transaction + items atomically
+☐ Handle wallet/category defaults
+☐ Add error handling
+
+PHASE 3: FRONTEND
+☐ Update transaction page handler
+☐ Create scan result preview component
+☐ Update ReceiptScanner component
+☐ Test end-to-end flow
+
+PHASE 4: COMPATIBILITY
+☐ Add feature flag for mode selection
+☐ Add user setting
+☐ Create migration script (optional)
+☐ Test both modes
+
+PHASE 5: TESTING
+☐ Test various receipt types
+☐ Test API edge cases
+☐ Test UI interactions
+☐ Performance testing
+
+PHASE 6: ROLLOUT
+☐ Write documentation
+☐ Create tutorial
+☐ Update changelog
+☐ Gradual rollout
+
+================================================================================
+ESTIMATED TIMELINE
+================================================================================
+
+Prerequisites (from Transaction Items plan): 16 hours
+
+Phase 1 (AI & Prompt): 2 hours
+Phase 2 (API Integration): 3 hours
+Phase 3 (Frontend): 4 hours
+Phase 4 (Compatibility): 2 hours
+Phase 5 (Testing): 3 hours
+Phase 6 (Rollout): 2 hours
+
+TOTAL FOR INTEGRATION: ~16 hours
+TOTAL WITH PREREQUISITES: ~32 hours
+
+================================================================================
+BENEFITS RECAP
+================================================================================
+
+✅ Cleaner transaction list (1 receipt = 1 transaction)
+✅ Better expense tracking (see total + breakdown)
+✅ Easier to manage (edit/delete 1 transaction)
+✅ More accurate analytics (spending per store visit)
+✅ Better budget tracking (1 expense event)
+✅ Preserves receipt context (all items together)
+✅ Expandable UI (show/hide details as needed)
+✅ Scalable (works for 1 item or 100 items)
+
+================================================================================
+RISKS & MITIGATION
+================================================================================
+
+RISK 1: AI extracts items incorrectly
+Mitigation:
+- Show preview before saving
+- Allow manual editing
+- Validate totals match
+
+RISK 2: Total amount mismatch
+Mitigation:
+- Auto-adjust first item
+- Log warning
+- User can correct manually
+
+RISK 3: Users confused by new flow
+Mitigation:
+- In-app tutorial
+- Clear documentation
+- Keep old mode as option
+
+RISK 4: Migration breaks existing data
+Mitigation:
+- Migration is optional
+- Test thoroughly first
+- Backup before migration
+- Can rollback
+
+================================================================================
+SUCCESS METRICS
+================================================================================
+
+Track these after rollout:
+
+1. Adoption Rate
+   - % of users using new scanner mode
+   - Target: >80% within 1 month
+
+2. User Satisfaction
+   - Survey: "Is new scanner better?"
+   - Target: >90% positive feedback
+
+3. Technical Metrics
+   - Scan success rate
+   - Average items per receipt
+   - Total validation accuracy
+   - Target: >95% success rate
+
+4. Usage Metrics
+   - Scans per user per week
+   - Items edited after scan
+   - Manual item additions
+   - Target: Increase in scan usage
+
+================================================================================
+END OF INTEGRATION PLAN
+================================================================================
+
+NEXT STEPS:
+1. ✅ Review this plan
+2. ⏳ Implement Transaction Items feature (prerequisite)
+3. ⏳ Implement this integration (16 hours)
+4. ⏳ Test thoroughly
+5. ⏳ Rollout gradually
+
+Questions? Check TRANSACTION_ITEMS_FEATURE_PLAN.txt for the prerequisite feature.

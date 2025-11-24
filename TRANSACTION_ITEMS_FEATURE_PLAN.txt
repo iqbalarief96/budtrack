@@ -1,0 +1,1153 @@
+================================================================================
+TRANSACTION ITEMS FEATURE - IMPLEMENTATION PLAN
+================================================================================
+
+FEATURE OVERVIEW:
+Menambahkan kemampuan untuk breakdown transaksi menjadi item-item detail.
+Contoh: Transaksi "Belanja Indomaret" (Rp 500.000) bisa di-expand untuk
+melihat:
+- Susu Ultra 1L - Rp 15.000
+- Roti Tawar - Rp 12.000
+- Minyak Goreng - Rp 25.000
+- dsb...
+
+BENEFITS:
+✅ Detail tracking per item
+✅ Better insights (most purchased items, price comparison)
+✅ Receipt itemization
+✅ Budget analysis per item category
+✅ Reusable shopping list
+✅ Price history tracking
+
+================================================================================
+PHASE 1: DATABASE SCHEMA DESIGN
+================================================================================
+
+Task 1.1: Add TransactionItem Model to Prisma Schema
+-----------------------------------------------------
+File: prisma/schema.prisma
+
+Add new model:
+
+model TransactionItem {
+  id            String   @id @default(cuid())
+  transactionId String
+  name          String   // Nama item (e.g., "Susu Ultra 1L")
+  quantity      Float    @default(1)
+  unitPrice     Float    // Harga per unit
+  totalPrice    Float    // quantity * unitPrice
+  category      String?  // Optional: kategori item (bisa beda dari parent)
+  notes         String?  // Catatan khusus untuk item ini
+  order         Int      @default(0) // Urutan tampilan
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([name]) // For searching items
+}
+
+Update Transaction model - add relation:
+
+model Transaction {
+  id               String                        @id @default(cuid())
+  amount           Float
+  description      String?
+  date             DateTime
+  type             String
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  userId           String
+  walletId         String
+  categoryId       String?
+  goalId           String?
+
+  // Existing relations
+  goalActivities   GoalActivity[]
+  recurringHistory RecurringTransactionHistory[]
+  category         Category?                     @relation(fields: [categoryId], references: [id])
+  goal             Goal?                         @relation(fields: [goalId], references: [id])
+  wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // NEW: Transaction items relation
+  items            TransactionItem[]
+}
+
+Verification: Run `npx prisma format` and `npx prisma migrate dev --name add_transaction_items`
+
+
+Task 1.2: Create Database Migration
+------------------------------------
+File: Terminal
+
+Commands:
+npx prisma migrate dev --name add_transaction_items
+npx prisma generate
+
+Verification: Check migration runs successfully and no errors
+
+
+Task 1.3: Add Helper Fields (Optional Enhancement)
+---------------------------------------------------
+Additional fields to consider:
+
+model TransactionItem {
+  // ... existing fields ...
+
+  // Optional enhancements:
+  barcode       String?  // For product scanning
+  brand         String?  // Brand name
+  size          String?  // Size/volume (e.g., "1L", "500g")
+  imageUrl      String?  // Item image from receipt
+  discount      Float?   // Discount amount
+  tax           Float?   // Tax amount
+  finalPrice    Float?   // After discount and tax
+}
+
+Note: Start simple, add these later if needed
+
+
+================================================================================
+PHASE 2: API ROUTES - TRANSACTION ITEMS CRUD
+================================================================================
+
+Task 2.1: Create GET Transaction Items API Route
+-------------------------------------------------
+File: app/api/transactions/[id]/items/route.ts
+
+Function: GET - Fetch all items for a transaction
+
+Implementation:
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+
+export async function GET(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const transactionId = params.id
+
+    // Verify transaction belongs to user
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        id: transactionId,
+        userId: session.user.id
+      }
+    })
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'Transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    // Fetch items ordered by 'order' field
+    const items = await prisma.transactionItem.findMany({
+      where: { transactionId },
+      orderBy: { order: 'asc' }
+    })
+
+    return NextResponse.json({ items })
+  } catch (error) {
+    console.error('Error fetching transaction items:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+Verification: API returns transaction items
+
+
+Task 2.2: Create POST Transaction Item API Route
+-------------------------------------------------
+File: app/api/transactions/[id]/items/route.ts (POST method)
+
+Function: POST - Add new item to transaction
+
+Implementation:
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const transactionId = params.id
+    const body = await req.json()
+    const { name, quantity, unitPrice, category, notes } = body
+
+    // Validate required fields
+    if (!name || !unitPrice) {
+      return NextResponse.json(
+        { error: 'Name and unitPrice are required' },
+        { status: 400 }
+      )
+    }
+
+    // Verify transaction belongs to user
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        id: transactionId,
+        userId: session.user.id
+      },
+      include: {
+        items: true
+      }
+    })
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'Transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    // Calculate total price
+    const qty = quantity || 1
+    const totalPrice = qty * unitPrice
+
+    // Get next order number
+    const maxOrder = transaction.items.length > 0
+      ? Math.max(...transaction.items.map(i => i.order))
+      : -1
+
+    // Create transaction item
+    const item = await prisma.transactionItem.create({
+      data: {
+        transactionId,
+        name,
+        quantity: qty,
+        unitPrice,
+        totalPrice,
+        category,
+        notes,
+        order: maxOrder + 1
+      }
+    })
+
+    // IMPORTANT: Update parent transaction amount
+    const totalItemsAmount = await prisma.transactionItem.aggregate({
+      where: { transactionId },
+      _sum: { totalPrice: true }
+    })
+
+    await prisma.transaction.update({
+      where: { id: transactionId },
+      data: { amount: totalItemsAmount._sum.totalPrice || 0 }
+    })
+
+    return NextResponse.json({ item }, { status: 201 })
+  } catch (error) {
+    console.error('Error creating transaction item:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+Verification: Item created and transaction amount updated
+
+
+Task 2.3: Create PUT Transaction Item API Route
+------------------------------------------------
+File: app/api/transactions/[transactionId]/items/[itemId]/route.ts
+
+Function: PUT - Update existing item
+
+Implementation:
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+
+export async function PUT(
+  req: Request,
+  { params }: { params: { transactionId: string; itemId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { transactionId, itemId } = params
+    const body = await req.json()
+    const { name, quantity, unitPrice, category, notes } = body
+
+    // Verify transaction belongs to user
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        id: transactionId,
+        userId: session.user.id
+      }
+    })
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'Transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    // Calculate new total price
+    const totalPrice = (quantity || 1) * (unitPrice || 0)
+
+    // Update item
+    const item = await prisma.transactionItem.update({
+      where: { id: itemId },
+      data: {
+        name,
+        quantity,
+        unitPrice,
+        totalPrice,
+        category,
+        notes
+      }
+    })
+
+    // Update parent transaction amount
+    const totalItemsAmount = await prisma.transactionItem.aggregate({
+      where: { transactionId },
+      _sum: { totalPrice: true }
+    })
+
+    await prisma.transaction.update({
+      where: { id: transactionId },
+      data: { amount: totalItemsAmount._sum.totalPrice || 0 }
+    })
+
+    return NextResponse.json({ item })
+  } catch (error) {
+    console.error('Error updating transaction item:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+Verification: Item updated and transaction amount recalculated
+
+
+Task 2.4: Create DELETE Transaction Item API Route
+---------------------------------------------------
+File: app/api/transactions/[transactionId]/items/[itemId]/route.ts (DELETE)
+
+Function: DELETE - Remove item from transaction
+
+Implementation:
+export async function DELETE(
+  req: Request,
+  { params }: { params: { transactionId: string; itemId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { transactionId, itemId } = params
+
+    // Verify transaction belongs to user
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        id: transactionId,
+        userId: session.user.id
+      }
+    })
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'Transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    // Delete item
+    await prisma.transactionItem.delete({
+      where: { id: itemId }
+    })
+
+    // Update parent transaction amount
+    const totalItemsAmount = await prisma.transactionItem.aggregate({
+      where: { transactionId },
+      _sum: { totalPrice: true }
+    })
+
+    await prisma.transaction.update({
+      where: { id: transactionId },
+      data: { amount: totalItemsAmount._sum.totalPrice || 0 }
+    })
+
+    return NextResponse.json({ message: 'Item deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting transaction item:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+Verification: Item deleted and transaction amount updated
+
+
+Task 2.5: Create Bulk Add Items API Route
+------------------------------------------
+File: app/api/transactions/[id]/items/bulk/route.ts
+
+Function: POST - Add multiple items at once (useful for receipt scanning)
+
+Implementation:
+import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const transactionId = params.id
+    const body = await req.json()
+    const { items } = body // Array of items
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json(
+        { error: 'Items array is required' },
+        { status: 400 }
+      )
+    }
+
+    // Verify transaction belongs to user
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        id: transactionId,
+        userId: session.user.id
+      }
+    })
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: 'Transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    // Create items with proper order
+    const createdItems = await Promise.all(
+      items.map((item, index) => {
+        const qty = item.quantity || 1
+        const totalPrice = qty * item.unitPrice
+
+        return prisma.transactionItem.create({
+          data: {
+            transactionId,
+            name: item.name,
+            quantity: qty,
+            unitPrice: item.unitPrice,
+            totalPrice,
+            category: item.category,
+            notes: item.notes,
+            order: index
+          }
+        })
+      })
+    )
+
+    // Update parent transaction amount
+    const totalItemsAmount = await prisma.transactionItem.aggregate({
+      where: { transactionId },
+      _sum: { totalPrice: true }
+    })
+
+    await prisma.transaction.update({
+      where: { id: transactionId },
+      data: { amount: totalItemsAmount._sum.totalPrice || 0 }
+    })
+
+    return NextResponse.json({ items: createdItems }, { status: 201 })
+  } catch (error) {
+    console.error('Error bulk creating transaction items:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+Verification: Multiple items created at once
+
+
+Task 2.6: Update Transaction GET Route to Include Items Count
+--------------------------------------------------------------
+File: app/api/transactions/route.ts (update existing GET)
+
+Add items count to transaction list:
+
+// In the GET handler
+const transactions = await prisma.transaction.findMany({
+  where: whereClause,
+  include: {
+    wallet: true,
+    category: true,
+    goal: true,
+    _count: {
+      select: { items: true }  // NEW: Add items count
+    }
+  },
+  orderBy: { date: 'desc' },
+  take: limit,
+  skip: offset
+})
+
+Verification: Transaction list includes itemsCount
+
+
+================================================================================
+PHASE 3: FRONTEND - UI COMPONENTS
+================================================================================
+
+Task 3.1: Create TransactionItemsList Component
+------------------------------------------------
+File: components/transactions/transaction-items-list.tsx
+
+Purpose: Display expandable list of items within a transaction
+
+Design:
+┌─────────────────────────────────────────────────────────┐
+│ 📦 Belanja Indomaret                        Rp 500.000  │
+│ 🏪 Belanja • 15 Jan 2025                    [▼] 5 items│
+├─────────────────────────────────────────────────────────┤
+│   ┌───────────────────────────────────────────────────┐ │
+│   │ 🥛 Susu Ultra 1L                                  │ │
+│   │    2x @ Rp 15.000                    Rp 30.000    │ │
+│   ├───────────────────────────────────────────────────┤ │
+│   │ 🍞 Roti Tawar                                     │ │
+│   │    3x @ Rp 12.000                    Rp 36.000    │ │
+│   ├───────────────────────────────────────────────────┤ │
+│   │ 🛢️ Minyak Goreng                                  │ │
+│   │    1x @ Rp 25.000                    Rp 25.000    │ │
+│   └───────────────────────────────────────────────────┘ │
+│   [+ Add Item]                                          │
+└─────────────────────────────────────────────────────────┘
+
+Implementation:
+'use client'
+
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, Plus, Pencil, Trash } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { formatCurrency } from '@/lib/utils'
+
+interface TransactionItem {
+  id: string
+  name: string
+  quantity: number
+  unitPrice: number
+  totalPrice: number
+  category?: string
+  notes?: string
+}
+
+interface TransactionItemsListProps {
+  transactionId: string
+  items: TransactionItem[]
+  onItemsChange: () => void
+}
+
+export default function TransactionItemsList({
+  transactionId,
+  items,
+  onItemsChange
+}: TransactionItemsListProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const toggleExpand = () => {
+    setIsExpanded(!isExpanded)
+  }
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm('Delete this item?')) return
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(
+        `/api/transactions/${transactionId}/items/${itemId}`,
+        { method: 'DELETE' }
+      )
+
+      if (response.ok) {
+        onItemsChange()
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (items.length === 0) return null
+
+  return (
+    <div className="mt-2 border-t pt-2">
+      <button
+        onClick={toggleExpand}
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      >
+        {isExpanded ? (
+          <ChevronDown className="h-4 w-4" />
+        ) : (
+          <ChevronRight className="h-4 w-4" />
+        )}
+        <span>{items.length} items</span>
+      </button>
+
+      {isExpanded && (
+        <div className="mt-2 space-y-2 ml-6">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-start justify-between p-2 rounded-lg bg-muted/50 hover:bg-muted"
+            >
+              <div className="flex-1">
+                <div className="font-medium">{item.name}</div>
+                <div className="text-sm text-muted-foreground">
+                  {item.quantity}x @ {formatCurrency(item.unitPrice)}
+                </div>
+                {item.notes && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {item.notes}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">
+                  {formatCurrency(item.totalPrice)}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDeleteItem(item.id)}
+                  disabled={isLoading}
+                >
+                  <Trash className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+Verification: Items list displays and expands correctly
+
+
+Task 3.2: Create AddTransactionItemDialog Component
+----------------------------------------------------
+File: components/transactions/add-transaction-item-dialog.tsx
+
+Purpose: Dialog for adding new item to transaction
+
+Implementation:
+'use client'
+
+import { useState } from 'react'
+import { Plus } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+
+interface AddTransactionItemDialogProps {
+  transactionId: string
+  onItemAdded: () => void
+}
+
+export default function AddTransactionItemDialog({
+  transactionId,
+  onItemAdded
+}: AddTransactionItemDialogProps) {
+  const [open, setOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [formData, setFormData] = useState({
+    name: '',
+    quantity: 1,
+    unitPrice: 0,
+    category: '',
+    notes: ''
+  })
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+
+    try {
+      const response = await fetch(
+        `/api/transactions/${transactionId}/items`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        }
+      )
+
+      if (response.ok) {
+        setOpen(false)
+        setFormData({
+          name: '',
+          quantity: 1,
+          unitPrice: 0,
+          category: '',
+          notes: ''
+        })
+        onItemAdded()
+      }
+    } catch (error) {
+      console.error('Error adding item:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Plus className="h-4 w-4 mr-2" />
+          Add Item
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Transaction Item</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="name">Item Name</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              placeholder="e.g., Susu Ultra 1L"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.quantity}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    quantity: parseFloat(e.target.value)
+                  })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="unitPrice">Unit Price</Label>
+              <Input
+                id="unitPrice"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.unitPrice}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    unitPrice: parseFloat(e.target.value)
+                  })
+                }
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="category">Category (optional)</Label>
+            <Input
+              id="category"
+              value={formData.category}
+              onChange={(e) =>
+                setFormData({ ...formData, category: e.target.value })
+              }
+              placeholder="e.g., Groceries, Dairy"
+            />
+          </div>
+          <div>
+            <Label htmlFor="notes">Notes (optional)</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes}
+              onChange={(e) =>
+                setFormData({ ...formData, notes: e.target.value })
+              }
+              placeholder="Any additional notes..."
+            />
+          </div>
+          <div className="flex justify-between items-center">
+            <div className="text-sm">
+              Total: <strong>Rp {(formData.quantity * formData.unitPrice).toLocaleString()}</strong>
+            </div>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? 'Adding...' : 'Add Item'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+Verification: Dialog opens and creates items
+
+
+Task 3.3: Update TransactionCard Component
+-------------------------------------------
+File: components/transactions/transaction-card.tsx
+
+Update to show items indicator and integrate TransactionItemsList:
+
+import TransactionItemsList from './transaction-items-list'
+import AddTransactionItemDialog from './add-transaction-item-dialog'
+
+// Inside TransactionCard component
+<div className="transaction-card">
+  {/* Existing transaction details */}
+
+  {/* NEW: Items section */}
+  {transaction._count?.items > 0 && (
+    <TransactionItemsList
+      transactionId={transaction.id}
+      items={transaction.items || []}
+      onItemsChange={refreshTransaction}
+    />
+  )}
+
+  {/* NEW: Add item button */}
+  <div className="mt-2">
+    <AddTransactionItemDialog
+      transactionId={transaction.id}
+      onItemAdded={refreshTransaction}
+    />
+  </div>
+</div>
+
+Verification: Transaction card shows items
+
+
+Task 3.4: Create Quick Add Items from Receipt Feature
+------------------------------------------------------
+File: components/transactions/quick-add-items.tsx
+
+Purpose: Parse receipt text and quickly add multiple items
+
+Design:
+┌─────────────────────────────────────────────────────────┐
+│ Quick Add Items from Receipt                            │
+├─────────────────────────────────────────────────────────┤
+│ Paste receipt items (one per line):                     │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ Susu Ultra 1L x2 @ 15000                            │ │
+│ │ Roti Tawar x3 @ 12000                               │ │
+│ │ Minyak Goreng x1 @ 25000                            │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                        [Parse] [Add All] │
+└─────────────────────────────────────────────────────────┘
+
+Implementation: Use regex to parse format like "Name xQty @ Price"
+
+
+================================================================================
+PHASE 4: INTEGRATION WITH EXISTING FEATURES
+================================================================================
+
+Task 4.1: Update Receipt Scanner to Create Items
+-------------------------------------------------
+File: lib/receipt-scanner.ts
+
+Modify receipt scanning to automatically create transaction items:
+
+When scanning receipt:
+1. Create parent transaction with total amount
+2. Extract individual items from receipt
+3. Bulk create transaction items
+4. Verify total matches
+
+Verification: Receipt scan creates items automatically
+
+
+Task 4.2: Add Items to Transaction Export
+------------------------------------------
+File: lib/excel-export.ts
+
+Update Excel export to include items:
+
+Sheet 1: Transactions (as before)
+Sheet 2: Transaction Items
+- Transaction Description
+- Item Name
+- Quantity
+- Unit Price
+- Total Price
+
+Verification: Export includes items sheet
+
+
+Task 4.3: Update Budget Calculations
+-------------------------------------
+File: lib/budgetCalculations.ts
+
+Consider item-level categories when calculating budget spending:
+- If transaction has items with different categories
+- Each item can contribute to different budget categories
+
+Verification: Item categories affect budget calculations
+
+
+================================================================================
+PHASE 5: ADVANCED FEATURES (FUTURE ENHANCEMENTS)
+================================================================================
+
+Task 5.1: Item Analytics Dashboard
+-----------------------------------
+File: app/insights/items/page.tsx
+
+Features:
+- Most purchased items
+- Price trends over time
+- Brand comparison
+- Category breakdown by items
+- Spending per item type
+
+Verification: Analytics page displays item insights
+
+
+Task 5.2: Shopping List Generator
+----------------------------------
+File: app/shopping-list/page.tsx
+
+Features:
+- Generate shopping list from frequently bought items
+- Suggest items based on purchase frequency
+- Compare prices across different stores
+- Track price changes
+
+Verification: Shopping list generates from history
+
+
+Task 5.3: Price Alert System
+-----------------------------
+File: app/api/items/price-alerts/route.ts
+
+Features:
+- Set price alerts for specific items
+- Get notified when item price changes
+- Track price history
+- Best time to buy suggestions
+
+Verification: Price alerts work
+
+
+Task 5.4: Barcode Scanning Integration
+---------------------------------------
+File: components/transactions/barcode-scanner.tsx
+
+Features:
+- Scan product barcode
+- Auto-fill item name and category
+- Fetch product info from database
+- Quick add to transaction
+
+Verification: Barcode scanning works
+
+
+Task 5.5: Smart Categorization by Items
+----------------------------------------
+File: lib/item-categorization.ts
+
+Features:
+- AI learns from item-to-category mapping
+- Auto-suggest category based on item name
+- Improve over time with user corrections
+
+Verification: Item categorization improves
+
+
+================================================================================
+PHASE 6: TESTING & VALIDATION
+================================================================================
+
+Task 6.1: Create Test Data
+---------------------------
+File: prisma/itemsSeed.ts
+
+Create sample transaction items for testing:
+- Various quantities
+- Different price ranges
+- Multiple categories
+
+Verification: Test data created successfully
+
+
+Task 6.2: Test Amount Calculations
+-----------------------------------
+Test cases:
+✅ Add item -> total updates
+✅ Edit item quantity -> total recalculates
+✅ Edit item price -> total recalculates
+✅ Delete item -> total decreases
+✅ Bulk add items -> total correct
+✅ Delete all items -> total = 0
+
+Verification: All calculations correct
+
+
+Task 6.3: Test UI Interactions
+-------------------------------
+Test cases:
+✅ Expand/collapse items list
+✅ Add item via dialog
+✅ Edit item inline
+✅ Delete item with confirmation
+✅ Bulk add from text
+✅ Mobile responsive layout
+
+Verification: All UI interactions work
+
+
+Task 6.4: Test Integration Points
+----------------------------------
+Test cases:
+✅ Receipt scan creates items
+✅ Export includes items
+✅ Budget considers item categories
+✅ Items appear in analytics
+
+Verification: All integrations work
+
+
+================================================================================
+IMPLEMENTATION SUMMARY
+================================================================================
+
+DATABASE CHANGES:
+✅ New TransactionItem model with relations
+✅ Migration script
+
+API ROUTES (7 new routes):
+✅ GET    /api/transactions/[id]/items
+✅ POST   /api/transactions/[id]/items
+✅ PUT    /api/transactions/[id]/items/[itemId]
+✅ DELETE /api/transactions/[id]/items/[itemId]
+✅ POST   /api/transactions/[id]/items/bulk
+✅ Updated GET /api/transactions (include items count)
+
+FRONTEND COMPONENTS (4 new):
+✅ TransactionItemsList (expandable list)
+✅ AddTransactionItemDialog (add item form)
+✅ EditTransactionItemDialog (edit item form)
+✅ QuickAddItems (bulk add from text)
+
+INTEGRATIONS:
+✅ Receipt scanner creates items
+✅ Excel export includes items
+✅ Budget calculations consider item categories
+
+FUTURE ENHANCEMENTS:
+- Item analytics dashboard
+- Shopping list generator
+- Price alert system
+- Barcode scanning
+- Smart item categorization
+
+================================================================================
+ESTIMATED DEVELOPMENT TIME
+================================================================================
+
+Phase 1 (Database): 1 hour
+Phase 2 (API Routes): 4 hours
+Phase 3 (Frontend UI): 6 hours
+Phase 4 (Integrations): 3 hours
+Phase 5 (Advanced Features): 8-12 hours (optional)
+Phase 6 (Testing): 2 hours
+
+TOTAL: ~16 hours for core feature
+TOTAL WITH ENHANCEMENTS: ~28 hours
+
+================================================================================
+BENEFITS OF THIS FEATURE
+================================================================================
+
+✅ Better expense tracking (item-level detail)
+✅ Price comparison over time
+✅ Shopping insights and analytics
+✅ Receipt itemization
+✅ Reusable shopping lists
+✅ Budget analysis per item
+✅ Identify spending patterns on specific products
+✅ Multi-currency support per item
+✅ Tax and discount tracking
+✅ Brand loyalty analysis
+
+================================================================================
+USER FLOW EXAMPLE
+================================================================================
+
+1. User creates transaction "Belanja Indomaret" - Rp 500.000
+2. Clicks "Add Items" or expands transaction
+3. Adds items one by one:
+   - Susu Ultra 1L, qty: 2, price: 15.000
+   - Roti Tawar, qty: 3, price: 12.000
+   - Minyak Goreng, qty: 1, price: 25.000
+   - etc.
+4. Or pastes receipt text and clicks "Parse & Add"
+5. Transaction total auto-updates to sum of items
+6. User can expand/collapse to see/hide items
+7. Items appear in analytics and exports
+8. User gets insights on most purchased items
+
+================================================================================
+END OF IMPLEMENTATION PLAN
+================================================================================

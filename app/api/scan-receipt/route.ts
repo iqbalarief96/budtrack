@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
             hasOpenAI: !!userSettings.openaiApiKey,
             hasGemini: !!userSettings.geminiApiKey,
             hasDefault: !!userSettings.apiKey,
+            hasGoogleVision: !!userSettings.googleVisionCredentials,
             provider: userSettings.provider
         });
 
@@ -95,7 +96,8 @@ export async function POST(request: NextRequest) {
             openaiApiKey: userSettings.openaiApiKey,
             geminiApiKey: userSettings.geminiApiKey,
             defaultApiKey: userSettings.apiKey,
-            defaultProvider: userSettings.provider
+            defaultProvider: userSettings.provider,
+            googleVisionCredentials: userSettings.googleVisionCredentials
         };
 
         console.log('[SCAN-RECEIPT] Processing receipt with model:', model || 'google/gemini-2.0-flash-exp:free');

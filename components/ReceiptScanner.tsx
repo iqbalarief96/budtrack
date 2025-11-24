@@ -12,16 +12,28 @@ interface ReceiptScannerProps {
 }
 
 const MODELS = [
-    { id: 'openai/gpt-4o', name: 'GPT-4o (Best Quality - butuh OpenAI key)', provider: 'openai' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (Butuh OpenAI API key + saldo)', provider: 'openai' },
-    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Gratis, bisa rate-limited)', provider: 'openrouter' },
+    { id: 'openai/gpt-4o', name: '✨ GPT-4o (Best Quality - Recommended)', provider: 'openai' },
+    { id: 'google-vision-ai', name: '🚀 Google Vision + DeepSeek (Cepat & Akurat!)', provider: 'hybrid' },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (Lebih murah)', provider: 'openai' },
+    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Gratis)', provider: 'openrouter' },
     { id: 'google/gemini-flash-1.5', name: 'Gemini 1.5 Flash (Butuh Gemini API key)', provider: 'google' },
+    { id: 'google-vision', name: '⚡ Google Cloud Vision (Tercepat tapi kurang akurat)', provider: 'google-vision' },
 ];
+
+const MODEL_DESCRIPTIONS: Record<string, string> = {
+    'openai/gpt-4o': 'AI vision terbaik! Sangat akurat untuk semua jenis struk. Recommended untuk hasil terbaik.',
+    'google-vision-ai': 'Hybrid: Google Vision (OCR cepat) + DeepSeek (parsing pintar). Best of both worlds! Butuh Google Vision credentials + DeepSeek API key.',
+    'openai/gpt-4o-mini': 'Versi lebih murah dari GPT-4o, masih sangat akurat.',
+    'google/gemini-2.0-flash-exp:free': 'Model gratis dari Google. Akurat dan cepat, bisa rate-limited saat ramai.',
+    'google/gemini-flash-1.5': 'Model Gemini yang cepat dan akurat. Butuh Gemini API key.',
+    'google-vision': 'OCR tercepat (1-2 detik) tapi parsing basic. Cocok untuk struk simple. Butuh setup credentials di Settings.',
+};
 
 export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
-    const [selectedModel, setSelectedModel] = useState(MODELS[0].id); // Default to GPT-4o
+    const [selectedModel, setSelectedModel] = useState(MODELS[0].id); // Default to GPT-4o (best quality)
+    const [showVisionWarning, setShowVisionWarning] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Compress image to fit under maxSize (in bytes)
@@ -370,6 +382,16 @@ export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
                         <p className="text-xs text-muted-foreground">
                             Pastikan API Key untuk model yang dipilih sudah diatur di Pengaturan.
                         </p>
+                        {MODEL_DESCRIPTIONS[selectedModel] && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                ℹ️ {MODEL_DESCRIPTIONS[selectedModel]}
+                            </p>
+                        )}
+                        {(selectedModel === 'google-vision' || selectedModel === 'google-vision-ai') && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded">
+                                ⚠️ Butuh Google Vision credentials + billing enabled. Jika belum setup, pakai GPT-4o atau Gemini.
+                            </p>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

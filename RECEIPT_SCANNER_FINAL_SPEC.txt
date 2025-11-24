@@ -1,0 +1,1064 @@
+================================================================================
+RECEIPT SCANNER INTEGRATION - FINAL SPECIFICATION
+================================================================================
+
+Based on requirements discussion, here are the finalized specs.
+
+DECISIONS MADE:
+✅ Preview First (safer - user confirms before save)
+✅ Edit Capability (user can edit items after scan)
+✅ Fully Replace (no backward compatibility modes)
+✅ Comprehensive Preview Dialog
+
+================================================================================
+PREVIEW DIALOG - DETAILED SPECIFICATION
+================================================================================
+
+DIALOG LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Review Scanned Receipt                                          [X]     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ ┌─────────────────────────────────────────────────────────────────────┐ │
+│ │ TRANSACTION SUMMARY                                                 │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ Store Name: Belanja Indomaret                                       │ │
+│ │ Date:       [19 Nov 2025 ▼]  ← DatePicker                          │ │
+│ │ Category:   [Belanja ▼]       ← Dropdown (default: Belanja)        │ │
+│ │ Wallet:     [Cash ▼]          ← Dropdown                            │ │
+│ │ Notes:      [________________]  ← Optional text input               │ │
+│ │                                                                     │ │
+│ │ TOTAL:      Rp 500.000        ← Auto-calculated from items         │ │
+│ └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│ ┌─────────────────────────────────────────────────────────────────────┐ │
+│ │ ITEMS (5)                                      [Select All] [X All] │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ ☑ Susu Ultra 1L                                                     │ │
+│ │   2x @ Rp 15.000                                    Rp 30.000  [✏️] │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ ☑ Roti Tawar                                                        │ │
+│ │   3x @ Rp 12.000                                    Rp 36.000  [✏️] │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ ☑ Minyak Goreng Tropical 1L                                         │ │
+│ │   1x @ Rp 25.000                                    Rp 25.000  [✏️] │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ ☑ Indomie Goreng                                                    │ │
+│ │   10x @ Rp 3.000                                    Rp 30.000  [✏️] │ │
+│ ├─────────────────────────────────────────────────────────────────────┤ │
+│ │ ☑ Gula Pasir 1kg                                                    │ │
+│ │   1x @ Rp 15.000                                    Rp 15.000  [✏️] │ │
+│ └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│ [🗑️ Delete Selected (0)]  [➕ Add Item]                                │
+│                                                                         │
+│                                        [Cancel] [✏️ Edit All] [✅ Save] │
+└─────────────────────────────────────────────────────────────────────────┘
+
+FEATURES BREAKDOWN:
+
+1. TRANSACTION SUMMARY SECTION
+   ✅ Store name (read-only, from AI)
+   ✅ Date picker (default: date from receipt, editable)
+   ✅ Category dropdown (default: "Belanja", can change)
+   ✅ Wallet dropdown (default: user's default wallet)
+   ✅ Notes textarea (optional)
+   ✅ Total amount (auto-calculated, read-only)
+
+2. ITEMS LIST SECTION
+   ✅ Checkbox per item (for bulk delete)
+   ✅ Item name, quantity, unit price, total price
+   ✅ Edit button per item (✏️ icon)
+   ✅ Select All / Deselect All buttons
+   ✅ Scrollable if many items
+
+3. BULK ACTIONS
+   ✅ Delete Selected button (shows count)
+   ✅ Add Item button (manual add)
+
+4. MAIN ACTIONS
+   ✅ Cancel - close dialog, discard
+   ✅ Edit All - expand all items for editing
+   ✅ Save - create transaction with items
+
+BEHAVIORS:
+
+- Date Change: All items inherit same date (1 receipt = 1 date)
+- Category Change: Applied to parent transaction only (items can have own categories)
+- Wallet Change: Applied to parent transaction
+- Delete Item: Total auto-updates
+- Edit Item: Total auto-updates
+- Add Item: Total auto-updates
+- Checkbox: Enable/disable Delete Selected button
+
+================================================================================
+COMPONENT IMPLEMENTATION - ReceiptScanPreview.tsx
+================================================================================
+
+File: components/transactions/ReceiptScanPreview.tsx
+
+```typescript
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { CalendarIcon, Edit, Plus, Trash2, Check, X } from 'lucide-react';
+import { format } from 'date-fns';
+import EditItemDialog from './EditItemDialog';
+import AddItemDialog from './AddItemDialog';
+
+interface ReceiptItem {
+  id?: string; // Optional for new items
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  notes?: string;
+  category?: string;
+}
+
+interface ReceiptData {
+  transaction: {
+    store_name: string;
+    date: string;
+    total_amount: number;
+    category: string;
+    description: string;
+  };
+  items: ReceiptItem[];
+}
+
+interface ReceiptScanPreviewProps {
+  open: boolean;
+  onClose: () => void;
+  receiptData: ReceiptData | null;
+  wallets: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string }>;
+  onSave: (data: {
+    walletId: string;
+    categoryId: string;
+    description: string;
+    amount: number;
+    date: Date;
+    notes?: string;
+    items: ReceiptItem[];
+  }) => Promise<void>;
+}
+
+export default function ReceiptScanPreview({
+  open,
+  onClose,
+  receiptData,
+  wallets,
+  categories,
+  onSave
+}: ReceiptScanPreviewProps) {
+  // State
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedWalletId, setSelectedWalletId] = useState<string>('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+  const [items, setItems] = useState<ReceiptItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize data when dialog opens
+  useEffect(() => {
+    if (receiptData) {
+      setSelectedDate(new Date(receiptData.transaction.date));
+      setItems(receiptData.items);
+      setSelectedItems(new Set());
+      setNotes('');
+
+      // Set default wallet (first one or default)
+      const defaultWallet = wallets.find(w => w.name.includes('Default')) || wallets[0];
+      setSelectedWalletId(defaultWallet?.id || '');
+
+      // Set default category ("Belanja" or first one)
+      const belanjaCategory = categories.find(c => c.name === 'Belanja');
+      setSelectedCategoryId(belanjaCategory?.id || categories[0]?.id || '');
+    }
+  }, [receiptData, wallets, categories]);
+
+  // Calculate total from items
+  const totalAmount = items.reduce((sum, item) => sum + item.total_price, 0);
+
+  // Handle checkbox toggle
+  const handleToggleItem = (index: number) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  // Handle select all
+  const handleSelectAll = () => {
+    setSelectedItems(new Set(items.map((_, i) => i)));
+  };
+
+  // Handle deselect all
+  const handleDeselectAll = () => {
+    setSelectedItems(new Set());
+  };
+
+  // Handle delete selected
+  const handleDeleteSelected = () => {
+    const newItems = items.filter((_, i) => !selectedItems.has(i));
+    setItems(newItems);
+    setSelectedItems(new Set());
+  };
+
+  // Handle edit item
+  const handleEditItem = (index: number, updatedItem: ReceiptItem) => {
+    const newItems = [...items];
+    newItems[index] = updatedItem;
+    setItems(newItems);
+    setEditingItemIndex(null);
+  };
+
+  // Handle add item
+  const handleAddItem = (newItem: ReceiptItem) => {
+    setItems([...items, newItem]);
+    setShowAddItem(false);
+  };
+
+  // Handle save
+  const handleSave = async () => {
+    if (items.length === 0) {
+      alert('Please add at least one item');
+      return;
+    }
+
+    if (!selectedWalletId || !selectedCategoryId) {
+      alert('Please select wallet and category');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await onSave({
+        walletId: selectedWalletId,
+        categoryId: selectedCategoryId,
+        description: receiptData?.transaction.description || 'Belanja',
+        amount: totalAmount,
+        date: selectedDate,
+        notes: notes || undefined,
+        items
+      });
+
+      onClose();
+    } catch (error) {
+      console.error('Error saving receipt:', error);
+      alert('Failed to save receipt');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!receiptData) return null;
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Review Scanned Receipt</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Transaction Summary */}
+            <div className="border rounded-lg p-4 space-y-4 bg-muted/50">
+              <h3 className="font-semibold text-lg">Transaction Summary</h3>
+
+              <div>
+                <Label>Store Name</Label>
+                <Input
+                  value={receiptData.transaction.store_name}
+                  disabled
+                  className="bg-background"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {format(selectedDate, 'PPP')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => date && setSelectedDate(date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div>
+                  <Label>Category</Label>
+                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label>Wallet</Label>
+                <Select value={selectedWalletId} onValueChange={setSelectedWalletId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {wallets.map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.id}>
+                        {wallet.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Notes (Optional)</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Add any notes about this transaction..."
+                  rows={2}
+                />
+              </div>
+
+              <div className="pt-2 border-t">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold">Total:</span>
+                  <span className="text-2xl font-bold text-primary">
+                    {formatCurrency(totalAmount)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Items List */}
+            <div className="border rounded-lg p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg">Items ({items.length})</h3>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSelectAll}
+                    disabled={items.length === 0}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDeselectAll}
+                    disabled={selectedItems.size === 0}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {items.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:bg-muted/50 transition-colors"
+                  >
+                    <Checkbox
+                      checked={selectedItems.has(index)}
+                      onCheckedChange={() => handleToggleItem(index)}
+                      className="mt-1"
+                    />
+
+                    <div className="flex-1">
+                      <p className="font-medium">{item.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {item.quantity}x @ {formatCurrency(item.unit_price)}
+                      </p>
+                      {item.notes && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.notes}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">
+                        {formatCurrency(item.total_price)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingItemIndex(index)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteSelected}
+                  disabled={selectedItems.size === 0}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Selected ({selectedItems.size})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddItem(true)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Item
+                </Button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={onClose} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving || items.length === 0}>
+                {isSaving ? (
+                  <>Saving...</>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Save Transaction
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Item Dialog */}
+      {editingItemIndex !== null && (
+        <EditItemDialog
+          open={true}
+          onClose={() => setEditingItemIndex(null)}
+          item={items[editingItemIndex]}
+          onSave={(updatedItem) => handleEditItem(editingItemIndex, updatedItem)}
+        />
+      )}
+
+      {/* Add Item Dialog */}
+      <AddItemDialog
+        open={showAddItem}
+        onClose={() => setShowAddItem(false)}
+        onSave={handleAddItem}
+      />
+    </>
+  );
+}
+```
+
+Verification: Component compiles and renders correctly
+
+================================================================================
+SUPPORTING COMPONENTS
+================================================================================
+
+Task: Create EditItemDialog Component
+--------------------------------------
+File: components/transactions/EditItemDialog.tsx
+
+```typescript
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+
+interface ReceiptItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  notes?: string;
+  category?: string;
+}
+
+interface EditItemDialogProps {
+  open: boolean;
+  onClose: () => void;
+  item: ReceiptItem;
+  onSave: (item: ReceiptItem) => void;
+}
+
+export default function EditItemDialog({
+  open,
+  onClose,
+  item,
+  onSave
+}: EditItemDialogProps) {
+  const [formData, setFormData] = useState<ReceiptItem>(item);
+
+  useEffect(() => {
+    setFormData(item);
+  }, [item]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Recalculate total price
+    const totalPrice = formData.quantity * formData.unit_price;
+
+    onSave({
+      ...formData,
+      total_price: totalPrice
+    });
+  };
+
+  const calculatedTotal = formData.quantity * formData.unit_price;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Item</DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="name">Item Name</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., Susu Ultra 1L"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.quantity}
+                onChange={(e) =>
+                  setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="unit_price">Unit Price</Label>
+              <Input
+                id="unit_price"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.unit_price}
+                onChange={(e) =>
+                  setFormData({ ...formData, unit_price: parseFloat(e.target.value) || 0 })
+                }
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="notes">Notes (Optional)</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes || ''}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="Any additional notes..."
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-between items-center pt-2 border-t">
+            <span className="text-sm font-medium">Total:</span>
+            <span className="text-lg font-bold">
+              Rp {calculatedTotal.toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">Save Changes</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+Task: Create AddItemDialog Component
+-------------------------------------
+File: components/transactions/AddItemDialog.tsx
+
+```typescript
+'use client';
+
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+
+interface ReceiptItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  notes?: string;
+  category?: string;
+}
+
+interface AddItemDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSave: (item: ReceiptItem) => void;
+}
+
+export default function AddItemDialog({
+  open,
+  onClose,
+  onSave
+}: AddItemDialogProps) {
+  const [formData, setFormData] = useState<ReceiptItem>({
+    name: '',
+    quantity: 1,
+    unit_price: 0,
+    total_price: 0,
+    notes: ''
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const totalPrice = formData.quantity * formData.unit_price;
+
+    onSave({
+      ...formData,
+      total_price: totalPrice
+    });
+
+    // Reset form
+    setFormData({
+      name: '',
+      quantity: 1,
+      unit_price: 0,
+      total_price: 0,
+      notes: ''
+    });
+  };
+
+  const calculatedTotal = formData.quantity * formData.unit_price;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Item</DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="name">Item Name</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., Susu Ultra 1L"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.quantity}
+                onChange={(e) =>
+                  setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="unit_price">Unit Price</Label>
+              <Input
+                id="unit_price"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.unit_price}
+                onChange={(e) =>
+                  setFormData({ ...formData, unit_price: parseFloat(e.target.value) || 0 })
+                }
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="notes">Notes (Optional)</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes || ''}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="Any additional notes..."
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-between items-center pt-2 border-t">
+            <span className="text-sm font-medium">Total:</span>
+            <span className="text-lg font-bold">
+              Rp {calculatedTotal.toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">Add Item</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+================================================================================
+USAGE IN RECEIPT SCANNER
+================================================================================
+
+File: components/ReceiptScanner.tsx
+
+Update to use new preview dialog:
+
+```typescript
+import ReceiptScanPreview from './transactions/ReceiptScanPreview';
+
+export function ReceiptScanner({ onScanComplete }: ReceiptScannerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [wallets, setWallets] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  // Fetch wallets and categories on mount
+  useEffect(() => {
+    async function fetchData() {
+      const [walletsRes, categoriesRes] = await Promise.all([
+        fetch('/api/wallets'),
+        fetch('/api/categories')
+      ]);
+
+      const walletsData = await walletsRes.json();
+      const categoriesData = await categoriesRes.json();
+
+      setWallets(walletsData);
+      setCategories(categoriesData.filter(c => c.type === 'EXPENSE'));
+    }
+
+    fetchData();
+  }, []);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // ... existing scan logic ...
+
+    const response = await fetch('/api/scan-receipt', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Store receipt data and show preview
+      setReceiptData(data.receiptData);
+      setShowPreview(true);
+      setIsOpen(false);
+      toast.success('Receipt scanned! Please review.');
+    }
+  };
+
+  const handleSaveReceipt = async (data) => {
+    try {
+      // Create transaction via API
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) throw new Error('Failed to save');
+
+      const transaction = await response.json();
+
+      toast.success('Transaction saved successfully!');
+      onScanComplete(transaction);
+      setShowPreview(false);
+    } catch (error) {
+      console.error('Save error:', error);
+      throw error;
+    }
+  };
+
+  return (
+    <>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        {/* Existing scanner UI */}
+      </Dialog>
+
+      {/* NEW: Preview Dialog */}
+      <ReceiptScanPreview
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        receiptData={receiptData}
+        wallets={wallets}
+        categories={categories}
+        onSave={handleSaveReceipt}
+      />
+    </>
+  );
+}
+```
+
+================================================================================
+API ROUTE UPDATES
+================================================================================
+
+File: app/api/scan-receipt/route.ts
+
+Update to return receiptData instead of creating transaction:
+
+```typescript
+export async function POST(request: NextRequest) {
+  try {
+    // ... existing authentication and image processing ...
+
+    // Process receipt with AI
+    const receiptData = await processReceipt(
+      imageBase64,
+      model || 'google/gemini-2.0-flash-exp:free',
+      keys
+    );
+
+    // Don't create transaction here anymore!
+    // Just return the data for preview
+
+    return NextResponse.json({
+      success: true,
+      receiptData
+    });
+
+  } catch (error) {
+    console.error('[SCAN-RECEIPT] Error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to scan receipt' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+File: app/api/transactions/route.ts (UPDATE POST)
+
+Update to accept items array:
+
+```typescript
+export async function POST(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const {
+      walletId,
+      categoryId,
+      description,
+      amount,
+      date,
+      type,
+      notes,
+      items // NEW: Accept items array
+    } = body;
+
+    // Validate required fields
+    if (!walletId || !amount || !date) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Create transaction with items (if provided)
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId: session.user.id,
+        walletId,
+        categoryId,
+        description,
+        amount,
+        date: new Date(date),
+        type: type || 'EXPENSE',
+        // Create items if provided
+        ...(items && items.length > 0 && {
+          items: {
+            create: items.map((item: any, index: number) => ({
+              name: item.name,
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              totalPrice: item.total_price,
+              notes: item.notes,
+              category: item.category,
+              order: index
+            }))
+          }
+        })
+      },
+      include: {
+        wallet: true,
+        category: true,
+        items: true
+      }
+    });
+
+    return NextResponse.json(transaction, { status: 201 });
+  } catch (error) {
+    console.error('Error creating transaction:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+================================================================================
+FINAL CHECKLIST
+================================================================================
+
+COMPONENTS:
+☐ ReceiptScanPreview.tsx (main preview dialog)
+☐ EditItemDialog.tsx (edit single item)
+☐ AddItemDialog.tsx (add new item manually)
+☐ Update ReceiptScanner.tsx (integrate preview)
+
+API ROUTES:
+☐ Update /api/scan-receipt (return data, don't create transaction)
+☐ Update /api/transactions POST (accept items array)
+
+FEATURES:
+☐ Transaction summary editing (date, wallet, category, notes)
+☐ Items list with checkboxes
+☐ Select all / deselect all
+☐ Delete selected items
+☐ Edit individual item
+☐ Add new item manually
+☐ Auto-calculate total from items
+☐ Save creates transaction + items atomically
+
+VALIDATION:
+☐ At least 1 item required
+☐ Wallet and category required
+☐ Total auto-updates when items change
+☐ Date applies to all items
+
+================================================================================
+ESTIMATED TIME
+================================================================================
+
+Components Implementation: 6 hours
+- ReceiptScanPreview: 3 hours
+- EditItemDialog: 1 hour
+- AddItemDialog: 1 hour
+- Integration: 1 hour
+
+API Updates: 2 hours
+- Update scan-receipt route: 1 hour
+- Update transactions route: 1 hour
+
+Testing: 2 hours
+- Component testing
+- Integration testing
+- Edge cases
+
+TOTAL: ~10 hours
+
+================================================================================
+END OF SPECIFICATION
+================================================================================
+
+This spec is ready for implementation based on your requirements:
+✅ Preview first (safer)
+✅ Full edit capability
+✅ Fully replace (no backward compatibility)
+✅ Comprehensive preview dialog with all requested features

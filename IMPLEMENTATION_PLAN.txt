@@ -1,0 +1,2704 @@
+================================================================================
+BUDTRACK PROJECT - COMPLETE RECREATION PLAN
+================================================================================
+
+Berikut adalah rencana implementasi lengkap untuk merecreate project BudTrack
+dari nol. Project ini adalah aplikasi financial management yang komprehensif
+dengan fitur AI, collaborative budgeting, dan wedding planning module.
+
+================================================================================
+TECHNOLOGY STACK OVERVIEW
+================================================================================
+
+FRONTEND:
+- Next.js 14.2.0 with App Router (React 18)
+- TypeScript 5
+- Tailwind CSS 3.3.0 + shadcn/ui components
+- Radix UI for accessible components
+- Recharts & Chart.js for data visualization
+
+BACKEND:
+- Next.js API Routes (serverless)
+- Prisma 5.22.0 ORM
+- SQLite database (file-based: dev.db)
+
+AUTHENTICATION & SECURITY:
+- NextAuth.js 4.24.5 with JWT sessions
+- Bcryptjs for password hashing
+- Credentials provider (email/password)
+
+AI & EXTERNAL SERVICES:
+- OpenAI API (GPT models)
+- OpenRouter API (free and premium models)
+- DeepSeek API
+- Google Gemini API
+- Brevo API for email notifications
+
+DATA PROCESSING:
+- XLSX for Excel export
+- jsPDF for PDF generation
+- CSV parsing for imports
+- Zod for schema validation
+
+================================================================================
+PHASE 1: PROJECT SETUP & FOUNDATION
+================================================================================
+
+Task 1.1: Initialize Next.js Project
+------------------------------------
+File: Root directory
+
+Commands:
+npx create-next-app@14.2.0 budtrack --typescript --tailwind --app --src-dir=false
+cd budtrack
+
+Verification: Run `npm run dev` and confirm Next.js development server starts
+on `localhost:3000`
+
+
+Task 1.2: Install Core Dependencies
+------------------------------------
+File: package.json
+
+Commands:
+# Framework & Core
+npm install next@14.2.0 react@^18 react-dom@^18 typescript@^5
+
+# Tailwind & UI
+npm install tailwindcss@^3.3.0 @tailwindcss/typography autoprefixer postcss
+npm install class-variance-authority clsx tailwind-merge tailwindcss-animate
+
+# Radix UI Components (11 packages)
+npm install @radix-ui/react-alert-dialog @radix-ui/react-checkbox @radix-ui/react-dialog
+npm install @radix-ui/react-dropdown-menu @radix-ui/react-label @radix-ui/react-progress
+npm install @radix-ui/react-radio-group @radix-ui/react-select @radix-ui/react-separator
+npm install @radix-ui/react-slider @radix-ui/react-slot @radix-ui/react-switch @radix-ui/react-tabs
+
+Verification: Check `package.json` contains all dependencies
+
+
+Task 1.3: Install Database & Auth Dependencies
+-----------------------------------------------
+File: package.json
+
+Commands:
+# Database
+npm install @prisma/client@^5.22.0 prisma@^5.22.0
+
+# Authentication
+npm install next-auth@^4.24.5 @auth/prisma-adapter bcryptjs
+npm install --save-dev @types/bcryptjs @types/bcrypt bcrypt@^5.1.1
+
+Verification: Run `npx prisma --version` and confirm Prisma CLI is available
+
+
+Task 1.4: Install Data Processing & Visualization
+--------------------------------------------------
+File: package.json
+
+Commands:
+# Charts
+npm install recharts@^2.15.3 react-chartjs-2 chart.js
+
+# Data Processing
+npm install xlsx csv-parse iconv-lite zod
+npm install jspdf jspdf-autotable pdfkit
+npm install --save-dev @types/pdfkit
+
+# Icons & UI
+npm install lucide-react@^0.487.0 react-icons @heroicons/react
+
+Verification: Check all packages install without errors
+
+
+Task 1.5: Install AI & Service Dependencies
+--------------------------------------------
+File: package.json
+
+Commands:
+# AI Services
+npm install openai@^4.26.0
+
+# Rate Limiting & Cache
+npm install @vercel/kv @upstash/ratelimit
+
+# Email
+npm install nodemailer
+npm install --save-dev @types/nodemailer
+
+# Other
+npm install nanoid uuid next-themes
+npm install --save-dev @types/uuid
+
+Verification: Run `npm list` to verify all dependencies
+
+
+Task 1.6: Install Additional UI & Utilities
+--------------------------------------------
+File: package.json
+
+Commands:
+# Drag & Drop
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+
+# Forms & Input
+npm install react-datepicker
+npm install --save-dev @types/react-datepicker
+
+# Notifications
+npm install sonner react-hot-toast
+
+# Markdown
+npm install react-markdown rehype-raw remark-gfm
+
+# Date Utilities
+npm install datejs
+
+Verification: Run `npm install` to ensure clean installation
+
+
+================================================================================
+PHASE 2: DATABASE SCHEMA & CONFIGURATION
+================================================================================
+
+Task 2.1: Create Prisma Schema - User & Auth Models
+----------------------------------------------------
+File: prisma/schema.prisma
+
+Content:
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  riskProfile   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations (add these in subsequent tasks)
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+Verification: Run `npx prisma format` to validate syntax
+
+
+Task 2.2: Add Core Financial Models to Prisma Schema
+-----------------------------------------------------
+File: prisma/schema.prisma (append)
+
+Content:
+model Wallet {
+  id           String    @id @default(cuid())
+  name         String
+  balance      Float     @default(0)
+  currencyCode String    @default("IDR")
+  icon         String?
+  color        String?
+  isDefault    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  transactions          Transaction[]
+  budgets               Budget[]
+  investments           Investment[]
+  recurringTransactions RecurringTransaction[]
+  emergencyFund         WalletEmergencyFund?
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  type      String
+  icon      String?
+  color     String?
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  userId    String
+  parentId  String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  transactions      Transaction[]
+  budgets           Budget[]
+  categoryRules     CategoryRule[]
+  goalCategories    GoalCategory[]
+  groupBudgets      GroupBudget[]
+  groupTransactions GroupTransaction[]
+
+  @@unique([name, userId])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  amount      Float
+  description String?
+  date        DateTime
+  type        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  userId      String
+  walletId    String
+  categoryId  String?
+  goalId      String?
+
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category         Category?                     @relation(fields: [categoryId], references: [id])
+  goal             Goal?                         @relation(fields: [goalId], references: [id])
+  goalActivities   GoalActivity[]
+  recurringHistory RecurringTransactionHistory[]
+}
+
+Verification: Run `npx prisma format` to validate
+
+
+Task 2.3: Add Budget & Alert Models
+------------------------------------
+File: prisma/schema.prisma (append)
+
+Content:
+model Budget {
+  id                     String    @id @default(cuid())
+  amount                 Float
+  spent                  Float     @default(0)
+  startDate              DateTime
+  endDate                DateTime
+  periodType             String    @default("MONTHLY")
+  isRecurring            Boolean   @default(false)
+  lastResetDate          DateTime?
+  notificationThresholds String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  userId                 String
+  walletId               String
+  categoryId             String
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet   Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  category Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  history  BudgetHistory[]
+  alerts   BudgetAlert[]
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([categoryId])
+  @@index([endDate])
+}
+
+model BudgetHistory {
+  id          String   @id @default(cuid())
+  budgetId    String
+  amount      Float
+  spent       Float
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId])
+  @@index([periodStart])
+}
+
+model BudgetAlert {
+  id           String   @id @default(cuid())
+  budgetId     String
+  userId       String
+  alertType    String
+  threshold    Float
+  currentSpent Float
+  message      String
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId])
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+Verification: Run `npx prisma format`
+
+
+Task 2.4: Add Goals & Investment Models
+----------------------------------------
+File: prisma/schema.prisma (append)
+
+Content:
+model Goal {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  target      Float
+  current     Float     @default(0)
+  deadline    DateTime?
+  category    String?
+  description String?
+  icon        String?
+  color       String?
+  status      String    @default("ONGOING")
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities     GoalActivity[]
+  goalCategories GoalCategory[]
+  transactions   Transaction[]
+
+  @@index([userId])
+}
+
+model GoalActivity {
+  id            String       @id @default(cuid())
+  goalId        String
+  amount        Float
+  date          DateTime     @default(now())
+  description   String?
+  createdAt     DateTime     @default(now())
+  userId        String
+  transactionId String?
+
+  goal        Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([transactionId])
+  @@index([userId])
+}
+
+model GoalCategory {
+  id         String   @id @default(cuid())
+  goalId     String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  goal     Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, categoryId])
+  @@index([goalId])
+  @@index([categoryId])
+}
+
+model Investment {
+  id                   String   @id @default(cuid())
+  name                 String
+  type                 String
+  tickerSymbol         String?
+  quantity             Float
+  averagePurchasePrice Float
+  purchaseDate         DateTime
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  userId               String
+  walletId             String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([walletId])
+}
+
+Verification: Run `npx prisma format`
+
+
+Task 2.5: Add Group & Collaboration Models
+-------------------------------------------
+File: prisma/schema.prisma (append)
+
+[See full schema in previous Prisma tasks for Group, UserGroup, GroupWallet,
+GroupTransaction, ExpenseSplit, GroupBudget, GroupInvite, UserGroupSettings models]
+
+Verification: Run `npx prisma format`
+
+
+Task 2.6: Add Recurring Transactions & Emergency Fund Models
+-------------------------------------------------------------
+File: prisma/schema.prisma (append)
+
+[See full schema for RecurringTransaction, RecurringTransactionHistory,
+EmergencyFund, WalletEmergencyFund models]
+
+Verification: Run `npx prisma format`
+
+
+Task 2.7: Add AI & Settings Models
+-----------------------------------
+File: prisma/schema.prisma (append)
+
+[See full schema for UserSettings, FinancialAdvice, CategoryRule, ChatMessage,
+Alert, DashboardView models]
+
+Verification: Run `npx prisma format`
+
+
+Task 2.8-2.9: Add Wedding Planning Models
+------------------------------------------
+File: prisma/schema.prisma (append)
+
+[See full schema for Wedding, WeddingBudgetCategory, WeddingBudgetItem,
+WeddingGuest, Venue, Vendor, Document, Rundown, Souvenir, Playlist, Moodboard,
+Gift models]
+
+Verification: Run `npx prisma format`
+
+
+Task 2.10: Update User Model with All Relations
+------------------------------------------------
+File: prisma/schema.prisma (update User model)
+
+Add all relation fields to User model:
+- accounts, sessions (auth)
+- wallets, transactions, categories, budgets, etc. (financial)
+- ownedGroups, groupMemberships, etc. (groups)
+- settings, financialAdvice, categoryRules, etc. (AI)
+- weddings (wedding planning)
+
+Verification: Run `npx prisma format`
+
+
+Task 2.11: Create Environment File
+-----------------------------------
+File: .env
+
+Content:
+# Database
+DATABASE_URL="file:./dev.db"
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-super-secret-key-change-this-in-production
+
+# Cron API Key (for budget reset)
+CRON_API_KEY=your-cron-api-key
+
+# Email (Brevo)
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_USER=your-brevo-username
+BREVO_SMTP_PASSWORD=your-brevo-password
+BREVO_API_KEY=your-brevo-api-key
+FROM_EMAIL=noreply@budtrack.app
+
+# AI Services (Optional - users can add their own)
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+
+# Rate Limiting (if using Upstash)
+KV_REST_API_URL=
+KV_REST_API_TOKEN=
+
+Verification: Ensure file is created and not committed to git (add to .gitignore)
+
+
+Task 2.12: Initialize Database
+-------------------------------
+File: Terminal commands
+
+Commands:
+npx prisma migrate dev --name init
+npx prisma generate
+
+Verification: Check `prisma/dev.db` file is created
+
+
+Task 2.13: Create Prisma Client Singleton
+------------------------------------------
+File: lib/prisma.ts
+
+Content:
+import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  })
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+
+export default prisma
+
+Verification: No TypeScript errors
+
+
+================================================================================
+PHASE 3: AUTHENTICATION SETUP
+================================================================================
+
+Task 3.1: Configure NextAuth
+-----------------------------
+File: lib/auth.ts
+
+[See full NextAuth configuration with Credentials provider, JWT strategy,
+session callbacks, etc.]
+
+Verification: No TypeScript errors
+
+
+Task 3.2: Create NextAuth API Route
+------------------------------------
+File: app/api/auth/[...nextauth]/route.ts
+
+Content:
+import NextAuth from 'next-auth'
+import { authOptions } from '@/lib/auth'
+
+const handler = NextAuth(authOptions)
+
+export { handler as GET, handler as POST }
+
+Verification: No TypeScript errors
+
+
+Task 3.3: Create Registration API Route
+----------------------------------------
+File: app/api/auth/register/route.ts
+
+[See full registration route with password hashing, user creation, error handling]
+
+Verification: No TypeScript errors
+
+
+Task 3.4: Create Sign In Page
+------------------------------
+File: app/auth/signin/page.tsx
+
+[See full sign in page with form, error handling, NextAuth integration]
+
+Verification: Page renders without errors
+
+
+Task 3.5: Create Sign Up Page
+------------------------------
+File: app/auth/signup/page.tsx
+
+[See full sign up page with form, validation, registration API call]
+
+Verification: Page renders without errors
+
+
+================================================================================
+PHASE 4: UI COMPONENTS SETUP
+================================================================================
+
+Task 4.1: Setup Tailwind Configuration
+---------------------------------------
+File: tailwind.config.ts
+
+[See full Tailwind config with theme variables, dark mode, custom colors, etc.]
+
+Verification: No TypeScript errors
+
+
+Task 4.2: Create Global CSS with Theme Variables
+-------------------------------------------------
+File: app/globals.css
+
+[See full CSS with theme variables for light/dark mode]
+
+Verification: File created successfully
+
+
+Task 4.3: Create Utility Functions
+-----------------------------------
+File: lib/utils.ts
+
+Content:
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export function formatCurrency(amount: number, currencyCode: string = 'IDR'): string {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: currencyCode,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function formatDate(date: Date | string): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date(date))
+}
+
+export function formatDateTime(date: Date | string): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(date))
+}
+
+Verification: No TypeScript errors
+
+
+Task 4.4: Install shadcn/ui CLI and Initialize
+-----------------------------------------------
+File: Terminal
+
+Commands:
+npx shadcn-ui@latest init
+
+Choose: TypeScript, style: Default, yes to CSS variables,
+Tailwind config location: tailwind.config.ts
+
+Verification: `components.json` file is created
+
+
+Task 4.5: Add Essential UI Components
+--------------------------------------
+File: Terminal
+
+Commands:
+npx shadcn-ui@latest add button
+npx shadcn-ui@latest add input
+npx shadcn-ui@latest add label
+npx shadcn-ui@latest add card
+npx shadcn-ui@latest add dialog
+npx shadcn-ui@latest add dropdown-menu
+npx shadcn-ui@latest add select
+npx shadcn-ui@latest add tabs
+npx shadcn-ui@latest add alert
+npx shadcn-ui@latest add progress
+npx shadcn-ui@latest add checkbox
+npx shadcn-ui@latest add radio-group
+
+Verification: All components created in `components/ui/`
+
+
+================================================================================
+PHASE 5: CORE API ROUTES - WALLETS
+================================================================================
+
+Task 5.1: Create GET Wallets API Route
+---------------------------------------
+File: app/api/wallets/route.ts
+
+Function: Fetch all user wallets with calculated balances
+- Get session and userId
+- Query wallets with transaction aggregations
+- Calculate actual balance from transactions
+- Return wallets array with balance info
+
+Verification: API returns user's wallets
+
+
+Task 5.2: Create POST Wallet API Route
+---------------------------------------
+File: app/api/wallets/route.ts (POST method)
+
+Function: Create new wallet
+- Validate wallet data (name, currencyCode, etc.)
+- Create wallet in database
+- Return created wallet
+
+Verification: New wallet created successfully
+
+
+Task 5.3: Create PUT Wallet API Route
+--------------------------------------
+File: app/api/wallets/[id]/route.ts
+
+Function: Update existing wallet
+- Verify wallet belongs to user
+- Update wallet fields
+- Return updated wallet
+
+Verification: Wallet updates successfully
+
+
+Task 5.4: Create DELETE Wallet API Route
+-----------------------------------------
+File: app/api/wallets/[id]/route.ts (DELETE method)
+
+Function: Delete wallet
+- Verify wallet belongs to user
+- Check if wallet has transactions (prevent deletion if has data)
+- Delete wallet
+- Return success message
+
+Verification: Wallet deletes successfully
+
+
+================================================================================
+PHASE 6: CORE API ROUTES - TRANSACTIONS
+================================================================================
+
+Task 6.1: Create GET Transactions API Route
+--------------------------------------------
+File: app/api/transactions/route.ts
+
+Function: Fetch user transactions with filters
+- Parse query params (walletId, categoryId, startDate, endDate, type)
+- Query transactions with filters
+- Include wallet, category, goal relations
+- Sort by date descending
+- Return transactions array
+
+Verification: API returns filtered transactions
+
+
+Task 6.2: Create POST Transaction API Route
+--------------------------------------------
+File: app/api/transactions/route.ts (POST method)
+
+Function: Create new transaction
+- Validate transaction data (amount, date, type, walletId)
+- Create transaction in database
+- Update wallet balance (add for INCOME, subtract for EXPENSE)
+- Check budget alerts (if categoryId provided)
+- Auto-link to goal if applicable
+- Return created transaction
+
+Verification: Transaction created and wallet balance updated
+
+
+Task 6.3: Create PUT Transaction API Route
+-------------------------------------------
+File: app/api/transactions/[id]/route.ts
+
+Function: Update existing transaction
+- Verify transaction belongs to user
+- Calculate balance difference
+- Update transaction
+- Adjust wallet balance
+- Recalculate budget spending
+- Return updated transaction
+
+Verification: Transaction updates and balances recalculated
+
+
+Task 6.4: Create DELETE Transaction API Route
+----------------------------------------------
+File: app/api/transactions/[id]/route.ts (DELETE method)
+
+Function: Delete transaction
+- Verify transaction belongs to user
+- Reverse transaction from wallet balance
+- Delete transaction
+- Recalculate budget spending
+- Return success message
+
+Verification: Transaction deleted and balance restored
+
+
+Task 6.5: Create Auto-Categorize Transaction API Route
+-------------------------------------------------------
+File: app/api/transactions/auto-categorize/route.ts
+
+Function: AI-powered transaction categorization
+- Get transaction description
+- Check category rules (regex patterns)
+- If no match, use AI (OpenAI/Gemini)
+- Return suggested category
+
+Verification: Returns appropriate category suggestion
+
+
+Task 6.6: Create Bulk Transaction Operations API Route
+-------------------------------------------------------
+File: app/api/transactions/bulk/route.ts
+
+Function: Bulk update/delete transactions
+- Accept array of transaction IDs and operation
+- Validate all transactions belong to user
+- Perform bulk operation
+- Recalculate wallet balances
+- Return success message
+
+Verification: Bulk operations complete successfully
+
+
+Task 6.7: Create Transaction Export API Route
+----------------------------------------------
+File: app/api/transactions/export/route.ts
+
+Function: Export transactions to Excel/PDF
+- Parse export format (xlsx, pdf)
+- Fetch transactions with filters
+- Generate file using xlsx or jspdf
+- Return file download
+
+Verification: File downloads with transaction data
+
+
+Task 6.8: Create CSV Import API Route
+--------------------------------------
+File: app/api/transactions/import/route.ts
+
+Function: Import transactions from CSV
+- Parse CSV file
+- Validate each row
+- Create transactions in bulk
+- Update wallet balances
+- Return import summary (success/failed)
+
+Verification: Transactions imported from CSV
+
+
+================================================================================
+PHASE 7: CORE API ROUTES - CATEGORIES
+================================================================================
+
+Task 7.1: Create GET Categories API Route
+------------------------------------------
+File: app/api/categories/route.ts
+
+Function: Fetch all user categories
+- Get session and userId
+- Query categories (including default system categories)
+- Support parent-child hierarchy
+- Return categories array
+
+Verification: API returns user's categories
+
+
+Task 7.2: Create POST Category API Route
+-----------------------------------------
+File: app/api/categories/route.ts (POST method)
+
+Function: Create new category
+- Validate category data (name, type, icon, color)
+- Check for duplicate names
+- Create category in database
+- Return created category
+
+Verification: New category created
+
+
+Task 7.3: Create PUT Category API Route
+----------------------------------------
+File: app/api/categories/[id]/route.ts
+
+Function: Update existing category
+- Verify category belongs to user
+- Update category fields
+- Return updated category
+
+Verification: Category updates successfully
+
+
+Task 7.4: Create DELETE Category API Route
+-------------------------------------------
+File: app/api/categories/[id]/route.ts (DELETE method)
+
+Function: Delete category
+- Verify category belongs to user
+- Check if category is used in transactions/budgets
+- Option to reassign or orphan transactions
+- Delete category
+- Return success message
+
+Verification: Category deletes with proper handling
+
+
+Task 7.5: Create Category Merge API Route
+------------------------------------------
+File: app/api/categories/merge/route.ts
+
+Function: Merge two categories
+- Accept source and target category IDs
+- Update all transactions using source to use target
+- Delete source category
+- Return success message
+
+Verification: Categories merged successfully
+
+
+Task 7.6: Create Category Inference API Route
+----------------------------------------------
+File: app/api/categories/infer/route.ts
+
+Function: AI-powered category suggestion
+- Accept transaction description
+- Use AI to analyze and suggest category
+- Check against user's existing categories
+- Return category suggestion with confidence score
+
+Verification: Returns intelligent category suggestion
+
+
+Task 7.7: Create Category Rules API Routes
+-------------------------------------------
+File: app/api/category-rules/route.ts
+
+Functions:
+- GET: List all category rules
+- POST: Create new rule (pattern, categoryId)
+- PUT: Update rule
+- DELETE: Delete rule
+
+Verification: Rules CRUD operations work
+
+
+================================================================================
+PHASE 8: CORE API ROUTES - BUDGETS
+================================================================================
+
+Task 8.1: Create GET Budgets API Route
+---------------------------------------
+File: app/api/budgets/route.ts
+
+Function: Fetch all user budgets
+- Get session and userId
+- Query budgets with wallet and category info
+- Calculate spent amount from transactions
+- Calculate progress percentage
+- Return budgets array
+
+Verification: API returns budgets with spending data
+
+
+Task 8.2: Create POST Budget API Route
+---------------------------------------
+File: app/api/budgets/route.ts (POST method)
+
+Function: Create new budget
+- Validate budget data (amount, startDate, endDate, periodType)
+- Create budget in database
+- Return created budget
+
+Verification: New budget created
+
+
+Task 8.3: Create PUT Budget API Route
+--------------------------------------
+File: app/api/budgets/[id]/route.ts
+
+Function: Update existing budget
+- Verify budget belongs to user
+- Update budget fields
+- Recalculate spent if date range changed
+- Return updated budget
+
+Verification: Budget updates successfully
+
+
+Task 8.4: Create DELETE Budget API Route
+-----------------------------------------
+File: app/api/budgets/[id]/route.ts (DELETE method)
+
+Function: Delete budget
+- Verify budget belongs to user
+- Delete associated alerts and history
+- Delete budget
+- Return success message
+
+Verification: Budget deletes with cascade
+
+
+Task 8.5: Create Budget Alerts API Route
+-----------------------------------------
+File: app/api/budgets/alerts/route.ts
+
+Function: Get budget alerts for user
+- Fetch all unread budget alerts
+- Include budget details
+- Sort by creation date
+- Return alerts array
+
+Verification: Returns user's budget alerts
+
+
+Task 8.6: Create Budget Reset Cron API Route
+---------------------------------------------
+File: app/api/budgets/reset/route.ts
+
+Function: Reset recurring budgets (cron job)
+- Verify CRON_API_KEY authorization
+- Find all recurring budgets past their endDate
+- Create budget history record
+- Reset spent to 0
+- Update dates for next period based on periodType
+- Return summary of reset budgets
+
+Verification: Budgets reset on schedule
+
+
+Task 8.7: Create Budget History API Route
+------------------------------------------
+File: app/api/budgets/[id]/history/route.ts
+
+Function: Get historical performance of a budget
+- Fetch budget history records
+- Return array of past periods with spent/amount
+
+Verification: Returns budget history data
+
+
+Task 8.8: Create Budget with Spending API Route
+------------------------------------------------
+File: app/api/budgets/with-spending/route.ts
+
+Function: Get budgets with calculated spending and progress
+- Query budgets with transaction aggregations
+- Calculate spending per budget
+- Calculate progress percentage
+- Determine alert level (WARNING/CRITICAL/EXCEEDED)
+- Return enriched budget data
+
+Verification: Returns budgets with full spending metrics
+
+
+================================================================================
+PHASE 9: ADVANCED FEATURES - GOALS
+================================================================================
+
+Task 9.1: Create GET Goals API Route
+-------------------------------------
+File: app/api/goals/route.ts
+
+Function: Fetch all user goals
+- Get session and userId
+- Query goals with activities
+- Calculate progress percentage
+- Return goals array
+
+Verification: API returns user's goals
+
+
+Task 9.2: Create POST Goal API Route
+-------------------------------------
+File: app/api/goals/route.ts (POST method)
+
+Function: Create new goal
+- Validate goal data (name, target, deadline)
+- Create goal in database
+- Create goal categories if provided
+- Return created goal
+
+Verification: New goal created
+
+
+Task 9.3: Create PUT Goal API Route
+------------------------------------
+File: app/api/goals/[id]/route.ts
+
+Function: Update existing goal
+- Verify goal belongs to user
+- Update goal fields
+- Update goal categories
+- Return updated goal
+
+Verification: Goal updates successfully
+
+
+Task 9.4: Create DELETE Goal API Route
+---------------------------------------
+File: app/api/goals/[id]/route.ts (DELETE method)
+
+Function: Delete goal
+- Verify goal belongs to user
+- Option to unlink or delete associated transactions
+- Delete goal activities and categories
+- Delete goal
+- Return success message
+
+Verification: Goal deletes properly
+
+
+Task 9.5: Create Goal Activities API Route
+-------------------------------------------
+File: app/api/goals/[id]/activities/route.ts
+
+Function: Add activity to goal (contribution/withdrawal)
+- Validate amount and type
+- Create goal activity
+- Update goal current amount
+- Return updated goal
+
+Verification: Goal activity recorded and progress updated
+
+
+Task 9.6: Create Link Transaction to Goal API Route
+----------------------------------------------------
+File: app/api/goals/activities/route.ts (POST)
+
+Function: Link existing transaction to goal
+- Verify transaction and goal belong to user
+- Create goal activity from transaction
+- Update goal current amount
+- Return success message
+
+Verification: Transaction linked to goal
+
+
+================================================================================
+PHASE 10: ADVANCED FEATURES - GROUPS
+================================================================================
+
+Task 10.1: Create GET Groups API Route
+---------------------------------------
+File: app/api/groups/route.ts
+
+Function: Fetch all groups user is member of
+- Query user's group memberships
+- Include group details and member count
+- Return groups array
+
+Verification: API returns user's groups
+
+
+Task 10.2: Create POST Group API Route
+---------------------------------------
+File: app/api/groups/route.ts (POST method)
+
+Function: Create new group
+- Validate group data (name, description)
+- Create group with user as owner
+- Create UserGroup membership
+- Return created group
+
+Verification: New group created
+
+
+Task 10.3: Create Group Invites API Routes
+-------------------------------------------
+File: app/api/groups/[id]/invites/route.ts
+
+Functions:
+- POST: Create invitation code
+  - Generate unique code
+  - Set expiration (7 days default)
+  - Return invite code
+
+- GET: List group invites
+  - Return all active invites for group
+
+Verification: Invites created and listed
+
+
+Task 10.4: Create Join Group API Route
+---------------------------------------
+File: app/api/groups/join/route.ts
+
+Function: Join group via invitation code
+- Validate invite code
+- Check expiration
+- Create UserGroup membership
+- Mark invite as used
+- Return group details
+
+Verification: User joins group successfully
+
+
+Task 10.5: Create Group Wallets API Routes
+-------------------------------------------
+File: app/api/groups/[id]/wallets/route.ts
+
+Functions:
+- GET: List group wallets
+- POST: Create shared wallet for group
+- PUT: Update group wallet
+- DELETE: Delete group wallet
+
+Verification: Group wallet operations work
+
+
+Task 10.6: Create Group Transactions API Routes
+------------------------------------------------
+File: app/api/groups/[id]/wallets/[walletId]/transactions/route.ts
+
+Functions:
+- GET: Fetch group transactions
+- POST: Create group transaction with expense splits
+  - Create transaction
+  - Create expense splits for members
+  - Update group wallet balance
+- PUT: Update transaction
+- DELETE: Delete transaction
+
+Verification: Group transactions with splits work
+
+
+Task 10.7: Create Expense Split Payment API Route
+--------------------------------------------------
+File: app/api/groups/splits/[splitId]/pay/route.ts
+
+Function: Mark expense split as paid
+- Verify split belongs to user
+- Update isPaid status
+- Set paidDate
+- Return updated split
+
+Verification: Split payment status updates
+
+
+Task 10.8: Create Group Budgets API Routes
+-------------------------------------------
+File: app/api/groups/[id]/budgets/route.ts
+
+Functions:
+- GET: List group budgets
+- POST: Create group budget
+- PUT: Update group budget
+- DELETE: Delete group budget
+
+Verification: Group budget operations work
+
+
+================================================================================
+PHASE 11: ADVANCED FEATURES - RECURRING TRANSACTIONS
+================================================================================
+
+Task 11.1: Create GET Recurring Transactions API Route
+-------------------------------------------------------
+File: app/api/recurring/route.ts
+
+Function: Fetch all user recurring transactions
+- Get session and userId
+- Query recurring transactions
+- Include wallet info
+- Return recurring transactions array
+
+Verification: API returns recurring transactions
+
+
+Task 11.2: Create POST Recurring Transaction API Route
+-------------------------------------------------------
+File: app/api/recurring/route.ts (POST method)
+
+Function: Create new recurring transaction
+- Validate recurring data (name, amount, frequency, startDate)
+- Calculate nextPaymentDate based on frequency
+- Create recurring transaction in database
+- Return created recurring transaction
+
+Verification: New recurring transaction created
+
+
+Task 11.3: Create PUT Recurring Transaction API Route
+------------------------------------------------------
+File: app/api/recurring/[id]/route.ts
+
+Function: Update existing recurring transaction
+- Verify recurring transaction belongs to user
+- Update fields
+- Recalculate nextPaymentDate if frequency changed
+- Return updated recurring transaction
+
+Verification: Recurring transaction updates
+
+
+Task 11.4: Create DELETE Recurring Transaction API Route
+---------------------------------------------------------
+File: app/api/recurring/[id]/route.ts (DELETE method)
+
+Function: Delete recurring transaction
+- Verify belongs to user
+- Delete recurring transaction
+- Return success message
+
+Verification: Recurring transaction deletes
+
+
+Task 11.5: Create Sync Recurring Transactions API Route
+--------------------------------------------------------
+File: app/api/transactions/sync-recurring/route.ts
+
+Function: Process due recurring transactions
+- Find all active recurring transactions where nextPaymentDate <= now
+- For each:
+  - Create actual transaction
+  - Update nextPaymentDate based on frequency
+  - Create history record
+- Return summary of processed transactions
+
+Verification: Due recurring transactions processed
+
+
+Task 11.6: Create Recurring Transaction History API Route
+----------------------------------------------------------
+File: app/api/recurring/history/route.ts
+
+Function: Get execution history of recurring transactions
+- Fetch history records with transaction details
+- Return history array
+
+Verification: Returns recurring transaction history
+
+
+================================================================================
+PHASE 12: ADVANCED FEATURES - EMERGENCY FUND
+================================================================================
+
+Task 12.1: Create GET Emergency Fund API Route
+-----------------------------------------------
+File: app/api/emergency-fund/route.ts
+
+Function: Fetch user's emergency fund settings
+- Get global emergency fund settings
+- Get per-wallet emergency fund settings
+- Calculate progress
+- Return emergency fund data
+
+Verification: API returns emergency fund info
+
+
+Task 12.2: Create POST Emergency Fund API Route
+------------------------------------------------
+File: app/api/emergency-fund/route.ts (POST method)
+
+Function: Create or update global emergency fund
+- Validate target amount and contribution
+- Upsert emergency fund record
+- Return updated emergency fund
+
+Verification: Emergency fund created/updated
+
+
+Task 12.3: Create Wallet Emergency Fund API Routes
+---------------------------------------------------
+File: app/api/wallets/[walletId]/emergency-fund/route.ts
+
+Functions:
+- GET: Get wallet's emergency fund
+- POST: Create/update wallet emergency fund
+- DELETE: Remove wallet emergency fund
+
+Verification: Per-wallet emergency fund operations work
+
+
+Task 12.4: Create AI Emergency Fund Recommendation API Route
+-------------------------------------------------------------
+File: app/api/emergency-fund/generate-ai-target/route.ts
+
+Function: AI-recommended emergency fund target
+- Analyze user's spending patterns
+- Calculate average monthly expenses
+- Recommend 3-6 months of expenses
+- Consider risk profile
+- Return recommended target amount with explanation
+
+Verification: Returns intelligent emergency fund target
+
+
+Task 12.5: Create Wallet Emergency Fund AI Recommendation
+----------------------------------------------------------
+File: app/api/wallets/[walletId]/emergency-fund/ai-recommend/route.ts
+
+Function: AI recommendation for specific wallet
+- Analyze wallet transaction patterns
+- Calculate wallet-specific expenses
+- Recommend appropriate target
+- Return recommendation
+
+Verification: Returns wallet-specific recommendation
+
+
+================================================================================
+PHASE 13: AI INTEGRATION - CHATBOT
+================================================================================
+
+Task 13.1: Create AI Service Integration
+-----------------------------------------
+File: lib/ai.ts
+
+Functions:
+- initializeAI(provider, apiKey): Initialize AI client
+- chat(messages, model): Send chat completion request
+- analyzeTransaction(description): Analyze transaction for categorization
+- generateInsights(userData): Generate financial insights
+- scanReceipt(imageData): OCR and extract receipt data
+
+Verification: AI service functions work with OpenAI/Gemini
+
+
+Task 13.2: Create Chatbot API Route
+------------------------------------
+File: app/api/ai/chatbot/route.ts
+
+Function: AI-powered financial advisor chatbot
+- Get user message
+- Fetch user's financial context (wallets, budgets, transactions)
+- Build system prompt with financial data
+- Call AI chat completion
+- Save chat message to database
+- Return assistant response
+
+Verification: Chatbot responds with financial advice
+
+
+Task 13.3: Create Chat History API Route
+-----------------------------------------
+File: app/api/ai/chatbot/history/route.ts
+
+Function: Fetch user's chat history
+- Get recent chat messages
+- Return messages array
+
+Verification: Returns user's chat history
+
+
+================================================================================
+PHASE 14: AI INTEGRATION - INSIGHTS & ANALYSIS
+================================================================================
+
+Task 14.1: Create Financial Insights API Route
+-----------------------------------------------
+File: app/api/insights/route.ts
+
+Function: Generate financial insights summary
+- Calculate income vs expenses
+- Identify spending trends
+- Calculate savings rate
+- Analyze budget adherence
+- Return insights object
+
+Verification: Returns comprehensive insights
+
+
+Task 14.2: Create AI Insights Analysis API Route
+-------------------------------------------------
+File: app/api/ai/insights/route.ts
+
+Function: AI-powered deep financial analysis
+- Gather user's transaction history
+- Analyze spending patterns
+- Identify anomalies
+- Generate personalized recommendations
+- Return AI-generated insights
+
+Verification: Returns intelligent financial analysis
+
+
+Task 14.3: Create Anomaly Detection API Route
+----------------------------------------------
+File: app/api/ai/unusual-spending/route.ts
+
+Function: Detect unusual spending patterns
+- Analyze transaction patterns
+- Use statistical analysis to identify outliers
+- Use AI to validate anomalies
+- Return suspicious transactions
+
+Verification: Identifies unusual transactions
+
+
+Task 14.4: Create Financial Advice Generation API Route
+--------------------------------------------------------
+File: app/api/financial-advice/generate/route.ts
+
+Function: Generate personalized financial advice
+- Analyze user's financial situation
+- Use AI to generate actionable advice
+- Prioritize recommendations
+- Save advice to database
+- Return advice array
+
+Verification: Generates and saves financial advice
+
+
+Task 14.5: Create Risk Profile API Routes
+------------------------------------------
+File: app/api/user/risk-profile/route.ts
+
+Functions:
+- GET: Get user's risk profile
+- POST: Update risk profile
+- GET explain: AI explanation of risk profile implications
+
+Verification: Risk profile operations work
+
+
+Task 14.6: Create Pattern Analysis API Route
+---------------------------------------------
+File: app/api/insights/analyze/route.ts
+
+Function: Deep pattern analysis
+- Weekly/monthly spending patterns
+- Category-wise trends
+- Income stability analysis
+- Budget performance trends
+- Return analysis report
+
+Verification: Returns detailed pattern analysis
+
+
+================================================================================
+PHASE 15: AI INTEGRATION - RECEIPT SCANNING
+================================================================================
+
+Task 15.1: Create Receipt Scanner Service
+------------------------------------------
+File: lib/receipt-scanner.ts
+
+Function: Process receipt image with AI
+- Accept image (file or base64)
+- Use AI vision model (GPT-4 Vision, Gemini Vision)
+- Extract:
+  - Merchant name
+  - Total amount
+  - Individual items with prices
+  - Date
+  - Category
+- Return structured data
+
+Verification: Extracts receipt data accurately
+
+
+Task 15.2: Create Receipt Scan API Route
+-----------------------------------------
+File: app/api/scan-receipt/route.ts
+
+Function: Scan receipt and create transactions
+- Accept image upload or base64 data
+- Call receipt scanner service
+- Parse extracted data
+- Create transactions for items
+- Return created transactions
+
+Verification: Receipt scanned and transactions created
+
+
+================================================================================
+PHASE 16: WEDDING PLANNING MODULE - CORE
+================================================================================
+
+Task 16.1: Create Wedding API Routes
+-------------------------------------
+File: app/api/wedding/route.ts
+
+Functions:
+- GET: List user's weddings
+- POST: Create new wedding
+- PUT: Update wedding
+- DELETE: Delete wedding
+
+Verification: Wedding CRUD operations work
+
+
+Task 16.2: Create Wedding Budget Categories API Routes
+-------------------------------------------------------
+File: app/api/wedding/[id]/budget-categories/route.ts
+
+Functions:
+- GET: List wedding budget categories
+- POST: Create budget category
+- PUT: Update category
+- DELETE: Delete category
+
+Verification: Wedding budget categories work
+
+
+Task 16.3: Create Wedding Budget Items API Routes
+--------------------------------------------------
+File: app/api/wedding/[id]/budget-categories/[categoryId]/items/route.ts
+
+Functions:
+- GET: List budget items in category
+- POST: Create budget item
+- PUT: Update item (mark as paid, update actual cost)
+- DELETE: Delete item
+
+Verification: Budget items operations work
+
+
+Task 16.4: Create Wedding Guest Management API Routes
+------------------------------------------------------
+File: app/api/wedding/[id]/guests/route.ts
+
+Functions:
+- GET: List wedding guests
+- POST: Add guest
+- PUT: Update guest (RSVP status, attendance)
+- DELETE: Remove guest
+- GET stats: Guest statistics (confirmed, attended, total)
+
+Verification: Guest management operations work
+
+
+================================================================================
+PHASE 17: WEDDING PLANNING MODULE - VENDORS & VENUES
+================================================================================
+
+Task 17.1: Create Venue API Routes
+-----------------------------------
+File: app/api/wedding/[id]/venues/route.ts
+
+Functions:
+- GET: List venue options
+- POST: Add venue option
+- PUT: Update venue (mark as booked)
+- DELETE: Remove venue
+
+Verification: Venue operations work
+
+
+Task 17.2: Create Vendor API Routes
+------------------------------------
+File: app/api/wedding/[id]/vendors/route.ts
+
+Functions:
+- GET: List vendors by category
+- POST: Add vendor
+- PUT: Update vendor (status, rating)
+- DELETE: Remove vendor
+
+Verification: Vendor management works
+
+
+Task 17.3: Create Document API Routes
+--------------------------------------
+File: app/api/wedding/[id]/documents/route.ts
+
+Functions:
+- GET: List wedding documents
+- POST: Add document (contract, permit)
+- PUT: Update document status
+- DELETE: Remove document
+
+Verification: Document tracking works
+
+
+================================================================================
+PHASE 18: WEDDING PLANNING MODULE - ADDITIONAL FEATURES
+================================================================================
+
+Task 18.1: Create Rundown/Timeline API Routes
+----------------------------------------------
+File: app/api/wedding/[id]/rundown/route.ts
+
+Functions:
+- GET: Get wedding timeline
+- POST: Add timeline event
+- PUT: Update event
+- DELETE: Remove event
+
+Verification: Timeline management works
+
+
+Task 18.2: Create Souvenir API Routes
+--------------------------------------
+File: app/api/wedding/[id]/souvenirs/route.ts
+
+Functions:
+- GET: List souvenirs
+- POST: Add souvenir
+- PUT: Update souvenir (costs, status)
+- DELETE: Remove souvenir
+
+Verification: Souvenir tracking works
+
+
+Task 18.3: Create Playlist API Routes
+--------------------------------------
+File: app/api/wedding/[id]/playlists/route.ts
+
+Functions:
+- GET: Get wedding playlist
+- POST: Add song
+- PUT: Update song (approval, order)
+- DELETE: Remove song
+
+Verification: Playlist management works
+
+
+Task 18.4: Create Moodboard API Routes
+---------------------------------------
+File: app/api/wedding/[id]/moodboard/route.ts
+
+Functions:
+- GET: Get moodboard items
+- POST: Add inspiration item
+- PUT: Update item (approval)
+- DELETE: Remove item
+
+Verification: Moodboard works
+
+
+Task 18.5: Create Gift Registry API Routes
+-------------------------------------------
+File: app/api/wedding/[id]/gifts/route.ts
+
+Functions:
+- GET: List gift registry
+- POST: Add gift item
+- PUT: Update gift (received, actual cost)
+- DELETE: Remove gift
+
+Verification: Gift registry works
+
+
+================================================================================
+PHASE 19: FRONTEND - ROOT LAYOUT & PROVIDERS
+================================================================================
+
+Task 19.1: Create Session Provider
+-----------------------------------
+File: app/providers/session-provider.tsx
+
+Content:
+'use client'
+
+import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react'
+
+export default function SessionProvider({
+  children
+}: {
+  children: React.ReactNode
+}) {
+  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>
+}
+
+Verification: Provider wraps app correctly
+
+
+Task 19.2: Create Theme Provider
+---------------------------------
+File: app/providers/theme-provider.tsx
+
+Content:
+'use client'
+
+import { ThemeProvider as NextThemesProvider } from 'next-themes'
+
+export default function ThemeProvider({
+  children
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
+      {children}
+    </NextThemesProvider>
+  )
+}
+
+Verification: Theme switching works
+
+
+Task 19.3: Create Root Layout
+------------------------------
+File: app/layout.tsx
+
+Content:
+import './globals.css'
+import { Inter } from 'next/font/google'
+import SessionProvider from './providers/session-provider'
+import ThemeProvider from './providers/theme-provider'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata = {
+  title: 'BudTrack - Financial Management',
+  description: 'Track your finances with AI-powered insights',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <SessionProvider>
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
+        </SessionProvider>
+      </body>
+    </html>
+  )
+}
+
+Verification: Layout renders correctly
+
+
+Task 19.4: Create Landing Page
+-------------------------------
+File: app/page.tsx
+
+Content:
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+
+export default function Home() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center">
+      <h1 className="text-4xl font-bold mb-4">Welcome to BudTrack</h1>
+      <p className="text-xl mb-8">Your AI-powered financial management tool</p>
+      <div className="flex gap-4">
+        <Link href="/auth/signin">
+          <Button>Sign In</Button>
+        </Link>
+        <Link href="/auth/signup">
+          <Button variant="outline">Sign Up</Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+Verification: Landing page renders
+
+
+================================================================================
+PHASE 20: FRONTEND - DASHBOARD
+================================================================================
+
+Task 20.1: Create Dashboard Layout
+-----------------------------------
+File: app/dashboard/layout.tsx
+
+Content:
+- Create sidebar navigation
+- Create top navigation bar
+- User menu with logout
+- Wallet selector
+- Mobile responsive layout
+
+Verification: Dashboard layout renders
+
+
+Task 20.2: Create Dashboard Page
+---------------------------------
+File: app/dashboard/page.tsx
+
+Features:
+- Financial summary cards (income, expenses, balance)
+- Recent transactions list
+- Budget progress indicators
+- Spending by category chart
+- Goals progress
+- Quick actions (add transaction, etc.)
+
+Verification: Dashboard displays data
+
+
+Task 20.3: Create Financial Summary Component
+----------------------------------------------
+File: components/dashboard/financial-summary.tsx
+
+Display:
+- Total balance across wallets
+- This month's income
+- This month's expenses
+- Savings rate
+
+Verification: Summary displays correctly
+
+
+Task 20.4: Create Recent Transactions Component
+------------------------------------------------
+File: components/dashboard/recent-transactions.tsx
+
+Features:
+- Last 10 transactions
+- Grouped by date
+- Category icons
+- Amount with color coding (income/expense)
+- Link to full transactions page
+
+Verification: Recent transactions display
+
+
+Task 20.5: Create Budget Progress Component
+--------------------------------------------
+File: components/dashboard/budget-progress.tsx
+
+Display:
+- Active budgets with progress bars
+- Color-coded alerts (green/yellow/red)
+- Spent vs budget amount
+- Link to budgets page
+
+Verification: Budget progress displays
+
+
+Task 20.6: Create Spending Chart Component
+-------------------------------------------
+File: components/dashboard/spending-chart.tsx
+
+Features:
+- Pie chart or bar chart
+- Spending by category
+- Current period
+- Interactive tooltips
+
+Verification: Chart displays spending data
+
+
+================================================================================
+PHASE 21: FRONTEND - TRANSACTIONS
+================================================================================
+
+Task 21.1: Create Transactions Page
+------------------------------------
+File: app/transactions/page.tsx
+
+Features:
+- Transaction list with filters
+- Date range picker
+- Category filter
+- Wallet filter
+- Type filter (income/expense)
+- Search by description
+- Pagination
+- Export button
+- Add transaction button
+
+Verification: Transactions page works with filters
+
+
+Task 21.2: Create Add Transaction Dialog
+-----------------------------------------
+File: components/transactions/add-transaction-dialog.tsx
+
+Form fields:
+- Amount
+- Description
+- Date picker
+- Type (income/expense)
+- Wallet selector
+- Category selector
+- Optional: Link to goal
+- Voice input button (optional)
+
+Verification: Transaction creation works
+
+
+Task 21.3: Create Edit Transaction Dialog
+------------------------------------------
+File: components/transactions/edit-transaction-dialog.tsx
+
+Features:
+- Pre-filled form with transaction data
+- Update transaction
+- Delete button
+
+Verification: Transaction editing works
+
+
+Task 21.4: Create Transaction List Component
+---------------------------------------------
+File: components/transactions/transaction-list.tsx
+
+Display:
+- Grouped by date
+- Transaction card with:
+  - Category icon
+  - Description
+  - Amount (colored by type)
+  - Wallet name
+  - Edit/delete actions
+
+Verification: Transaction list displays
+
+
+Task 21.5: Create CSV Import Dialog
+------------------------------------
+File: components/transactions/import-dialog.tsx
+
+Features:
+- File upload
+- CSV format instructions
+- Field mapping
+- Import preview
+- Confirm import
+
+Verification: CSV import works
+
+
+================================================================================
+PHASE 22: FRONTEND - BUDGETS
+================================================================================
+
+Task 22.1: Create Budgets Page
+-------------------------------
+File: app/budgets/page.tsx
+
+Features:
+- Budget list with progress
+- Add budget button
+- Filter by period type
+- Active/expired tabs
+
+Verification: Budgets page displays
+
+
+Task 22.2: Create Add Budget Dialog
+------------------------------------
+File: components/budgets/add-budget-dialog.tsx
+
+Form fields:
+- Budget name
+- Amount
+- Period type (daily/weekly/monthly/etc.)
+- Start date
+- End date (auto-calculated or manual)
+- Wallet selector
+- Category selector
+- Recurring checkbox
+- Alert thresholds
+
+Verification: Budget creation works
+
+
+Task 22.3: Create Budget Card Component
+----------------------------------------
+File: components/budgets/budget-card.tsx
+
+Display:
+- Budget name
+- Spent / Total amount
+- Progress bar (color-coded)
+- Period dates
+- Category and wallet
+- Edit/delete actions
+
+Verification: Budget card displays correctly
+
+
+Task 22.4: Create Budget Details Page
+--------------------------------------
+File: app/budgets/[id]/page.tsx
+
+Features:
+- Budget overview
+- Spending breakdown
+- Transactions in this budget
+- Historical performance chart
+- Edit budget button
+
+Verification: Budget details page works
+
+
+================================================================================
+PHASE 23: BUSINESS LOGIC LIBRARIES
+================================================================================
+
+Task 23.1: Create Budget Calculations Library
+----------------------------------------------
+File: lib/budgetCalculations.ts
+
+Functions:
+- calculateBudgetSpending(budgetId): Calculate total spent
+- calculateBudgetProgress(spent, amount): Calculate percentage
+- determineBudgetAlertLevel(progress, thresholds): Get alert level
+- shouldSendBudgetAlert(budget, newSpent): Check if alert needed
+
+Verification: Budget calculations accurate
+
+
+Task 23.2: Create Budget Reset Logic
+-------------------------------------
+File: lib/budgetReset.ts
+
+Functions:
+- resetRecurringBudgets(): Find and reset due budgets
+- calculateNextPeriodDates(periodType, currentEnd): Calculate new dates
+- createBudgetHistory(budget, periodStart, periodEnd): Archive period
+
+Verification: Budget reset logic works
+
+
+Task 23.3: Create Budget Alerts Service
+----------------------------------------
+File: lib/budgetAlerts.ts
+
+Functions:
+- checkBudgetAlerts(transactionId): Check all budgets after transaction
+- createBudgetAlert(budget, alertType): Create alert record
+- sendBudgetAlertEmail(user, budget, alertType): Send email notification
+
+Verification: Alerts triggered correctly
+
+
+Task 23.4: Create Category Inference Service
+---------------------------------------------
+File: lib/categoryInference.ts
+
+Functions:
+- inferCategory(description, userId): Suggest category
+- checkCategoryRules(description, rules): Check regex patterns
+- useAIForCategorization(description, categories): AI-powered suggestion
+
+Verification: Category inference accurate
+
+
+Task 23.5: Create Savings Goal Auto-Link
+-----------------------------------------
+File: lib/savingsGoalAutoLink.ts
+
+Functions:
+- autoLinkTransactionToGoal(transaction): Find matching goal
+- findRelevantGoals(transaction, goals): Match by category
+- createGoalActivity(goalId, transaction): Link transaction
+
+Verification: Transactions auto-link to goals
+
+
+Task 23.6: Create Financial Advice Generator
+---------------------------------------------
+File: lib/financial-advice.ts
+
+Functions:
+- generateFinancialAdvice(userId): Analyze and generate advice
+- analyzeSpendingPatterns(transactions): Find patterns
+- generateRecommendations(analysis, userProfile): Create recommendations
+- prioritizeAdvice(recommendations): Rank by impact
+
+Verification: Advice generation works
+
+
+Task 23.7: Create Anomaly Detection Service
+--------------------------------------------
+File: lib/anomaly-detection.ts
+
+Functions:
+- detectAnomalies(userId): Find unusual transactions
+- calculateSpendingBaseline(transactions): Calculate normal range
+- identifyOutliers(transactions, baseline): Find anomalies
+- validateWithAI(transaction): AI verification of anomaly
+
+Verification: Anomalies detected accurately
+
+
+================================================================================
+PHASE 24: EMAIL & NOTIFICATIONS
+================================================================================
+
+Task 24.1: Create Email Service
+--------------------------------
+File: lib/email.ts
+
+Functions:
+- sendEmail(to, subject, html): Send email via Brevo
+- sendBudgetAlert(user, budget, alertType): Budget alert email
+- sendWelcomeEmail(user): Welcome email
+- sendInviteEmail(email, inviteCode, groupName): Group invite
+
+Verification: Emails send successfully
+
+
+Task 24.2: Create Brevo API Wrapper
+------------------------------------
+File: lib/brevo-api.ts
+
+Functions:
+- createContact(email, attributes): Add contact to Brevo
+- sendTransactionalEmail(templateId, recipient, params): Send template
+- trackEmail(messageId): Track email status
+
+Verification: Brevo API integration works
+
+
+Task 24.3: Create Notification Component
+-----------------------------------------
+File: components/notifications/notification-bell.tsx
+
+Features:
+- Bell icon with unread count
+- Dropdown list of notifications
+- Mark as read functionality
+- Link to relevant pages
+
+Verification: Notifications display
+
+
+================================================================================
+PHASE 25: DATA IMPORT/EXPORT
+================================================================================
+
+Task 25.1: Create Excel Export Service
+---------------------------------------
+File: lib/excel-export.ts
+
+Functions:
+- exportTransactionsToExcel(transactions): Generate XLSX file
+- exportBudgetsToExcel(budgets): Budget report
+- exportGoalsToExcel(goals): Goals report
+
+Verification: Excel files generate correctly
+
+
+Task 25.2: Create PDF Export Service
+-------------------------------------
+File: lib/pdf-export.ts
+
+Functions:
+- generateTransactionReport(transactions, dateRange): PDF report
+- generateBudgetReport(budgets): Budget performance PDF
+- generateFinancialSummary(userId): Complete financial PDF
+
+Verification: PDF reports generate
+
+
+Task 25.3: Create CSV Parser
+-----------------------------
+File: lib/csv-parser.ts
+
+Functions:
+- parseTransactionCSV(fileBuffer): Parse CSV to transactions
+- validateTransactionRow(row): Validate data
+- mapCSVFields(headers): Map user CSV to our format
+
+Verification: CSV parsing works
+
+
+================================================================================
+PHASE 26: ADDITIONAL FRONTEND PAGES
+================================================================================
+
+Task 26.1: Create Wallets Page
+-------------------------------
+File: app/wallets/page.tsx
+
+Features:
+- Wallet cards with balance
+- Add wallet button
+- Edit/delete wallet
+- Emergency fund indicator
+
+Verification: Wallets page works
+
+
+Task 26.2: Create Categories Page
+----------------------------------
+File: app/categories/page.tsx
+
+Features:
+- Category list (income/expense tabs)
+- Add category button
+- Edit/delete category
+- Category rules management
+
+Verification: Categories page works
+
+
+Task 26.3: Create Goals Page
+-----------------------------
+File: app/goals/page.tsx
+
+Features:
+- Goal cards with progress
+- Add goal button
+- Goal activities
+- Mark as complete
+
+Verification: Goals page works
+
+
+Task 26.4: Create Groups Page
+------------------------------
+File: app/groups/page.tsx
+
+Features:
+- Group list
+- Create group button
+- Join group via code
+- Group details (members, wallets, transactions)
+
+Verification: Groups page works
+
+
+Task 26.5: Create Settings Page
+--------------------------------
+File: app/settings/page.tsx
+
+Features:
+- User profile
+- AI provider selection
+- API keys configuration
+- Currency settings
+- Theme preference
+- Notification settings
+
+Verification: Settings page works
+
+
+Task 26.6: Create Chatbot Page
+-------------------------------
+File: app/chatbot/page.tsx
+
+Features:
+- Chat interface
+- Message history
+- AI financial advisor responses
+- Suggested questions
+
+Verification: Chatbot interface works
+
+
+Task 26.7: Create Insights Page
+--------------------------------
+File: app/insights/page.tsx
+
+Features:
+- Financial insights dashboard
+- Spending trends chart
+- Category breakdown
+- AI-generated recommendations
+- Anomaly alerts
+
+Verification: Insights page displays
+
+
+Task 26.8: Create Wedding Planner Page
+---------------------------------------
+File: app/wedding-planner/page.tsx
+
+Features:
+- Wedding overview
+- Budget tracking
+- Guest list
+- Vendor management
+- Timeline
+- All wedding sub-pages
+
+Verification: Wedding planner works
+
+
+================================================================================
+PHASE 27: TESTING & SEED DATA
+================================================================================
+
+Task 27.1: Create Category Seed Script
+---------------------------------------
+File: prisma/seed.ts
+
+Function:
+- Create default income categories (Salary, Bonus, Investment, etc.)
+- Create default expense categories (Food, Transport, Shopping, etc.)
+- Create subcategories
+
+Verification: Run `npm run seed` successfully
+
+
+Task 27.2: Create Wallet Seed Script
+-------------------------------------
+File: prisma/walletSeed.ts
+
+Function:
+- Create sample wallets (Cash, Bank Account, Credit Card)
+
+Verification: Sample wallets created
+
+
+Task 27.3: Create Transaction Seed Script
+------------------------------------------
+File: prisma/transactionSeed.ts
+
+Function:
+- Create sample transactions (last 3 months)
+- Various categories and amounts
+- Income and expenses
+
+Verification: Sample transactions created
+
+
+Task 27.4: Create Budget Seed Script
+-------------------------------------
+File: prisma/budgetSeed.ts
+
+Function:
+- Create sample budgets for common categories
+- Set realistic amounts and dates
+
+Verification: Sample budgets created
+
+
+================================================================================
+PHASE 28: DEPLOYMENT PREPARATION
+================================================================================
+
+Task 28.1: Environment Variables Setup
+---------------------------------------
+File: .env.example
+
+Create template with all required variables:
+- DATABASE_URL
+- NEXTAUTH_URL
+- NEXTAUTH_SECRET
+- CRON_API_KEY
+- BREVO credentials
+- AI API keys (optional)
+
+Verification: .env.example complete
+
+
+Task 28.2: Create Cron Setup Script
+------------------------------------
+File: setup-cron.sh
+
+Content:
+#!/bin/bash
+# Setup cron job for budget reset
+# Add to crontab:
+# 0 0 * * * curl -X POST "https://your-domain.com/api/budgets/reset" \
+#   -H "Authorization: Bearer $CRON_API_KEY"
+
+Verification: Script created
+
+
+Task 28.3: Update package.json Scripts
+---------------------------------------
+File: package.json
+
+Add scripts:
+- "db:push": "prisma db push"
+- "db:studio": "prisma studio"
+- "db:seed": "prisma db seed"
+
+Verification: Scripts work
+
+
+Task 28.4: Create README.md
+---------------------------
+File: README.md
+
+Content:
+- Project description
+- Features list
+- Tech stack
+- Installation instructions
+- Environment variables
+- Database setup
+- Running the app
+- Deployment instructions
+
+Verification: README complete
+
+
+================================================================================
+PHASE 29: FINAL INTEGRATION & POLISH
+================================================================================
+
+Task 29.1: Add Loading States
+------------------------------
+Files: All pages and components
+
+Add:
+- Skeleton loaders
+- Loading spinners
+- Disabled states during API calls
+
+Verification: Loading states display
+
+
+Task 29.2: Add Error Handling
+------------------------------
+Files: All API routes and components
+
+Add:
+- Try-catch blocks
+- Error messages to user
+- Error logging
+- Fallback UI
+
+Verification: Errors handled gracefully
+
+
+Task 29.3: Add Form Validation
+-------------------------------
+Files: All forms
+
+Use Zod schemas for:
+- Client-side validation
+- Server-side validation
+- Type-safe form data
+
+Verification: Invalid data rejected
+
+
+Task 29.4: Mobile Responsive Design
+------------------------------------
+Files: All pages and components
+
+Ensure:
+- Mobile-friendly navigation
+- Responsive layouts
+- Touch-friendly interactions
+- Mobile-optimized charts
+
+Verification: Works on mobile devices
+
+
+Task 29.5: Accessibility Improvements
+--------------------------------------
+Files: All components
+
+Add:
+- ARIA labels
+- Keyboard navigation
+- Focus management
+- Screen reader support
+
+Verification: Accessibility audit passes
+
+
+Task 29.6: Performance Optimization
+------------------------------------
+Files: Throughout app
+
+Optimize:
+- Image optimization
+- Code splitting
+- Lazy loading
+- Database query optimization
+- Caching strategies
+
+Verification: Performance metrics improved
+
+
+================================================================================
+PHASE 30: DEPLOYMENT
+================================================================================
+
+Task 30.1: Deploy to Vercel
+----------------------------
+
+Steps:
+1. Push code to GitHub
+2. Import project in Vercel
+3. Configure environment variables
+4. Deploy
+
+Verification: App deployed and accessible
+
+
+Task 30.2: Setup Production Database
+-------------------------------------
+
+Options:
+1. Use Vercel Postgres
+2. Use PlanetScale
+3. Use Railway PostgreSQL
+4. Self-hosted
+
+Verification: Database connected and working
+
+
+Task 30.3: Setup Cron Job
+--------------------------
+
+Use:
+- Vercel Cron Jobs
+- External cron service (cron-job.org)
+- Server crontab
+
+Verification: Budget reset runs daily
+
+
+Task 30.4: Monitor Application
+-------------------------------
+
+Setup:
+- Error tracking (Sentry)
+- Performance monitoring
+- Uptime monitoring
+- User analytics
+
+Verification: Monitoring active
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+This implementation plan covers:
+
+✅ Complete database schema with 30+ models
+✅ Authentication system with NextAuth.js
+✅ 128+ API routes for all features
+✅ Frontend pages for all major features
+✅ AI integration (OpenAI, Gemini, OpenRouter)
+✅ Email notifications with Brevo
+✅ Receipt scanning with AI vision
+✅ Group expense splitting
+✅ Wedding planning module
+✅ Budget alerts and reset automation
+✅ Goals tracking and auto-linking
+✅ Emergency fund management
+✅ Recurring transactions
+✅ Data import/export (CSV, Excel, PDF)
+✅ Financial insights and analytics
+✅ Anomaly detection
+✅ Mobile responsive design
+✅ Dark mode support
+✅ Deployment preparation
+
+Total estimated development time: 8-12 weeks for full implementation
+
+Key technologies:
+- Next.js 14 + TypeScript
+- Prisma ORM + SQLite
+- NextAuth.js
+- Tailwind CSS + shadcn/ui
+- OpenAI/Gemini APIs
+- Brevo email service
+- Recharts for visualization
+
+================================================================================
+END OF IMPLEMENTATION PLAN
+================================================================================
