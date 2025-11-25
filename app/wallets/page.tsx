@@ -10,6 +10,7 @@ import { formatCurrency } from '../lib/utils'
 import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard'
 import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
+import { MigrateWalletTypesButton } from '@/components/MigrateWalletTypesButton'
 
 // Define Icon mapping
 const AVAILABLE_ICONS = [
@@ -536,6 +537,9 @@ const WalletsPage = () => {
           <p className="text-xs mt-1">{budgetsError}</p>
         </div>
       )}
+
+      {/* Migration Button */}
+      <MigrateWalletTypesButton />
 
       {/* Wallet Type Tabs */}
       <WalletTypeTabs />
