@@ -207,15 +207,18 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
         })
       }
 
-      // Mark transactions as migrated
-      for (const tx of data.transactions) {
-        await prisma.transaction.update({
-          where: { id: tx.id },
-          data: {
-            description: `${tx.description || ''} [MIGRATED TO WALLET: ${wallet.name}]`
-          }
-        })
-      }
+      // Move transactions to the new wallet
+      const txIds = data.transactions.map(tx => tx.id)
+      await prisma.transaction.updateMany({
+        where: {
+          id: { in: txIds }
+        },
+        data: {
+          walletId: wallet.id
+        }
+      })
+      
+      log(`  ✓ Moved ${txIds.length} transactions to wallet ${wallet.name}`)
 
       results.push({
         label: data.label,
@@ -225,7 +228,6 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
         status: 'success'
       })
 
-      log(`  ✓ Migrated ${data.transactions.length} transactions`)
       log(`  ✓ Wallet balance: Rp ${wallet.balance.toLocaleString('id-ID')}\n`)
       
     } catch (error) {
