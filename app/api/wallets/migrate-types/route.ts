@@ -86,8 +86,6 @@ export async function POST(request: NextRequest) {
       debugInfo.push(info)
     }
 
-    console.log('[MIGRATION DEBUG]', JSON.stringify(debugInfo, null, 2))
-
     // Execute all updates
     if (updates.length > 0) {
       await prisma.$transaction(updates)
@@ -96,8 +94,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       migratedCount,
-      message: `Successfully migrated ${migratedCount} wallet(s) to SAVINGS type`,
-      debug: debugInfo
+      message: `Successfully migrated ${migratedCount} wallet(s) to SAVINGS type`
     })
   } catch (error) {
     console.error('Error migrating wallet types:', error)
