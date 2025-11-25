@@ -228,8 +228,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // Auto-create paired transaction for savings (Option 2 implementation)
-    // If this is an EXPENSE with "Savings" category and description starts with "Tabungan"
+    // DEPRECATED: Old paired transaction logic
+    // Now using auto-routing above which directly routes to correct wallet
+    // Keeping this commented for reference
+    /*
     if (type === 'EXPENSE' && category?.name.toLowerCase().includes('saving') && description?.toLowerCase().startsWith('tabungan')) {
       try {
         // Extract wallet name from description (e.g., "Tabungan Bank A" -> "Bank A")
@@ -292,6 +294,7 @@ export async function POST(request: Request) {
         // Don't interrupt main transaction flow
       }
     }
+    */
 
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
