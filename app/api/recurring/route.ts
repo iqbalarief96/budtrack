@@ -137,85 +137,9 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // Konversi tipe ke format yang benar untuk model Transaction (kapital)
-    const formattedType = type.toUpperCase() as 'INCOME' | 'EXPENSE'
-    
-    console.log(`Creating new transaction for recurring: ${name} with type ${formattedType} and amount ${amount}`)
-    
-    // Validasi category jika ada
-    let categoryId = null
-    if (category) {
-      // Category bisa berupa ID atau nama
-      // Coba cari langsung dengan ID dulu
-      let categoryObj = await prisma.category.findFirst({
-        where: {
-          id: category,
-          userId: user.id
-        }
-      });
-
-      // Jika tidak ditemukan dengan ID, mungkin itu nama kategori
-      if (!categoryObj) {
-        categoryObj = await prisma.category.findFirst({
-          where: {
-            name: category,
-            userId: user.id
-          }
-        });
-      }
-      
-      if (categoryObj) {
-        categoryId = categoryObj.id;
-        console.log(`Kategori '${categoryObj.name}' ditemukan dengan id: ${categoryId}`);
-      } else {
-        console.log(`Kategori '${category}' tidak ditemukan`);
-      }
-    }
-    
-    // Tentukan tanggal transaksi (hari ini)
-    const transactionDate = new Date();
-    
-    // Buat transaksi baru untuk saat ini
-    const transaction = await prisma.transaction.create({
-      data: {
-        amount: Number(amount),
-        description: name,
-        date: transactionDate,
-        type: formattedType,
-        categoryId: categoryId,
-        walletId: walletId,
-        userId: user.id
-      }
-    });
-    
-    console.log('Transaction created:', transaction)
-    
-    // Update saldo wallet
-    let newBalance = wallet.balance;
-    
-    if (formattedType === 'INCOME') {
-      newBalance = wallet.balance + Number(amount);
-      console.log(`Income: Adding ${amount} to wallet balance. Old: ${wallet.balance}, New: ${newBalance}`);
-    } else { // EXPENSE (termasuk savings)
-      newBalance = wallet.balance - Number(amount);
-      console.log(`Expense: Subtracting ${amount} from wallet balance. Old: ${wallet.balance}, New: ${newBalance}`);
-    }
-    
-    await prisma.wallet.update({
-      where: { id: walletId },
-      data: { balance: newBalance }
-    });
-    
-    // Get updated wallet to verify balance change
-    const updatedWallet = await prisma.wallet.findUnique({
-      where: { id: walletId }
-    });
-    
-    console.log('Wallet balance updated:', {
-      oldBalance: wallet.balance,
-      newBalance: updatedWallet?.balance,
-      difference: (updatedWallet?.balance || 0) - wallet.balance
-    });
+    // Recurring transaction created successfully
+    // Transaction will be created automatically by cron job or manually triggered
+    console.log(`Recurring transaction created: ${name}, next payment: ${nextPaymentDate.toISOString()}`)
     
     return NextResponse.json(recurringTransaction, { status: 201 })
   } catch (error) {

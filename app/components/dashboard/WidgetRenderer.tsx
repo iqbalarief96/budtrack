@@ -460,6 +460,22 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     case 'debt-payoff-planner':
       return <DebtPayoffPlannerCard />;
 
+    case 'budget-forecast':
+      const BudgetForecastWidget = React.lazy(() => import('@/components/dashboard/BudgetForecastWidget'));
+      return (
+        <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
+          <BudgetForecastWidget />
+        </React.Suspense>
+      );
+
+    case 'upcoming-recurring':
+      const UpcomingRecurringWidget = React.lazy(() => import('@/components/dashboard/UpcomingRecurringWidget'));
+      return (
+        <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
+          <UpcomingRecurringWidget />
+        </React.Suspense>
+      );
+
     default:
       return (
         <div className="flex items-center justify-center h-full">

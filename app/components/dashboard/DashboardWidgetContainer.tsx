@@ -158,8 +158,19 @@ export default function DashboardWidgetContainer({
         ...widget,
         position: prev.length,
       };
+      const updatedWidgets = [...prev, newWidget];
       setHasChanges(true);
-      return [...prev, newWidget];
+      
+      // Notify parent about the addition
+      setTimeout(() => {
+        onSave({
+          ...currentView,
+          widgets: updatedWidgets,
+          updatedAt: new Date()
+        });
+      }, 0);
+      
+      return updatedWidgets;
     });
     setIsAddWidgetOpen(false);
   };
@@ -174,6 +185,16 @@ export default function DashboardWidgetContainer({
         position: index,
       }));
       setHasChanges(true);
+      
+      // Notify parent about the removal
+      setTimeout(() => {
+        onSave({
+          ...currentView,
+          widgets: updatedWidgets,
+          updatedAt: new Date()
+        });
+      }, 0);
+      
       return updatedWidgets;
     });
   };

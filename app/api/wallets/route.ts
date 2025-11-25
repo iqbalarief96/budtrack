@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch wallets first
+    // Fetch wallets with aggregated balance from transactions
     const wallets = await prisma.wallet.findMany({
       where: {
         userId: session.user.id
@@ -26,44 +26,40 @@ export async function GET(request: Request) {
       }
     })
     
-    // Fetch all transactions for this user
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        userId: session.user.id
-      },
-      select: {
-        walletId: true,
-        type: true,
-        amount: true
-      }
-    })
-    
-    // Calculate correct balance for each wallet based on transactions
-    const walletsWithCorrectBalance = wallets.map(wallet => {
-      // Filter transactions for this wallet
-      const walletTransactions = transactions.filter(tx => tx.walletId === wallet.id)
-      
-      // Calculate balance from transactions
-      let calculatedBalance = 0
-      walletTransactions.forEach(tx => {
-        if (tx.type === 'INCOME') {
-          calculatedBalance += tx.amount
-        } else if (tx.type === 'EXPENSE') {
-          calculatedBalance -= tx.amount
+    // Calculate balance for each wallet using aggregation (much faster than fetching all transactions)
+    const walletsWithBalance = await Promise.all(
+      wallets.map(async (wallet) => {
+        // Use aggregation to calculate balance - this is much faster than fetching all transactions
+        const incomeSum = await prisma.transaction.aggregate({
+          where: {
+            walletId: wallet.id,
+            type: 'INCOME'
+          },
+          _sum: {
+            amount: true
+          }
+        })
+
+        const expenseSum = await prisma.transaction.aggregate({
+          where: {
+            walletId: wallet.id,
+            type: 'EXPENSE'
+          },
+          _sum: {
+            amount: true
+          }
+        })
+
+        const calculatedBalance = (incomeSum._sum.amount || 0) - (expenseSum._sum.amount || 0)
+
+        return {
+          ...wallet,
+          balance: calculatedBalance
         }
       })
-      
-      console.log('[DEBUG] Wallet', wallet.name, 'calculated balance:', calculatedBalance);
-      
-      // Return wallet with correct balance
-      return {
-        ...wallet,
-        balance: calculatedBalance
-      }
-    })
+    )
 
-    console.log('[DEBUG] Returning wallets with balances:', walletsWithCorrectBalance.map(w => ({ id: w.id, name: w.name, balance: w.balance })));
-    return NextResponse.json(walletsWithCorrectBalance)
+    return NextResponse.json(walletsWithBalance)
   } catch (error) {
     console.error('Error fetching wallets:', error)
     return NextResponse.json(

@@ -19,6 +19,7 @@ import { ReceiptScanner } from '@/components/ReceiptScanner';
 import { ReceiptPreviewModal } from '@/components/ReceiptPreviewModal';
 import TransactionItemsList from '@/components/transactions/TransactionItemsList';
 import AddTransactionItemDialog from '@/components/transactions/AddTransactionItemDialog';
+import { FixTransactionTypesButton } from '@/components/FixTransactionTypesButton';
 
 
 
@@ -306,12 +307,7 @@ const TransactionsPage = () => {
     fetchTransactions(activeFilters)
   }, [selectedWallet, activeFilters])
 
-  // Recalculate totals when transactions or period changes
-  useEffect(() => {
-    const { income, expense } = calculateTotals(transactions);
-    setTotalIncome(income);
-    setTotalExpense(expense);
-  }, [transactions, selectedPeriod]);
+  // Recalculate totals when transactions or period changes - MOVED BELOW calculateTotals definition
 
   // Fetch insights when wallet changes
   useEffect(() => {
@@ -448,16 +444,25 @@ const TransactionsPage = () => {
     setIsBulkDeleting(true)
 
     try {
-      const params = new URLSearchParams()
-      if (ids.length === 1) {
-        params.append('id', ids[0])
+      let response;
+      
+      // Use bulk-delete endpoint for multiple transactions to avoid URL length limits
+      if (ids.length > 1) {
+        response = await fetch('/api/transactions/bulk-delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids }),
+        });
       } else {
-        params.append('ids', ids.join(','))
+        // Single delete via query param
+        const params = new URLSearchParams();
+        params.append('id', ids[0]);
+        response = await fetch(`/api/transactions?${params.toString()}`, {
+          method: 'DELETE'
+        });
       }
-
-      const response = await fetch(`/api/transactions?${params.toString()}`, {
-        method: 'DELETE'
-      })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -726,7 +731,7 @@ const TransactionsPage = () => {
   }
 
   // Update the calculation logic for totals based on period selection
-  const calculateTotals = (transactions: Transaction[]) => {
+  const calculateTotals = React.useCallback((transactions: Transaction[]) => {
     const now = new Date();
     let periodStart = new Date();
 
@@ -755,9 +760,19 @@ const TransactionsPage = () => {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1); // Default to monthly
     }
 
-    const filteredTransactions = transactions.filter((tx: Transaction) =>
-      new Date(tx.date) >= periodStart
-    );
+    console.log('[TOTALS] Period:', selectedPeriod, 'Start:', periodStart.toISOString());
+    console.log('[TOTALS] Total transactions:', transactions.length);
+
+    const filteredTransactions = transactions.filter((tx: Transaction) => {
+      const txDate = new Date(tx.date);
+      const isInPeriod = txDate >= periodStart;
+      if (!isInPeriod) {
+        console.log('[TOTALS] Filtered out:', tx.description, tx.date, 'before', periodStart.toISOString());
+      }
+      return isInPeriod;
+    });
+
+    console.log('[TOTALS] Filtered transactions:', filteredTransactions.length);
 
     const income = filteredTransactions
       .filter((tx: Transaction) => tx.type === 'INCOME')
@@ -767,8 +782,17 @@ const TransactionsPage = () => {
       .filter((tx: Transaction) => tx.type === 'EXPENSE')
       .reduce((sum: number, tx: Transaction) => sum + tx.amount, 0);
 
+    console.log('[TOTALS] Income:', income, 'Expense:', expense);
+
     return { income, expense };
-  };
+  }, [selectedPeriod]);
+
+  // Recalculate totals when transactions or period changes
+  useEffect(() => {
+    const { income, expense } = calculateTotals(transactions);
+    setTotalIncome(income);
+    setTotalExpense(expense);
+  }, [transactions, calculateTotals]);
 
   // Add a refresh button for insights
   const handleRefreshInsights = () => {
@@ -981,6 +1005,13 @@ const TransactionsPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Fix Transaction Types Tool - Hidden by default, only show if needed */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="col-span-1 lg:col-span-2">
+            <FixTransactionTypesButton />
+          </div>
+        )}
 
         {/* Smart Insights */}
         <div className="bg-white rounded-lg p-4 sm:p-5 shadow col-span-1 lg:col-span-2">

@@ -78,6 +78,9 @@ export default function CustomizableTabContent({
     { id: 'subscription-intelligence-widget', type: 'subscription-intelligence', size: 'large', title: 'Subscription Intelligence', position: 17 },
     { id: 'financial-health-widget', type: 'financial-health', size: 'medium', title: 'Financial Health Score', position: 18 },
     { id: 'debt-payoff-planner-widget', type: 'debt-payoff-planner', size: 'large', title: 'Debt Payoff Planner', position: 19 },
+    // NEW HIGH PRIORITY FEATURES
+    { id: 'budget-forecast-widget', type: 'budget-forecast', size: 'large', title: 'Budget Forecast', position: 20 },
+    { id: 'upcoming-recurring-widget', type: 'upcoming-recurring', size: 'medium', title: 'Upcoming Recurring', position: 21 },
   ];
 
   // Add a new widget
