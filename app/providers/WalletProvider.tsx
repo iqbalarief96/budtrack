@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { useWallets } from '@/lib/hooks/useWallets'
 
 // Define the wallet type
 type Wallet = {
@@ -47,46 +48,33 @@ const LOCAL_STORAGE_KEY = 'selectedWalletId'
 const WALLET_TYPE_FILTER_KEY = 'walletTypeFilter'
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
-  const [wallets, setWallets] = useState<Wallet[]>([])
+  // Use React Query hook
+  const { data: wallets = [], isLoading, refetch } = useWallets()
+  
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [walletTypeFilter, setWalletTypeFilterState] = useState<WalletTypeFilter>('ALL')
 
-  const fetchWallets = async () => {
-    setIsLoading(true); // Set loading true when fetching
-    try {
-      const response = await fetch('/api/wallets')
-      if (!response.ok) throw new Error('Failed to fetch wallets')
-      const data: Wallet[] = await response.json()
-      console.log('[DEBUG] WalletProvider fetched wallets:', data);
-      setWallets(data)
-      
-      // Determine the initial selected wallet
-      const persistedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY);
-      let initialWallet: Wallet | undefined = undefined;
+  // Update selected wallet when wallets data changes
+  useEffect(() => {
+    if (wallets.length === 0) return
 
-      if (persistedWalletId) {
-        initialWallet = data.find((wallet) => wallet.id === persistedWalletId);
-      }
+    const persistedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY)
+    let initialWallet: Wallet | undefined = undefined
 
-      // If no persisted or persisted is invalid, find default or first
-      if (!initialWallet) {
-        initialWallet = data.find((wallet) => wallet.isDefault) || data[0];
-      }
-      
-      // Set the selected wallet state
-      if (initialWallet) {
-        setSelectedWallet(initialWallet)
-      }
-      
-    } catch (error) {
-      console.error('Error fetching wallets:', error)
-      setWallets([])
-      setSelectedWallet(null); // Reset selected wallet on error
-    } finally {
-      setIsLoading(false)
+    if (persistedWalletId) {
+      initialWallet = wallets.find((wallet) => wallet.id === persistedWalletId)
     }
-  }
+
+    // If no persisted or persisted is invalid, find default or first
+    if (!initialWallet) {
+      initialWallet = wallets.find((wallet) => wallet.isDefault) || wallets[0]
+    }
+
+    // Set the selected wallet state
+    if (initialWallet) {
+      setSelectedWallet(initialWallet)
+    }
+  }, [wallets])
   
   // Function to set selected wallet and persist to localStorage
   const setSelectedWalletAndPersist = (wallet: Wallet) => {
@@ -109,29 +97,25 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Load wallet type filter from localStorage on mount
   useEffect(() => {
-    const savedFilter = localStorage.getItem(WALLET_TYPE_FILTER_KEY) as WalletTypeFilter;
+    const savedFilter = localStorage.getItem(WALLET_TYPE_FILTER_KEY) as WalletTypeFilter
     if (savedFilter && ['ALL', 'MAIN', 'SAVINGS', 'INVESTMENT'].includes(savedFilter)) {
-      setWalletTypeFilterState(savedFilter);
+      setWalletTypeFilterState(savedFilter)
     }
-  }, []);
-
-  // Load wallets on mount
-  useEffect(() => {
-    fetchWallets()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Run only once on mount
+  }, [])
 
   return (
-    <WalletContext.Provider value={{ 
-      wallets, 
-      selectedWallet, 
-      setSelectedWalletAndPersist, // Provide the updated function
-      isLoading,
-      refreshWallets: fetchWallets,
-      walletTypeFilter,
-      setWalletTypeFilter,
-      filteredWallets
-    }}>
+    <WalletContext.Provider
+      value={{
+        wallets,
+        selectedWallet,
+        setSelectedWalletAndPersist,
+        isLoading,
+        refreshWallets: () => refetch().then(() => {}),
+        walletTypeFilter,
+        setWalletTypeFilter,
+        filteredWallets,
+      }}
+    >
       {children}
     </WalletContext.Provider>
   )
