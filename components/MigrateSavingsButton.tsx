@@ -19,8 +19,35 @@ export default function MigrateSavingsButton() {
       const data = await response.json()
 
       if (response.ok) {
+        console.log('='.repeat(60))
+        console.log('📊 MIGRATION PREVIEW')
+        console.log('='.repeat(60))
+        
+        if (data.data?.summary) {
+          const summary = data.data.summary
+          console.log(`\n📝 Summary:`)
+          console.log(`   Total Transactions: ${summary.total}`)
+          console.log(`   Savings Groups: ${summary.groups || summary.groupDetails?.length || 0}`)
+          
+          if (summary.groupDetails) {
+            console.log(`\n💰 Wallet yang akan dibuat:\n`)
+            summary.groupDetails.forEach((group: any) => {
+              console.log(`${group.icon} ${group.label}`)
+              console.log(`   Transactions: ${group.transactionCount}`)
+              console.log(`   Total: Rp ${group.totalAmount.toLocaleString('id-ID')}`)
+              console.log(`   Color: ${group.color}\n`)
+            })
+          }
+        }
+        
+        if (data.data?.logs) {
+          console.log('\n📋 Detailed Logs:')
+          data.data.logs.forEach((log: string) => console.log(log))
+        }
+        
+        console.log('='.repeat(60))
+        
         toast.success('Preview selesai! Cek console browser untuk detail.')
-        console.log('Migration Preview:', data)
       } else {
         toast.error(data.message || 'Preview gagal')
       }

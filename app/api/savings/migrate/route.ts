@@ -14,13 +14,14 @@ export async function POST(request: Request) {
     const { dryRun = false } = await request.json()
 
     // Run migration
-    await migrateSavingsToWallets(session.user.id, dryRun)
+    const result = await migrateSavingsToWallets(session.user.id, dryRun)
 
     return NextResponse.json({ 
       success: true,
       message: dryRun 
         ? 'Dry run completed. Check console for details.' 
-        : 'Migration completed successfully!'
+        : 'Migration completed successfully!',
+      data: result
     })
     
   } catch (error) {

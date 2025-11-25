@@ -56,11 +56,17 @@ function determineSavingsType(description: string, categoryName: string): { labe
 }
 
 async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
-  console.log(`\n${'='.repeat(60)}`)
-  console.log(`Migration: Savings Transactions → Savings Wallets`)
-  console.log(`Mode: ${dryRun ? 'DRY RUN (no changes)' : 'LIVE (will make changes)'}`)
-  console.log(`User ID: ${userId}`)
-  console.log(`${'='.repeat(60)}\n`)
+  const logs: string[] = []
+  const log = (message: string) => {
+    console.log(message)
+    logs.push(message)
+  }
+
+  log(`\n${'='.repeat(60)}`)
+  log(`Migration: Savings Transactions → Savings Wallets`)
+  log(`Mode: ${dryRun ? 'DRY RUN (no changes)' : 'LIVE (will make changes)'}`)
+  log(`User ID: ${userId}`)
+  log(`${'='.repeat(60)}\n`)
 
   // 1. Find all savings transactions
   const savingsTransactions = await prisma.transaction.findMany({
@@ -68,7 +74,9 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
       userId,
       type: 'EXPENSE',
       category: {
-        type: 'SAVINGS'
+        type: {
+          in: ['SAVINGS', 'Savings', 'savings'] // Support different cases
+        }
       }
     },
     include: {
@@ -80,11 +88,11 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
     }
   })
 
-  console.log(`Found ${savingsTransactions.length} savings transactions\n`)
+  log(`Found ${savingsTransactions.length} savings transactions\n`)
 
   if (savingsTransactions.length === 0) {
-    console.log('No savings transactions found. Nothing to migrate.')
-    return
+    log('No savings transactions found. Nothing to migrate.')
+    return { logs, summary: { total: 0, groups: 0 } }
   }
 
   // 2. Group by savings type
@@ -119,25 +127,41 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
     group.totalAmount += tx.amount
   }
 
-  console.log(`Grouped into ${savingsByType.size} savings types:\n`)
+  log(`Grouped into ${savingsByType.size} savings types:\n`)
   
   // 3. Display summary
+  const groupSummary = []
   for (const [label, data] of savingsByType) {
-    console.log(`${data.icon} ${label}`)
-    console.log(`   Transactions: ${data.transactions.length}`)
-    console.log(`   Total Amount: Rp ${data.totalAmount.toLocaleString('id-ID')}`)
-    console.log(`   Color: ${data.color}`)
-    console.log()
+    log(`${data.icon} ${label}`)
+    log(`   Transactions: ${data.transactions.length}`)
+    log(`   Total Amount: Rp ${data.totalAmount.toLocaleString('id-ID')}`)
+    log(`   Color: ${data.color}`)
+    log('')
+    
+    groupSummary.push({
+      label: data.label,
+      icon: data.icon,
+      transactionCount: data.transactions.length,
+      totalAmount: data.totalAmount,
+      color: data.color
+    })
   }
 
   if (dryRun) {
-    console.log('\n⚠️  DRY RUN MODE - No changes made')
-    console.log('Run with dryRun=false to apply changes\n')
-    return
+    log('\n⚠️  DRY RUN MODE - No changes made')
+    log('Run with dryRun=false to apply changes\n')
+    return { 
+      logs, 
+      summary: {
+        total: savingsTransactions.length,
+        groups: savingsByType.size,
+        groupDetails: groupSummary
+      }
+    }
   }
 
   // 4. Create wallets and migrate
-  console.log('\n🚀 Starting migration...\n')
+  log('\n🚀 Starting migration...\n')
   
   const results = []
   
@@ -155,7 +179,7 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
       let wallet
       
       if (existingWallet) {
-        console.log(`✓ Wallet "${data.label}" already exists, updating balance...`)
+        log(`✓ Wallet "${data.label}" already exists, updating balance...`)
         wallet = await prisma.wallet.update({
           where: { id: existingWallet.id },
           data: {
@@ -163,7 +187,7 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
           }
         })
       } else {
-        console.log(`✓ Creating wallet "${data.label}"...`)
+        log(`✓ Creating wallet "${data.label}"...`)
         wallet = await prisma.wallet.create({
           data: {
             userId,
@@ -195,8 +219,8 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
         status: 'success'
       })
 
-      console.log(`  ✓ Migrated ${data.transactions.length} transactions`)
-      console.log(`  ✓ Wallet balance: Rp ${wallet.balance.toLocaleString('id-ID')}\n`)
+      log(`  ✓ Migrated ${data.transactions.length} transactions`)
+      log(`  ✓ Wallet balance: Rp ${wallet.balance.toLocaleString('id-ID')}\n`)
       
     } catch (error) {
       console.error(`  ✗ Error migrating "${data.label}":`, error)
@@ -209,26 +233,36 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
   }
 
   // 5. Summary
-  console.log(`\n${'='.repeat(60)}`)
-  console.log('Migration Summary')
-  console.log(`${'='.repeat(60)}\n`)
+  log(`\n${'='.repeat(60)}`)
+  log('Migration Summary')
+  log(`${'='.repeat(60)}\n`)
   
   const successful = results.filter(r => r.status === 'success')
   const failed = results.filter(r => r.status === 'error')
   
-  console.log(`✓ Successful: ${successful.length}`)
-  console.log(`✗ Failed: ${failed.length}`)
-  console.log(`\nTotal transactions migrated: ${successful.reduce((sum, r) => sum + (r.transactionCount || 0), 0)}`)
-  console.log(`Total amount: Rp ${successful.reduce((sum, r) => sum + (r.amount || 0), 0).toLocaleString('id-ID')}`)
+  log(`✓ Successful: ${successful.length}`)
+  log(`✗ Failed: ${failed.length}`)
+  log(`\nTotal transactions migrated: ${successful.reduce((sum, r) => sum + (r.transactionCount || 0), 0)}`)
+  log(`Total amount: Rp ${successful.reduce((sum, r) => sum + (r.amount || 0), 0).toLocaleString('id-ID')}`)
   
   if (failed.length > 0) {
-    console.log('\n❌ Failed migrations:')
+    log('\n❌ Failed migrations:')
     failed.forEach(f => {
-      console.log(`  - ${f.label}: ${f.error}`)
+      log(`  - ${f.label}: ${f.error}`)
     })
   }
   
-  console.log()
+  log('')
+  
+  return {
+    logs,
+    summary: {
+      total: savingsTransactions.length,
+      successful: successful.length,
+      failed: failed.length,
+      results
+    }
+  }
 }
 
 // CLI usage
