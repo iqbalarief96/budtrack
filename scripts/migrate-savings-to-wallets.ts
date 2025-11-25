@@ -77,8 +77,10 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
       type: 'EXPENSE',
       category: {
         OR: [
-          { name: { contains: 'Savings', mode: 'insensitive' } },
-          { name: { contains: 'Tabungan', mode: 'insensitive' } },
+          { name: { contains: 'Savings' } },
+          { name: { contains: 'savings' } },
+          { name: { contains: 'Tabungan' } },
+          { name: { contains: 'tabungan' } },
           { type: { in: ['SAVINGS', 'Savings', 'savings'] } } // Fallback for proper setup
         ]
       }
