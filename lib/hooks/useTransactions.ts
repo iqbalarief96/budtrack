@@ -11,6 +11,15 @@ export interface Transaction {
   goalId?: string
   createdAt: string
   updatedAt: string
+  category?: {
+    id: string
+    name: string
+    type: string
+  }
+  wallet?: {
+    id: string
+    name: string
+  }
 }
 
 export function useTransactions(filters?: {

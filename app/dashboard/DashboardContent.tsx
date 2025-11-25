@@ -15,35 +15,16 @@ import TransactionModal from '@/app/components/TransactionModal'
 import { useRouter } from 'next/navigation'
 import CustomizableTabContent from '../components/dashboard/CustomizableTabContent'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
+import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
+import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
+import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
-// Define types for our data
-type Transaction = {
-  id: string
-  date: string
-  description: string
-  amount: number
-  type: 'INCOME' | 'EXPENSE'
-  category: {
-    id: string
-    name: string
-    type: string
-  }
-  wallet: {
-    id: string
-    name: string
-  }
-  categoryId: string
-  walletId: string
-}
-
-type BudgetWithRelations = Budget & {
-  category: Category
-  wallet: Wallet
-  spent: number
-  percentage: number
+type BudgetWithRelations = BudgetType & {
+  category?: Category
+  wallet?: Wallet
 }
 
 interface Props {
@@ -52,20 +33,21 @@ interface Props {
 
 const DashboardContent = ({ budgets = [] }: Props) => {
   const { wallets, selectedWallet, refreshWallets } = useWallet()
+  
+  // React Query hooks for data fetching
+  const [selectedPeriod, setSelectedPeriod] = useState('all')
+  const { data: allTransactions = [], isLoading: isLoadingTransactions } = useTransactions()
+  const { data: allBudgets = [], isLoading: isLoadingBudgets } = useBudgets()
+  const { data: savingsData, isLoading: isLoadingSavings } = useEmergencyFund(selectedWallet?.id)
+  
   const [summary, setSummary] = useState({ total: 0, income: 0, expense: 0 })
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([])
-  const [savingsData, setSavingsData] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingSavings, setIsLoadingSavings] = useState(true)
   const [chartData, setChartData] = useState({ income: 0, expense: 0 })
   const [recentBudgets, setRecentBudgets] = useState<BudgetWithRelations[]>([])
   const [showAllTransactions, setShowAllTransactions] = useState(false)
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false)
   const [transactionType, setTransactionType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
-
   // State for dashboard items
-  const [allBudgets, setAllBudgets] = useState<BudgetWithRelations[]>(budgets)
   const [showTips, setShowTips] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [transactionHistory, setTransactionHistory] = useState<Array<{
@@ -74,7 +56,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     income: number;
     expense: number;
   }>>([])
-  const [selectedPeriod, setSelectedPeriod] = useState('all')
   const [spendingByCategory, setSpendingByCategory] = useState<{ name: string; amount: number; color: string }[]>([])
   const [financialTips, setFinancialTips] = useState<{ id: number; title: string; description: string }[]>([
     { id: 1, title: 'Tabungan Darurat', description: 'Sisihkan 20% penghasilan setiap bulan untuk dana darurat' },
@@ -120,28 +101,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const filteredBudgets = selectedWallet && allBudgets
     ? allBudgets.filter(budget => budget.walletId === selectedWallet.id)
     : allBudgets || []
-
-  // Fetch transactions
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        // Use period parameter for server-side filtering
-        const url = selectedPeriod === 'all' 
-          ? '/api/transactions' 
-          : `/api/transactions?period=${selectedPeriod}`;
-        
-        const response = await fetch(url);
-        if (response.ok) {
-          const data = await response.json();
-          setAllTransactions(data);
-        }
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
-      }
-    };
-
-    fetchTransactions();
-  }, [selectedPeriod]); // Add selectedPeriod as a dependency
 
   // Calculate totals and filter transactions when wallet or transaction data changes
   useEffect(() => {
@@ -227,34 +186,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   }, [selectedWallet, allTransactions, selectedPeriod]);
 
-  // Fetch savings data
-  useEffect(() => {
-    const fetchSavingsData = async () => {
-      try {
-        setIsLoadingSavings(true);
-        
-        // Construct URL with walletId if a wallet is selected
-        const url = selectedWallet 
-          ? `/api/emergency-fund?walletId=${selectedWallet.id}` 
-          : '/api/emergency-fund';
-        
-        const response = await fetch(url);
-        
-        if (response.ok) {
-          const data = await response.json();
-          setSavingsData(data);
-        } else {
-          console.error('Error fetching emergency fund data:', response.statusText);
-        }
-      } catch (error) {
-        console.error('Error fetching savings data:', error);
-      } finally {
-        setIsLoadingSavings(false);
-      }
-    };
-
-    fetchSavingsData();
-  }, [selectedWallet]); // Re-fetch when selectedWallet changes
+  // Savings data is now fetched via React Query hook (useEmergencyFund)
 
   // Get transactions grouped by category for pie chart
   useEffect(() => {
@@ -262,11 +194,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       const walletTxs = allTransactions.filter(tx => 
         tx.walletId === selectedWallet.id && 
         tx.type === 'EXPENSE' &&
-        tx.category !== null  // Filter out transactions without category
+        tx.category !== null && tx.category !== undefined  // Filter out transactions without category
       )
       
       const categorySpending = walletTxs.reduce((acc, tx) => {
-        const categoryName = tx.category.name
+        const categoryName = tx.category?.name
+        if (!categoryName) return acc
         if (!acc[categoryName]) {
           acc[categoryName] = 0
         }
@@ -353,12 +286,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   }
 
   const handleBudgetUpdate = async (budget: BudgetWithRelations) => {
-    // Refresh data after budget update
-    const response = await fetch('/api/budgets');
-    if (response.ok) {
-      const data = await response.json();
-      setAllBudgets(data);
-    }
+    // Budget data will automatically refresh via React Query
+    // No manual fetch needed
   };
 
   // Calculate financial stats
@@ -479,14 +408,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   // Handle transaction save
   const handleSaveTransaction = async (transactionData: any) => {
     try {
-      // Fetch updated transactions
-      const response = await fetch('/api/transactions');
-      if (response.ok) {
-        const data = await response.json();
-        setAllTransactions(data);
-      }
-      
-      // Refresh wallet balances
+      // Transaction data will automatically refresh via React Query
+      // Just refresh wallet balances
       await refreshWallets();
       
       // Close modal
