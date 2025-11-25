@@ -119,27 +119,42 @@ async function calculateEmergencyFundScore(
       totalCurrent = wallet?.balance || 0
     } else {
       // Auto-detect wallets with "emergency" or "darurat" in the name
-      // Get all user wallets and filter by name (case-insensitive)
-      const allWallets = await prisma.wallet.findMany({
-        where: {
-          userId,
-          ...(walletId && { id: walletId }),
-        },
-      })
+      if (walletId) {
+        // If specific wallet is selected, only check that wallet
+        const wallet = await prisma.wallet.findUnique({
+          where: { id: walletId, userId },
+        })
+        
+        if (wallet) {
+          const nameLower = wallet.name.toLowerCase()
+          const isEmergencyWallet = nameLower.includes('emergency') || 
+                                   nameLower.includes('darurat') || 
+                                   nameLower.includes('dana darurat')
+          
+          if (isEmergencyWallet) {
+            totalCurrent = wallet.balance
+            totalTarget = 0 // Will be calculated based on expenses later
+          }
+        }
+      } else {
+        // If no specific wallet, sum all emergency wallets
+        const allWallets = await prisma.wallet.findMany({
+          where: { userId },
+        })
 
-      // Filter wallets with emergency-related names (case-insensitive)
-      const emergencyWallets = allWallets.filter(w => {
-        const nameLower = w.name.toLowerCase()
-        return nameLower.includes('emergency') || 
-               nameLower.includes('darurat') || 
-               nameLower.includes('dana darurat')
-      })
+        // Filter wallets with emergency-related names (case-insensitive)
+        const emergencyWallets = allWallets.filter(w => {
+          const nameLower = w.name.toLowerCase()
+          return nameLower.includes('emergency') || 
+                 nameLower.includes('darurat') || 
+                 nameLower.includes('dana darurat')
+        })
 
-      if (emergencyWallets.length > 0) {
-        // Sum up all emergency wallets
-        totalCurrent = emergencyWallets.reduce((sum, w) => sum + w.balance, 0)
-        // If no target is set, we'll calculate based on expenses later
-        totalTarget = 0
+        if (emergencyWallets.length > 0) {
+          // Sum up all emergency wallets
+          totalCurrent = emergencyWallets.reduce((sum, w) => sum + w.balance, 0)
+          totalTarget = 0 // Will be calculated based on expenses later
+        }
       }
     }
   }
