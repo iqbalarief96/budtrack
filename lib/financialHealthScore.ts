@@ -119,16 +119,20 @@ async function calculateEmergencyFundScore(
       totalCurrent = wallet?.balance || 0
     } else {
       // Auto-detect wallets with "emergency" or "darurat" in the name
-      const emergencyWallets = await prisma.wallet.findMany({
+      // Get all user wallets and filter by name (case-insensitive)
+      const allWallets = await prisma.wallet.findMany({
         where: {
           userId,
-          OR: [
-            { name: { contains: 'emergency', mode: 'insensitive' } },
-            { name: { contains: 'darurat', mode: 'insensitive' } },
-            { name: { contains: 'dana darurat', mode: 'insensitive' } },
-          ],
           ...(walletId && { id: walletId }),
         },
+      })
+
+      // Filter wallets with emergency-related names (case-insensitive)
+      const emergencyWallets = allWallets.filter(w => {
+        const nameLower = w.name.toLowerCase()
+        return nameLower.includes('emergency') || 
+               nameLower.includes('darurat') || 
+               nameLower.includes('dana darurat')
       })
 
       if (emergencyWallets.length > 0) {
