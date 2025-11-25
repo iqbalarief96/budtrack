@@ -69,14 +69,18 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
   log(`${'='.repeat(60)}\n`)
 
   // 1. Find all savings transactions
+  // Note: We filter by category NAME containing "Savings" or "Tabungan"
+  // because the category type is "EXPENSE", not "SAVINGS"
   const savingsTransactions = await prisma.transaction.findMany({
     where: {
       userId,
       type: 'EXPENSE',
       category: {
-        type: {
-          in: ['SAVINGS', 'Savings', 'savings'] // Support different cases
-        }
+        OR: [
+          { name: { contains: 'Savings', mode: 'insensitive' } },
+          { name: { contains: 'Tabungan', mode: 'insensitive' } },
+          { type: { in: ['SAVINGS', 'Savings', 'savings'] } } // Fallback for proper setup
+        ]
       }
     },
     include: {
