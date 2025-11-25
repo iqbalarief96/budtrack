@@ -9,6 +9,7 @@ import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
 import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard'
 import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
+import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 
 // Define Icon mapping
 const AVAILABLE_ICONS = [
@@ -73,7 +74,7 @@ type Wallet = {
 }
 
 const WalletsPage = () => {
-  const { wallets, isLoading, refreshWallets } = useWallet()
+  const { wallets, filteredWallets, isLoading, refreshWallets } = useWallet()
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null)
   const [formData, setFormData] = useState({
@@ -94,31 +95,31 @@ const WalletsPage = () => {
   const [walletEmergencyLoading, setWalletEmergencyLoading] = useState(false)
   const [walletEmergencyErrors, setWalletEmergencyErrors] = useState<Record<string, string>>({})
 
-  // Calculate total balance
+  // Calculate total balance (use filteredWallets for display)
   const totalBalance = useMemo(
-    () => wallets.reduce((sum, wallet) => sum + wallet.balance, 0),
-    [wallets]
+    () => filteredWallets.reduce((sum, wallet) => sum + wallet.balance, 0),
+    [filteredWallets]
   )
 
-  const walletCount = wallets.length
+  const walletCount = filteredWallets.length
   const largestWallet = useMemo(
-    () => wallets.slice().sort((a, b) => b.balance - a.balance)[0] || null,
-    [wallets]
+    () => filteredWallets.slice().sort((a, b) => b.balance - a.balance)[0] || null,
+    [filteredWallets]
   )
 
   const averageBalance = useMemo(() => {
-    if (!wallets.length) return 0
-    return totalBalance / wallets.length
-  }, [totalBalance, wallets.length])
+    if (!filteredWallets.length) return 0
+    return totalBalance / filteredWallets.length
+  }, [totalBalance, filteredWallets.length])
 
   const defaultWallet = useMemo(
-    () => wallets.find((wallet) => wallet.isDefault) || null,
-    [wallets]
+    () => filteredWallets.find((wallet) => wallet.isDefault) || null,
+    [filteredWallets]
   )
 
   const walletShares = useMemo(() => {
     if (totalBalance <= 0) {
-      return wallets.map((wallet) => ({
+      return filteredWallets.map((wallet) => ({
         id: wallet.id,
         name: wallet.name,
         balance: wallet.balance,
@@ -128,7 +129,7 @@ const WalletsPage = () => {
       }))
     }
 
-    return wallets.map((wallet) => ({
+    return filteredWallets.map((wallet) => ({
       id: wallet.id,
       name: wallet.name,
       balance: wallet.balance,
@@ -136,7 +137,7 @@ const WalletsPage = () => {
       color: wallet.color,
       currencyCode: wallet.currencyCode
     }))
-  }, [wallets, totalBalance])
+  }, [filteredWallets, totalBalance])
 
   const emergencyTargetAmount = emergencyFundData?.targetAmount ?? 0
   const emergencyCurrentAmount = emergencyFundData?.currentAmount ?? 0
@@ -535,10 +536,13 @@ const WalletsPage = () => {
           <p className="text-xs mt-1">{budgetsError}</p>
         </div>
       )}
+
+      {/* Wallet Type Tabs */}
+      <WalletTypeTabs />
       
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {wallets.map((wallet) => {
+        {filteredWallets.map((wallet) => {
           const WalletIcon = getWalletIcon(wallet.icon);
           const walletBudgets = budgets.filter((budget) => budget.walletId === wallet.id);
           const displayedBudgets = walletBudgets.slice(0, 3);
