@@ -14,6 +14,7 @@ import { Pie, Bar } from 'react-chartjs-2'
 import TransactionModal from '@/app/components/TransactionModal'
 import { useRouter } from 'next/navigation'
 import CustomizableTabContent from '../components/dashboard/CustomizableTabContent'
+import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
@@ -512,6 +513,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
             <WalletSelector displayBalance={summary.total} />
           </div>
         </div>
+
+        {/* Wallet Type Tabs */}
+        <WalletTypeTabs />
         
         {/* Quick Stats */}
         <div className="mb-4">

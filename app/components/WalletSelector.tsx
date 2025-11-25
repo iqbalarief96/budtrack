@@ -10,7 +10,7 @@ interface WalletSelectorProps {
 }
 
 const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
-  const { wallets, selectedWallet, setSelectedWalletAndPersist } = useWallet()
+  const { filteredWallets, selectedWallet, setSelectedWalletAndPersist } = useWallet()
   const [isOpen, setIsOpen] = useState(false)
   
   // Remove savings data fetching as it's not used for balance display here
@@ -62,7 +62,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
       {isOpen && (
         <div className="absolute mt-2 w-full bg-white border rounded-lg shadow-lg z-10">
           <div className="py-1">
-            {wallets.map((wallet) => (
+            {filteredWallets.map((wallet) => (
               <button
                 key={wallet.id}
                 className={`flex items-center w-full px-4 py-3 text-left hover:bg-gray-50 ${

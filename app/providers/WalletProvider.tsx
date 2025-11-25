@@ -9,7 +9,11 @@ type Wallet = {
   balance: number
   color?: string
   isDefault: boolean
+  type?: string // MAIN, SAVINGS, INVESTMENT
 }
+
+// Define wallet type filter
+export type WalletTypeFilter = 'ALL' | 'MAIN' | 'SAVINGS' | 'INVESTMENT'
 
 // Define the wallet context type
 type WalletContextType = {
@@ -18,6 +22,9 @@ type WalletContextType = {
   setSelectedWalletAndPersist: (wallet: Wallet) => void
   isLoading: boolean
   refreshWallets: () => Promise<void>
+  walletTypeFilter: WalletTypeFilter
+  setWalletTypeFilter: (filter: WalletTypeFilter) => void
+  filteredWallets: Wallet[]
 }
 
 // Create the context with default values
@@ -26,7 +33,10 @@ const WalletContext = createContext<WalletContextType>({
   selectedWallet: null,
   setSelectedWalletAndPersist: () => {},
   isLoading: true,
-  refreshWallets: async () => {}
+  refreshWallets: async () => {},
+  walletTypeFilter: 'ALL',
+  setWalletTypeFilter: () => {},
+  filteredWallets: []
 })
 
 // Custom hook to use the wallet context
@@ -34,11 +44,13 @@ export const useWallet = () => useContext(WalletContext)
 
 // Key for localStorage
 const LOCAL_STORAGE_KEY = 'selectedWalletId'
+const WALLET_TYPE_FILTER_KEY = 'walletTypeFilter'
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [walletTypeFilter, setWalletTypeFilterState] = useState<WalletTypeFilter>('ALL')
 
   const fetchWallets = async () => {
     setIsLoading(true); // Set loading true when fetching
@@ -83,6 +95,26 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem(LOCAL_STORAGE_KEY, wallet.id);
   };
 
+  // Function to set wallet type filter and persist
+  const setWalletTypeFilter = (filter: WalletTypeFilter) => {
+    setWalletTypeFilterState(filter);
+    localStorage.setItem(WALLET_TYPE_FILTER_KEY, filter);
+  };
+
+  // Filter wallets by type
+  const filteredWallets = React.useMemo(() => {
+    if (walletTypeFilter === 'ALL') return wallets;
+    return wallets.filter(w => w.type === walletTypeFilter);
+  }, [wallets, walletTypeFilter]);
+
+  // Load wallet type filter from localStorage on mount
+  useEffect(() => {
+    const savedFilter = localStorage.getItem(WALLET_TYPE_FILTER_KEY) as WalletTypeFilter;
+    if (savedFilter && ['ALL', 'MAIN', 'SAVINGS', 'INVESTMENT'].includes(savedFilter)) {
+      setWalletTypeFilterState(savedFilter);
+    }
+  }, []);
+
   // Load wallets on mount
   useEffect(() => {
     fetchWallets()
@@ -95,7 +127,10 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
       selectedWallet, 
       setSelectedWalletAndPersist, // Provide the updated function
       isLoading,
-      refreshWallets: fetchWallets
+      refreshWallets: fetchWallets,
+      walletTypeFilter,
+      setWalletTypeFilter,
+      filteredWallets
     }}>
       {children}
     </WalletContext.Provider>
