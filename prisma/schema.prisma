@@ -110,6 +110,7 @@ model Wallet {
   icon                  String?
   color                 String?
   isDefault             Boolean                @default(false)
+  type                  String                 @default("MAIN") // MAIN, SAVINGS, INVESTMENT
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   userId                String

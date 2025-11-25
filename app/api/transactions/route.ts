@@ -240,9 +240,10 @@ export async function POST(request: Request) {
                 userId: session.user.id,
                 currencyCode: wallet.currencyCode,
                 isDefault: false,
+                type: 'SAVINGS', // Auto-created savings wallets
               },
             });
-            console.log(`Auto-created wallet: ${targetWalletName}`);
+            console.log(`Auto-created SAVINGS wallet: ${targetWalletName}`);
           }
 
           // Create paired INCOME transaction in target wallet
