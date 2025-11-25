@@ -108,6 +108,21 @@ export async function POST(request: Request) {
 
     console.log('Found category:', category)
 
+    // Auto-route savings transactions to appropriate SAVINGS wallet
+    let finalWalletId = walletId
+    if (type === 'EXPENSE' && category && description) {
+      const { findOrCreateSavingsWallet } = await import('@/lib/savings-wallet-router')
+      const savingsWalletId = await findOrCreateSavingsWallet(
+        session.user.id,
+        description,
+        category.name
+      )
+      if (savingsWalletId) {
+        console.log(`[Auto-Route] Routing to savings wallet: ${savingsWalletId}`)
+        finalWalletId = savingsWalletId
+      }
+    }
+
     // Prepare transaction data
     const transactionData: any = {
       amount: parseFloat(amount),
@@ -115,7 +130,7 @@ export async function POST(request: Request) {
       date: new Date(date),
       description,
       userId: session.user.id,
-      walletId,
+      walletId: finalWalletId,
     };
     
     // Only add categoryId if it exists
