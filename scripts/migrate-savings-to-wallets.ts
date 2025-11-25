@@ -207,18 +207,20 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
         })
       }
 
-      // Move transactions to the new wallet
+      // Move transactions to the new wallet and change type to INCOME
       const txIds = data.transactions.map(tx => tx.id)
       await prisma.transaction.updateMany({
         where: {
           id: { in: txIds }
         },
         data: {
-          walletId: wallet.id
+          walletId: wallet.id,
+          type: 'INCOME' // Change from EXPENSE to INCOME
         }
       })
       
       log(`  ✓ Moved ${txIds.length} transactions to wallet ${wallet.name}`)
+      log(`  ✓ Changed transaction type from EXPENSE to INCOME`)
 
       results.push({
         label: data.label,
