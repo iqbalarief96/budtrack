@@ -117,6 +117,26 @@ async function calculateEmergencyFundScore(
       }
 
       totalCurrent = wallet?.balance || 0
+    } else {
+      // Auto-detect wallets with "emergency" or "darurat" in the name
+      const emergencyWallets = await prisma.wallet.findMany({
+        where: {
+          userId,
+          OR: [
+            { name: { contains: 'emergency', mode: 'insensitive' } },
+            { name: { contains: 'darurat', mode: 'insensitive' } },
+            { name: { contains: 'dana darurat', mode: 'insensitive' } },
+          ],
+          ...(walletId && { id: walletId }),
+        },
+      })
+
+      if (emergencyWallets.length > 0) {
+        // Sum up all emergency wallets
+        totalCurrent = emergencyWallets.reduce((sum, w) => sum + w.balance, 0)
+        // If no target is set, we'll calculate based on expenses later
+        totalTarget = 0
+      }
     }
   }
 
@@ -140,6 +160,11 @@ async function calculateEmergencyFundScore(
 
   const avgMonthlyExpense = (expenses._sum.amount || 0) / period
   const monthsCovered = avgMonthlyExpense > 0 ? totalCurrent / avgMonthlyExpense : 0
+
+  // If no target was set (auto-detected wallet), use 3 months of expenses as target
+  if (totalTarget === 0 && avgMonthlyExpense > 0) {
+    totalTarget = avgMonthlyExpense * 3
+  }
 
   let score = 0
   let status: 'excellent' | 'good' | 'fair' | 'poor' = 'poor'
