@@ -7,6 +7,7 @@ import {
 } from 'react-icons/fi'
 import { useSession } from 'next-auth/react'
 import { useTheme } from '../providers/ThemeProvider'
+import MigrateSavingsButton from '@/components/MigrateSavingsButton'
 
 interface AISettings {
   provider: 'deepseek' | 'openrouter'
@@ -701,6 +702,11 @@ const SettingsPage = () => {
                         <span>Export</span>
                       </button>
                     </div>
+                  </div>
+
+                  {/* Migrate Savings to Wallets */}
+                  <div>
+                    <MigrateSavingsButton />
                   </div>
 
                   {/* Delete Account */}
