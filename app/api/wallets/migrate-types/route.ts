@@ -52,11 +52,11 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Check if wallet has savings transactions (EXPENSE with Savings/Tabungan category)
+      // Check if wallet has savings transactions (any type with Savings/Tabungan category)
       const savingsTransactions = wallet.transactions.filter(
         (tx) => {
           const categoryName = tx.category?.name?.toLowerCase() || ''
-          return tx.type === 'EXPENSE' && (
+          return (
             categoryName === 'savings' ||
             categoryName === 'tabungan' ||
             categoryName === 'saving' ||
