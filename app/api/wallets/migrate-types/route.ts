@@ -31,6 +31,11 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      // Skip default wallet or wallets with "utama" in name
+      if (wallet.isDefault || wallet.name.toLowerCase().includes('utama')) {
+        continue
+      }
+
       // Check if wallet has savings transactions (EXPENSE with Savings category)
       const hasSavingsTransactions = wallet.transactions.some(
         (tx) => 
