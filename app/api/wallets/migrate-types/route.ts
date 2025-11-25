@@ -24,26 +24,44 @@ export async function POST(request: NextRequest) {
 
     let migratedCount = 0
     const updates = []
+    const debugInfo = []
 
     for (const wallet of wallets) {
+      const info: any = {
+        name: wallet.name,
+        type: wallet.type,
+        isDefault: wallet.isDefault,
+        savingsCount: 0,
+        skipped: false,
+        reason: ''
+      }
+
       // Skip if already has non-MAIN type
       if (wallet.type && wallet.type !== 'MAIN') {
+        info.skipped = true
+        info.reason = 'Already non-MAIN type'
+        debugInfo.push(info)
         continue
       }
 
       // Skip default wallet or wallets with "utama" in name
       if (wallet.isDefault || wallet.name.toLowerCase().includes('utama')) {
+        info.skipped = true
+        info.reason = wallet.isDefault ? 'Is default wallet' : 'Name contains "utama"'
+        debugInfo.push(info)
         continue
       }
 
       // Check if wallet has savings transactions (EXPENSE with Savings category)
-      const hasSavingsTransactions = wallet.transactions.some(
+      const savingsTransactions = wallet.transactions.filter(
         (tx) => 
           tx.type === 'EXPENSE' && 
           tx.category?.name?.toLowerCase() === 'savings'
       )
+      
+      info.savingsCount = savingsTransactions.length
 
-      if (hasSavingsTransactions) {
+      if (savingsTransactions.length > 0) {
         // Update wallet type to SAVINGS
         updates.push(
           prisma.wallet.update({
@@ -52,8 +70,16 @@ export async function POST(request: NextRequest) {
           })
         )
         migratedCount++
+        info.reason = 'Migrated to SAVINGS'
+      } else {
+        info.skipped = true
+        info.reason = 'No savings transactions'
       }
+      
+      debugInfo.push(info)
     }
+
+    console.log('[MIGRATION DEBUG]', JSON.stringify(debugInfo, null, 2))
 
     // Execute all updates
     if (updates.length > 0) {
@@ -63,7 +89,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       migratedCount,
-      message: `Successfully migrated ${migratedCount} wallet(s) to SAVINGS type`
+      message: `Successfully migrated ${migratedCount} wallet(s) to SAVINGS type`,
+      debug: debugInfo
     })
   } catch (error) {
     console.error('Error migrating wallet types:', error)
