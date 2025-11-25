@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google'
 import { AuthProvider } from './providers/AuthProvider'
 import { WalletProvider } from './providers/WalletProvider'
 import { ThemeProvider } from './providers/ThemeProvider'
+import { QueryProvider } from './providers/QueryProvider'
 import Sidebar from './components/Sidebar'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -35,25 +36,27 @@ export default async function RootLayout({
       <body className={inter.className}>
         <SessionClientProvider>
           <AuthProvider session={session}>
-            <ThemeProvider>
-              {session ? (
-                <WalletProvider>
-                  <TransactionModalProvider>
-                    <Sidebar session={session} />
-                    <main className="content-area">
-                      {children}
-                    </main>
+            <QueryProvider>
+              <ThemeProvider>
+                {session ? (
+                  <WalletProvider>
+                    <TransactionModalProvider>
+                      <Sidebar session={session} />
+                      <main className="content-area">
+                        {children}
+                      </main>
+                      <Toaster />
+                      <ChatbotButton />
+                    </TransactionModalProvider>
+                  </WalletProvider>
+                ) : (
+                  <main className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                    {children}
                     <Toaster />
-                    <ChatbotButton />
-                  </TransactionModalProvider>
-                </WalletProvider>
-              ) : (
-                <main className="min-h-screen bg-gray-50 dark:bg-gray-900">
-                  {children}
-                  <Toaster />
-                </main>
-              )}
-            </ThemeProvider>
+                  </main>
+                )}
+              </ThemeProvider>
+            </QueryProvider>
           </AuthProvider>
         </SessionClientProvider>
       </body>
