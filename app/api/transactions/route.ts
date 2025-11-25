@@ -213,6 +213,70 @@ export async function POST(request: Request) {
       }
     }
 
+    // Auto-create paired transaction for savings (Option 2 implementation)
+    // If this is an EXPENSE with "Savings" category and description starts with "Tabungan"
+    if (type === 'EXPENSE' && category?.name.toLowerCase().includes('saving') && description?.toLowerCase().startsWith('tabungan')) {
+      try {
+        // Extract wallet name from description (e.g., "Tabungan Bank A" -> "Bank A")
+        const targetWalletName = description.substring('tabungan'.length).trim();
+        
+        if (targetWalletName) {
+          // Find or create target wallet
+          let targetWallet = await prisma.wallet.findFirst({
+            where: {
+              userId: session.user.id,
+              name: {
+                equals: targetWalletName,
+              },
+            },
+          });
+
+          // If wallet doesn't exist, create it
+          if (!targetWallet) {
+            targetWallet = await prisma.wallet.create({
+              data: {
+                name: targetWalletName,
+                balance: 0,
+                userId: session.user.id,
+                currencyCode: wallet.currencyCode,
+                isDefault: false,
+              },
+            });
+            console.log(`Auto-created wallet: ${targetWalletName}`);
+          }
+
+          // Create paired INCOME transaction in target wallet
+          const pairedTransaction = await prisma.transaction.create({
+            data: {
+              amount: parseFloat(amount),
+              type: 'INCOME',
+              date: new Date(date),
+              description: `Transfer dari ${wallet.name}`,
+              userId: session.user.id,
+              walletId: targetWallet.id,
+              categoryId: categoryId, // Same category
+            },
+          });
+
+          // Update target wallet balance
+          await prisma.wallet.update({
+            where: { id: targetWallet.id },
+            data: {
+              balance: {
+                increment: parseFloat(amount),
+              },
+            },
+          });
+
+          console.log(`Auto-created paired transaction: ${transaction.id} -> ${pairedTransaction.id}`);
+          console.log(`Transfer: ${wallet.name} (${walletId}) -> ${targetWallet.name} (${targetWallet.id})`);
+        }
+      } catch (pairError) {
+        console.error('Failed to create paired transaction:', pairError);
+        // Don't interrupt main transaction flow
+      }
+    }
+
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
       const budget = await prisma.budget.findFirst({
