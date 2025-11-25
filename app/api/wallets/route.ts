@@ -7,7 +7,7 @@ import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/wallets
+// GET /api/wallets?type=SAVINGS
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -16,10 +16,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Get query parameters
+    const { searchParams } = new URL(request.url)
+    const type = searchParams.get('type') // MAIN, SAVINGS, INVESTMENT
+
     // Fetch wallets with aggregated balance from transactions
     const wallets = await prisma.wallet.findMany({
       where: {
-        userId: session.user.id
+        userId: session.user.id,
+        ...(type && { type }), // Filter by type if provided
       },
       orderBy: {
         name: 'asc'
