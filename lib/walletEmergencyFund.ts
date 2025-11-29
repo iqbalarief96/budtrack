@@ -1,19 +1,13 @@
 import prisma from '@/lib/prisma'
+import { calculateWalletBalance } from '@/lib/walletBalance'
 
 /**
  * Calculate emergency fund progress based on wallet balance
  */
 export async function calculateEmergencyFundProgress(walletId: string) {
   try {
-    // Get wallet balance
-    const wallet = await prisma.wallet.findUnique({
-      where: { id: walletId },
-      select: { balance: true },
-    })
-
-    if (!wallet) {
-      throw new Error('Wallet not found')
-    }
+    // Calculate balance from transactions (source of truth)
+    const balance = await calculateWalletBalance(walletId)
 
     // Get emergency fund target for this wallet
     const emergencyFund = await prisma.walletEmergencyFund.findUnique({
@@ -23,14 +17,14 @@ export async function calculateEmergencyFundProgress(walletId: string) {
     if (!emergencyFund || !emergencyFund.isActive) {
       return {
         hasEmergencyFund: false,
-        currentAmount: wallet.balance,
+        currentAmount: balance,
         targetAmount: 0,
         remaining: 0,
         percentage: 0,
       }
     }
 
-    const currentAmount = wallet.balance
+    const currentAmount = balance
     const targetAmount = emergencyFund.targetAmount
     const remaining = Math.max(0, targetAmount - currentAmount)
     const percentage = targetAmount > 0 ? Math.min(100, (currentAmount / targetAmount) * 100) : 0
@@ -83,11 +77,14 @@ export async function getWalletEmergencyFund(walletId: string, userId: string) {
         throw new Error('Wallet not found')
       }
 
+      // Calculate balance from transactions (source of truth)
+      const calculatedBalance = await calculateWalletBalance(walletId)
+
       return {
         walletId,
-        wallet,
+        wallet: { ...wallet, balance: calculatedBalance },
         targetAmount: 0,
-        currentAmount: wallet.balance,
+        currentAmount: calculatedBalance,
         remaining: 0,
         percentage: 0,
         isActive: false,
@@ -176,11 +173,13 @@ export async function getUserEmergencyFunds(userId: string) {
     const emergencyFunds = await Promise.all(
       wallets.map(async (wallet) => {
         const progress = await calculateEmergencyFundProgress(wallet.id)
+        // Calculate balance from transactions (source of truth)
+        const calculatedBalance = await calculateWalletBalance(wallet.id)
 
         return {
           walletId: wallet.id,
           walletName: wallet.name,
-          walletBalance: wallet.balance,
+          walletBalance: calculatedBalance,
           targetAmount: wallet.emergencyFund?.targetAmount || 0,
           currentAmount: progress.currentAmount,
           remaining: progress.remaining,

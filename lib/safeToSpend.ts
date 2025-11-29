@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma'
+import { calculateWalletBalance } from '@/lib/walletBalance'
 
 export interface SafeToSpendBreakdown {
   walletId: string
@@ -60,6 +61,9 @@ export async function calculateSafeToSpend(
   if (!wallet) {
     throw new Error('Wallet not found')
   }
+
+  // Calculate balance from transactions (source of truth)
+  const walletBalance = await calculateWalletBalance(walletId)
 
   // 1. Get upcoming bills (recurring transactions in next 30 days)
   const now = new Date()
@@ -151,7 +155,7 @@ export async function calculateSafeToSpend(
     0
   )
 
-  // 3. Get active savings goals
+  // 3. Get active savings goals and calculate MONTHLY allocation needed
   const activeGoals = await prisma.goal.findMany({
     where: {
       userId,
@@ -160,15 +164,40 @@ export async function calculateSafeToSpend(
     },
   })
 
-  const goalDetails = activeGoals.map((goal) => ({
-    goalName: goal.name,
-    target: goal.target,
-    current: goal.current,
-    remaining: Math.max(goal.target - goal.current, 0),
-  }))
+  const goalDetails = activeGoals.map((goal) => {
+    const remaining = Math.max(goal.target - goal.current, 0)
+    let monthlyAllocation = 0
+
+    if (goal.deadline) {
+      const today = new Date()
+      const deadline = new Date(goal.deadline)
+
+      // Calculate months remaining
+      const monthsRemaining = (deadline.getFullYear() - today.getFullYear()) * 12 +
+        (deadline.getMonth() - today.getMonth())
+
+      // If deadline is in future, calculate monthly need. 
+      // If deadline passed or is this month, treat as immediate need but maybe capped?
+      // For safe-to-spend, let's be realistic: if deadline is 10 months away, we need 1/10th now.
+      const monthsDivisor = Math.max(monthsRemaining, 1) // Avoid division by zero
+      monthlyAllocation = remaining / monthsDivisor
+    } else {
+      // If no deadline, maybe assume a 12-month horizon or just 0 (optional goal)
+      // Let's assume 0 for now to be less aggressive, or user can set deadline.
+      monthlyAllocation = 0
+    }
+
+    return {
+      goalName: goal.name,
+      target: goal.target,
+      current: goal.current,
+      remaining: remaining, // Total remaining
+      monthlyAllocation: monthlyAllocation // What we actually deduct for safe-to-spend
+    }
+  })
 
   const savingsGoalsTotal = goalDetails.reduce(
-    (sum, goal) => sum + goal.remaining,
+    (sum, goal) => sum + goal.monthlyAllocation,
     0
   )
 
@@ -189,11 +218,11 @@ export async function calculateSafeToSpend(
 
     // Prioritize wallet-level emergency fund
     if (walletEmergencyFund && walletEmergencyFund.isActive) {
-      const shortfall = Math.max(walletEmergencyFund.targetAmount - wallet.balance, 0)
+      const shortfall = Math.max(walletEmergencyFund.targetAmount - walletBalance, 0)
       emergencyBufferTotal = shortfall
       emergencyFundDetails = {
         targetAmount: walletEmergencyFund.targetAmount,
-        currentBalance: wallet.balance,
+        currentBalance: walletBalance,
         shortfall,
       }
       console.log('[SafeToSpend] Using wallet-level emergency fund. Shortfall:', shortfall)
@@ -216,12 +245,12 @@ export async function calculateSafeToSpend(
           // For user-level emergency fund, use the wallet balance as current emergency fund amount
           // and calculate shortfall against the full target amount
           const targetAmount = user.emergencyFund.targetAmount
-          const currentAmount = wallet.balance
+          const currentAmount = walletBalance
 
           console.log('[SafeToSpend] User-level emergency fund calculation:', {
             targetAmount,
             currentAmount,
-            walletBalance: wallet.balance,
+            walletBalance: walletBalance,
           })
 
           // Shortfall is the amount still needed to reach the emergency fund target
@@ -252,18 +281,18 @@ export async function calculateSafeToSpend(
 
   // 5. Calculate safe to spend
   const safeToSpend = Math.max(
-    wallet.balance -
-      upcomingBillsTotal -
-      budgetAllocationsTotal -
-      savingsGoalsTotal -
-      emergencyBufferTotal,
+    walletBalance -
+    upcomingBillsTotal -
+    budgetAllocationsTotal -
+    savingsGoalsTotal -
+    emergencyBufferTotal,
     0
   )
 
   return {
     walletId: wallet.id,
     walletName: wallet.name,
-    totalBalance: wallet.balance,
+    totalBalance: walletBalance,
     upcomingBills: upcomingBillsTotal,
     budgetAllocations: budgetAllocationsTotal,
     savingsGoals: savingsGoalsTotal,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { calculateWalletBalance } from '@/lib/walletBalance';
 import type { Wallet } from '@prisma/client';
 
 const DEFAULT_SAVINGS_LABEL = 'Tabungan Lainnya';
@@ -190,12 +191,15 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
           }
 
+          // Calculate balance from transactions (source of truth)
+          const calculatedBalance = await calculateWalletBalance(walletId);
+
           // Calculate savings for this wallet
           const savingsSummary = await calculateSavingsSummary(session.user.id, walletId);
 
           return NextResponse.json({
             targetAmount: walletEmergencyFund.targetAmount,
-            currentAmount: wallet.balance,
+            currentAmount: calculatedBalance,
             monthlyContribution: 0,
             isActive: walletEmergencyFund.isActive,
             totalSavings: savingsSummary.total,
@@ -260,8 +264,8 @@ export async function GET(req: Request) {
         
         if (wallet) {
           selectedWallet = wallet;
-          // We're assuming the wallet balance represents the emergency fund
-          currentAmount = wallet.balance;
+          // Calculate balance from transactions (source of truth)
+          currentAmount = await calculateWalletBalance(walletId);
         }
       } catch (walletError) {
         console.error('Error fetching wallet:', walletError);
@@ -310,29 +314,31 @@ export async function GET(req: Request) {
       console.log('[DEBUG] No walletId, using totalSavings:', currentAmount);
     }
 
-    // Make sure currentAmount is never negative
-    currentAmount = Math.max(currentAmount, 0);
+    // Allow negative balance to show reality - don't force to 0
+    // User should know if emergency fund is in deficit
+    // currentAmount = Math.max(currentAmount, 0);
     
     // If no savings were found or error occurred, provide empty object
     if (Object.keys(savingsByType).length === 0) {
       console.log('No savings found, using empty object');
     }
     
-    const mapWalletSummary = (
+    const mapWalletSummary = async (
       wallet: Wallet,
       summary: Awaited<ReturnType<typeof calculateSavingsSummary>>
-    ): WalletEmergencySummary => {
+    ): Promise<WalletEmergencySummary> => {
       const summaryTotal = Math.max(summary.total, 0);
-      const currentAmountForWallet = summaryTotal > 0 ? summaryTotal : wallet.balance;
-      const targetRemaining = Math.max(0, targetAmount - currentAmountForWallet);
+      // Calculate balance from transactions (source of truth)
+      const calculatedBalance = await calculateWalletBalance(wallet.id);
+      const targetRemaining = Math.max(0, targetAmount - calculatedBalance);
       const percentageOfTarget =
-        targetAmount > 0 ? Math.min(100, Math.round((currentAmountForWallet / targetAmount) * 100)) : 0;
+        targetAmount > 0 ? Math.min(100, Math.max(0, Math.round((calculatedBalance / targetAmount) * 100))) : 0;
 
       return {
         walletId: wallet.id,
         walletName: wallet.name,
-        currentAmount: currentAmountForWallet,
-        walletBalance: wallet.balance,
+        currentAmount: calculatedBalance,
+        walletBalance: calculatedBalance,
         targetRemaining,
         percentageOfTarget,
         totalSavings: summaryTotal,
@@ -345,7 +351,7 @@ export async function GET(req: Request) {
 
     if (walletId && selectedWallet) {
       const summary = baseSavingsSummary ?? (await calculateSavingsSummary(user.id, selectedWallet.id));
-      walletBreakdown = [mapWalletSummary(selectedWallet, summary)];
+      walletBreakdown = [await mapWalletSummary(selectedWallet, summary)];
     }
 
     if (!walletId) {
@@ -357,7 +363,7 @@ export async function GET(req: Request) {
       walletBreakdown = await Promise.all(
         userWallets.map(async (wallet) => {
           const summary = await calculateSavingsSummary(user.id, wallet.id);
-          return mapWalletSummary(wallet, summary);
+          return await mapWalletSummary(wallet, summary);
         })
       );
     }
@@ -435,15 +441,15 @@ export async function POST(request: NextRequest) {
     if (walletId) {
       try {
         const wallet = await prisma.wallet.findUnique({
-      where: {
+          where: {
             id: walletId,
             userId: user.id
           }
         });
         
         if (wallet) {
-          // We're assuming the wallet balance represents the emergency fund
-          currentAmount = wallet.balance;
+          // Calculate balance from transactions (source of truth)
+          currentAmount = await calculateWalletBalance(walletId);
         }
       } catch (walletError) {
         console.error('Error fetching wallet:', walletError);
