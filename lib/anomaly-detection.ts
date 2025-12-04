@@ -58,7 +58,7 @@ export async function detectSpendingAnomalies(
       gte: startDate,
       lte: endDate
     },
-    type: 'EXPENSE' // Only analyze expenses
+    type: { in: ['expense', 'EXPENSE'] } // Only analyze expenses
   }
   
   if (walletId) {

@@ -54,12 +54,14 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
         { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
         { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
         { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring' },
+        { path: '/bills', icon: <FiBell size={20} />, label: 'Bills & Tagihan' },
       ]
     },
     {
       label: 'Planning',
       defaultOpen: false,
       items: [
+        { path: '/salary-allocation', icon: <FiDollarSign size={20} />, label: 'Alokasi Gaji' },
         { path: '/budgets', icon: <FiTarget size={20} />, label: 'Budget' },
         { path: '/goals', icon: <FiTarget size={20} />, label: 'Savings Goals' },
         { path: '/wedding-planner', icon: <FiHeart size={20} />, label: 'Wedding Planner' },
@@ -78,6 +80,9 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       defaultOpen: false,
       items: [
         { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insights' },
+        { path: '/spending-insights', icon: <FiZap size={20} />, label: 'Spending Insights' },
+        { path: '/net-worth', icon: <FiBriefcase size={20} />, label: 'Net Worth' },
+        { path: '/goals-timeline', icon: <FiTarget size={20} />, label: 'Goals Timeline' },
         { path: '/reports', icon: <FiFileText size={20} />, label: 'Laporan & Ekspor' },
       ]
     },

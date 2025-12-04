@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { FiArrowUpRight, FiArrowDownLeft, FiDollarSign, FiTrendingUp, FiAlertCircle, FiPieChart, FiBarChart2, FiCalendar, FiEye } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import WalletSelector from '../components/WalletSelector'
@@ -64,6 +64,54 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   ])
 
   const router = useRouter()
+
+  // Auto-sync recurring transactions on dashboard load
+  const syncCalledRef = useRef(false)
+  
+  useEffect(() => {
+    // Prevent double execution in StrictMode
+    if (syncCalledRef.current) {
+      console.log('[AUTO-SYNC] Already called, skipping duplicate')
+      return
+    }
+    syncCalledRef.current = true
+
+    const autoSyncRecurring = async () => {
+      try {
+        // Throttle: only sync once per 5 minutes to avoid spam
+        const lastSyncTime = localStorage.getItem('lastRecurringSyncTime')
+        const now = Date.now()
+        const fiveMinutes = 5 * 60 * 1000
+        
+        if (lastSyncTime && (now - parseInt(lastSyncTime)) < fiveMinutes) {
+          console.log('[AUTO-SYNC] Throttled, last sync was less than 5 minutes ago')
+          return
+        }
+
+        // Set timestamp BEFORE API call to prevent race condition
+        localStorage.setItem('lastRecurringSyncTime', now.toString())
+
+        console.log('[AUTO-SYNC] Checking for due recurring transactions...')
+        const response = await fetch('/api/recurring/sync', { method: 'POST' })
+        
+        if (response.ok) {
+          const result = await response.json()
+          
+          if (result.processed > 0) {
+            console.log(`[AUTO-SYNC] Processed ${result.processed} recurring transactions`)
+            // Refresh wallet balances after sync
+            refreshWallets()
+          } else {
+            console.log('[AUTO-SYNC] No due recurring transactions to process')
+          }
+        }
+      } catch (error) {
+        console.error('[AUTO-SYNC] Error syncing recurring:', error)
+      }
+    }
+
+    autoSyncRecurring()
+  }, []) // Run once on mount
 
   // Load saved widget state from localStorage on component initialization
   const getSavedWidgets = () => {

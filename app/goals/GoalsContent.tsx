@@ -11,6 +11,8 @@ export function GoalsContent() {
   const [goals, setGoals] = useState<any[]>([]);
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [goalToEdit, setGoalToEdit] = useState<any>(null);
 
   useEffect(() => {
     fetchGoals();
@@ -40,7 +42,30 @@ export function GoalsContent() {
       });
 
       if (!response.ok) throw new Error('Failed to create goal');
-      
+
+      const newGoal = await response.json();
+      console.log('[Create Goal] Created:', newGoal);
+
+      // Auto-sync existing transactions if goal has a category
+      if (newGoal.category) {
+        try {
+          console.log(`[Auto-Sync] Syncing for goal ${newGoal.id}...`);
+          const syncResponse = await fetch(`/api/goals/${newGoal.id}/sync`, {
+            method: 'POST',
+          });
+
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            console.log('[Auto-Sync] Result:', syncData);
+            if (syncData.syncedCount > 0) {
+              alert(`Goal created! ✅ Auto-synced ${syncData.syncedCount} transaction(s) worth Rp ${syncData.totalAmount.toLocaleString()}`);
+            }
+          }
+        } catch (syncError) {
+          console.error('[Auto-Sync] Error:', syncError);
+        }
+      }
+
       setIsAddingGoal(false);
       fetchGoals();
     } catch (error) {
@@ -59,10 +84,20 @@ export function GoalsContent() {
       });
 
       if (!response.ok) throw new Error('Failed to update goal');
-      
+
+      setIsEditingGoal(false);
+      setGoalToEdit(null);
       fetchGoals();
     } catch (error) {
       console.error('Error updating goal:', error);
+    }
+  };
+
+  const handleEditGoal = (id: string) => {
+    const goal = goals.find(g => g.id === id);
+    if (goal) {
+      setGoalToEdit(goal);
+      setIsEditingGoal(true);
     }
   };
 
@@ -73,7 +108,7 @@ export function GoalsContent() {
       });
 
       if (!response.ok) throw new Error('Failed to delete goal');
-      
+
       // Refresh goals list
       fetchGoals();
     } catch (error) {
@@ -122,6 +157,21 @@ export function GoalsContent() {
         </div>
       </div>
 
+      <Dialog open={isEditingGoal} onOpenChange={setIsEditingGoal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Goal</DialogTitle>
+          </DialogHeader>
+          {goalToEdit && (
+            <GoalForm
+              onSubmit={(data) => handleUpdateGoal(goalToEdit.id, data)}
+              initialData={goalToEdit}
+              isEditing={true}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {goals.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-xl border border-gray-200 shadow-sm">
           <div className="bg-blue-50 rounded-full p-4 w-16 h-16 flex items-center justify-center mx-auto">
@@ -131,8 +181,8 @@ export function GoalsContent() {
           <p className="text-gray-500 mt-2 max-w-md mx-auto">
             Set financial goals to track your progress and stay motivated on your financial journey.
           </p>
-          <Button 
-            className="mt-6 bg-blue-600 hover:bg-blue-700" 
+          <Button
+            className="mt-6 bg-blue-600 hover:bg-blue-700"
             onClick={() => setIsAddingGoal(true)}
           >
             <FiPlus className="mr-2 h-4 w-4" />
@@ -147,10 +197,11 @@ export function GoalsContent() {
               goal={goal}
               onUpdate={handleUpdateGoal}
               onDelete={handleDeleteGoal}
+              onEdit={handleEditGoal}
             />
           ))}
         </div>
       )}
     </div>
   );
-} 
+}

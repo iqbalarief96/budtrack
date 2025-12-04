@@ -32,8 +32,13 @@ export function useBudgets() {
     queryFn: async (): Promise<Budget[]> => {
       const response = await fetch('/api/budgets')
       if (!response.ok) throw new Error('Failed to fetch budgets')
-      return response.json()
+      const json = await response.json()
+      // Handle both old format (array) and new paginated format
+      return Array.isArray(json) ? json : json.data || []
     },
+    staleTime: 0, // Always consider data stale
+    refetchOnMount: 'always', // Always refetch on component mount
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   })
 }
 

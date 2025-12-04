@@ -5,6 +5,10 @@ import DashboardContent from './DashboardContent'
 import './styles.css'
 import prisma from '@/lib/prisma'
 
+// Force dynamic rendering to ensure fresh data
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
   

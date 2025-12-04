@@ -26,9 +26,11 @@ export default function SavingsGoalCard() {
         if (!response.ok) {
           throw new Error('Failed to fetch goals');
         }
-        
-        const data = await response.json();
-        setGoals(data);
+
+        const json = await response.json();
+        // Handle both array (legacy) and paginated response (new)
+        const goalsData = Array.isArray(json) ? json : (json.data || []);
+        setGoals(goalsData);
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching savings goals:', error);
@@ -68,7 +70,7 @@ export default function SavingsGoalCard() {
       </div>
     );
   }
-  
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[200px] p-4 text-center">
@@ -98,7 +100,7 @@ export default function SavingsGoalCard() {
         {displayGoals.map(goal => {
           const progress = calculateProgress(goal.current, goal.target);
           const colorClass = getColorClass(progress);
-          
+
           return (
             <div key={goal.id} className="border border-gray-100 rounded-lg p-3 shadow-sm">
               <div className="flex justify-between items-center mb-2">
@@ -109,14 +111,14 @@ export default function SavingsGoalCard() {
                   </span>
                 )}
               </div>
-              
+
               <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-                <div 
+                <div
                   className={`h-2.5 rounded-full ${colorClass}`}
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
-              
+
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{progress}% tercapai</span>
                 <span className="font-medium">
@@ -127,7 +129,7 @@ export default function SavingsGoalCard() {
           );
         })}
       </div>
-      
+
       <div className="mt-4 pt-3 border-t text-center">
         <Link href="/goals" className="text-blue-600 text-sm hover:underline flex items-center justify-center">
           Lihat Semua Target <FiChevronRight className="ml-1 h-4 w-4" />
@@ -135,4 +137,4 @@ export default function SavingsGoalCard() {
       </div>
     </div>
   );
-} 
+}

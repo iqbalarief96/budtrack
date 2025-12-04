@@ -7,11 +7,11 @@ import prisma from '@/lib/prisma'
 export async function calculateWalletBalance(walletId: string): Promise<number> {
   const [incomeSum, expenseSum] = await Promise.all([
     prisma.transaction.aggregate({
-      where: { walletId, type: 'INCOME' },
+      where: { walletId, type: { in: ['income', 'INCOME'] } },
       _sum: { amount: true }
     }),
     prisma.transaction.aggregate({
-      where: { walletId, type: 'EXPENSE' },
+      where: { walletId, type: { in: ['expense', 'EXPENSE'] } },
       _sum: { amount: true }
     })
   ])

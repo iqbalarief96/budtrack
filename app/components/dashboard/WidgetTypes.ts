@@ -23,7 +23,10 @@ export type WidgetType =
   | 'safe-to-spend'
   | 'cashflow-forecast'
   | 'subscription-intelligence'
-  | 'debt-payoff-planner';
+  | 'debt-payoff-planner'
+  | 'budget-forecast'
+  | 'upcoming-recurring'
+  | 'upcoming-bills';
 
 export interface DashboardWidget {
   id: string;

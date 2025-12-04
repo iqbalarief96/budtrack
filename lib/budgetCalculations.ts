@@ -114,7 +114,7 @@ export async function calculateBudgetSpending(
       userId,
       walletId,
       categoryId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: startDate,
         lte: endDate,

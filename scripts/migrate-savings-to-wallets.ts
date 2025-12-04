@@ -207,20 +207,27 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
         })
       }
 
-      // Move transactions to the new wallet and change type to INCOME
-      const txIds = data.transactions.map(tx => tx.id)
-      await prisma.transaction.updateMany({
-        where: {
-          id: { in: txIds }
-        },
-        data: {
-          walletId: wallet.id,
-          type: 'INCOME' // Change from EXPENSE to INCOME
-        }
-      })
+      // Create new INCOME transactions in savings wallet
+      // Keep original EXPENSE transactions in main wallet (they represent money leaving main wallet)
+      const newTransactions = []
+      for (const tx of data.transactions) {
+        const newTx = await prisma.transaction.create({
+          data: {
+            userId,
+            walletId: wallet.id,
+            categoryId: tx.categoryId,
+            amount: tx.amount,
+            type: 'INCOME', // Money coming INTO savings wallet
+            description: tx.description + ' (migrated from main wallet)',
+            date: tx.date
+          }
+        })
+        newTransactions.push(newTx)
+      }
       
-      log(`  ✓ Moved ${txIds.length} transactions to wallet ${wallet.name}`)
-      log(`  ✓ Changed transaction type from EXPENSE to INCOME`)
+      log(`  ✓ Created ${newTransactions.length} INCOME transactions in ${wallet.name}`)
+      log(`  ✓ Original EXPENSE transactions kept in main wallet (represents transfer out)`)
+      log(`  ⚠️  WARNING: Do NOT delete the savings wallets after migration!`)
 
       results.push({
         label: data.label,

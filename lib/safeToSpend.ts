@@ -75,7 +75,7 @@ export async function calculateSafeToSpend(
       walletId,
       userId,
       isActive: true,
-      type: 'expense',
+      type: { in: ['expense', 'EXPENSE'] },
       nextPaymentDate: {
         gte: now,
         lte: thirtyDaysFromNow,
@@ -127,7 +127,7 @@ export async function calculateSafeToSpend(
         userId,
         walletId,
         categoryId: budget.categoryId,
-        type: 'EXPENSE',
+        type: { in: ['expense', 'EXPENSE'] },
         date: {
           gte: budget.startDate,
           lte: budget.endDate,

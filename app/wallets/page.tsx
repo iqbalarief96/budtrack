@@ -1,9 +1,11 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign,
+import {
+  FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign,
   FiCreditCard as FiCreditCardIcon, FiGift, FiHeart, FiSmile, FiTruck, FiBookmark,
-  FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiArrowRight } from 'react-icons/fi'
+  FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiArrowRight
+} from 'react-icons/fi'
 import Link from 'next/link'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
@@ -181,20 +183,42 @@ const WalletsPage = () => {
   }
 
   // Handle delete wallet
-  const handleDeleteWallet = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus dompet ini? Semua transaksi terkait juga akan dihapus.')) return
-
+  const handleDeleteWallet = async (id: string, force = false) => {
     try {
-      const response = await fetch(`/api/wallets?id=${id}`, {
+      const response = await fetch(`/api/wallets?id=${id}${force ? '&force=true' : ''}`, {
         method: 'DELETE'
       })
 
       if (!response.ok) {
         const data = await response.json()
+
+        // If wallet has transactions, offer force delete option
+        if (data.transactionCount && !force) {
+          const forceDelete = confirm(
+            `Dompet ini memiliki ${data.transactionCount} transaksi.\n\n` +
+            `Klik OK untuk HAPUS PAKSA (dompet + semua transaksi)\n` +
+            `Klik Cancel untuk batal\n\n` +
+            `⚠️ PERHATIAN: Ini akan menghapus semua data transaksi!`
+          )
+
+          if (forceDelete) {
+            // Retry with force=true
+            return handleDeleteWallet(id, true)
+          }
+          return
+        }
+
         throw new Error(data.error || 'Failed to delete wallet')
       }
 
+      const result = await response.json()
       await refreshWallets()
+
+      if (result.deletedTransactions > 0) {
+        alert(`Dompet dan ${result.deletedTransactions} transaksi berhasil dihapus!`)
+      } else {
+        alert('Dompet berhasil dihapus!')
+      }
     } catch (err) {
       console.error('Error deleting wallet:', err)
       alert('Gagal menghapus dompet. Silakan coba lagi.')
@@ -238,7 +262,7 @@ const WalletsPage = () => {
     setIsAddModalOpen(false)
     resetForm()
   }
-  
+
   // Get the icon component for a wallet
   const getWalletIcon = (iconName: string = 'FiCreditCard') => {
     const icon = AVAILABLE_ICONS.find(i => i.name === iconName);
@@ -258,9 +282,10 @@ const WalletsPage = () => {
           const data = await response.json().catch(() => ({}))
           throw new Error(data.error || 'Failed to fetch budgets')
         }
-        const data: BudgetSummary[] = await response.json()
+        const json = await response.json()
+        const budgetsData = Array.isArray(json) ? json : (json.data || [])
         if (!controller.signal.aborted) {
-          setBudgets(data)
+          setBudgets(budgetsData)
         }
       } catch (err) {
         if (controller.signal.aborted) return
@@ -387,7 +412,7 @@ const WalletsPage = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Dompet</h1>
-        <button 
+        <button
           className="btn btn-primary flex items-center gap-1"
           onClick={() => setIsAddModalOpen(true)}
         >
@@ -395,7 +420,7 @@ const WalletsPage = () => {
           <span>Tambah Dompet</span>
         </button>
       </div>
-      
+
       {/* Total Balance */}
       <div className="card">
         <h2 className="text-lg font-medium text-gray-700 mb-1">Total Saldo</h2>
@@ -543,7 +568,7 @@ const WalletsPage = () => {
 
       {/* Wallet Type Tabs */}
       <WalletTypeTabs />
-      
+
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredWallets.map((wallet) => {
@@ -554,91 +579,91 @@ const WalletsPage = () => {
           return (
             <div key={wallet.id} className="space-y-4">
               <div className="card">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center flex-1">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center mr-3"
-                    style={{ backgroundColor: wallet.color || '#1976D2' }}
-                  >
-                    <WalletIcon className="text-white text-xl" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium">{wallet.name}</h3>
-                      <Link
-                        href={`/wallets/${wallet.id}`}
-                        className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
-                        title="View wallet details"
-                      >
-                        <FiArrowRight size={16} />
-                      </Link>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center flex-1">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center mr-3"
+                      style={{ backgroundColor: wallet.color || '#1976D2' }}
+                    >
+                      <WalletIcon className="text-white text-xl" />
                     </div>
-                    {wallet.isDefault && (
-                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium">{wallet.name}</h3>
+                        <Link
+                          href={`/wallets/${wallet.id}`}
+                          className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                          title="View wallet details"
+                        >
+                          <FiArrowRight size={16} />
+                        </Link>
+                      </div>
+                      {wallet.isDefault && (
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
+                      onClick={() => handleEditWallet(wallet)}
+                    >
+                      <FiEdit size={16} />
+                    </button>
+                    <button
+                      className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
+                      onClick={() => handleDeleteWallet(wallet.id)}
+                      disabled={wallet.isDefault}
+                      title={wallet.isDefault ? 'Dompet default tidak dapat dihapus' : ''}
+                    >
+                      <FiTrash size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-gray-500 text-sm">Saldo</p>
+                  <p className="text-xl font-bold">{formatCurrency(wallet.balance, wallet.currencyCode)}</p>
+                </div>
+
+                <div className="mt-4 border-t pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">Anggaran Aktif</p>
+                    {isBudgetsLoading && (
+                      <span className="text-xs text-gray-400">memuat…</span>
                     )}
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-gray-100"
-                    onClick={() => handleEditWallet(wallet)}
-                  >
-                    <FiEdit size={16} />
-                  </button>
-                  <button
-                    className="p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"
-                    onClick={() => handleDeleteWallet(wallet.id)}
-                    disabled={wallet.isDefault}
-                    title={wallet.isDefault ? 'Dompet default tidak dapat dihapus' : ''}
-                  >
-                    <FiTrash size={16} />
-                  </button>
-                </div>
-              </div>
-              <div className="border-t pt-3">
-                <p className="text-gray-500 text-sm">Saldo</p>
-                <p className="text-xl font-bold">{formatCurrency(wallet.balance, wallet.currencyCode)}</p>
-              </div>
-
-              <div className="mt-4 border-t pt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-700">Anggaran Aktif</p>
-                  {isBudgetsLoading && (
-                    <span className="text-xs text-gray-400">memuat…</span>
+                  {displayedBudgets.length === 0 && !isBudgetsLoading ? (
+                    <p className="text-xs text-gray-500">
+                      Belum ada anggaran yang dikaitkan dengan dompet ini.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {displayedBudgets.map((budget) => (
+                        <div key={budget.id} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium text-gray-600">
+                            <span>{budget.name}</span>
+                            <span>{budget.percentage}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-1.5 rounded-full bg-blue-500 transition-all"
+                              style={{ width: `${Math.min(budget.percentage, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[11px] text-gray-500">
+                            {formatCurrency(budget.spent)} dari {formatCurrency(budget.amount)}
+                            {budget.category?.name ? ` • ${budget.category.name}` : ''}
+                          </p>
+                        </div>
+                      ))}
+                      {hasMoreBudgets && (
+                        <p className="text-[11px] text-blue-600">
+                          +{walletBudgets.length - displayedBudgets.length} anggaran lainnya
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
-                {displayedBudgets.length === 0 && !isBudgetsLoading ? (
-                  <p className="text-xs text-gray-500">
-                    Belum ada anggaran yang dikaitkan dengan dompet ini.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {displayedBudgets.map((budget) => (
-                      <div key={budget.id} className="space-y-1">
-                        <div className="flex justify-between text-xs font-medium text-gray-600">
-                          <span>{budget.name}</span>
-                          <span>{budget.percentage}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-1.5 rounded-full bg-blue-500 transition-all"
-                            style={{ width: `${Math.min(budget.percentage, 100)}%` }}
-                          />
-                        </div>
-                        <p className="text-[11px] text-gray-500">
-                          {formatCurrency(budget.spent)} dari {formatCurrency(budget.amount)}
-                          {budget.category?.name ? ` • ${budget.category.name}` : ''}
-                        </p>
-                      </div>
-                    ))}
-                    {hasMoreBudgets && (
-                      <p className="text-[11px] text-blue-600">
-                        +{walletBudgets.length - displayedBudgets.length} anggaran lainnya
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
 
               </div>
 
@@ -697,7 +722,7 @@ const WalletsPage = () => {
                   Ikon
                 </label>
                 <div className="mb-2 p-3 border rounded-lg flex items-center">
-                  <div 
+                  <div
                     className="w-10 h-10 rounded-full flex items-center justify-center mr-3"
                     style={{ backgroundColor: formData.color }}
                   >
@@ -713,11 +738,10 @@ const WalletsPage = () => {
                         key={icon.name}
                         type="button"
                         onClick={() => setFormData({ ...formData, icon: icon.name })}
-                        className={`w-full aspect-square flex items-center justify-center rounded-lg border ${
-                          formData.icon === icon.name 
-                            ? 'bg-blue-50 border-blue-500' 
+                        className={`w-full aspect-square flex items-center justify-center rounded-lg border ${formData.icon === icon.name
+                            ? 'bg-blue-50 border-blue-500'
                             : 'hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         <IconComponent className="text-lg" style={{ color: formData.color }} />
                       </button>

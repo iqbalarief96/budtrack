@@ -38,16 +38,18 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
     const fetchAndCalculate = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('/api/transactions');
+        const response = await fetch('/api/transactions?limit=-1', { cache: 'no-store' });
         if (response.ok) {
-          const data = await response.json();
+          const json = await response.json();
+          // Handle both array and paginated response formats
+          const data = Array.isArray(json) ? json : json.data || [];
           const currentWalletId = walletId || (selectedWallet?.id || '');
           const filteredTx = data.filter((tx: any) => tx.walletId === currentWalletId);
-          
+
           // Calculate income and expenses
           let income = 0;
           let expense = 0;
-          
+
           filteredTx.forEach((tx: any) => {
             if (tx.type === 'INCOME') {
               income += tx.amount;
@@ -55,21 +57,21 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
               expense += tx.amount;
             }
           });
-          
+
           // Calculate ratios
           const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
           const expenseRatio = income > 0 ? (expense / income) * 100 : 0;
-          
+
           // Get top spending category
-          const walletTxs = filteredTx.filter((tx: any) => 
+          const walletTxs = filteredTx.filter((tx: any) =>
             tx.type === 'EXPENSE' && tx.category !== null
           );
-          
+
           const categorySpending: Record<string, {
             name: string;
             amount: number;
           }> = {};
-          
+
           walletTxs.forEach((tx: any) => {
             const categoryName = tx.category.name;
             if (!categorySpending[categoryName]) {
@@ -80,12 +82,12 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
             }
             categorySpending[categoryName].amount += tx.amount;
           });
-          
+
           const categories = Object.values(categorySpending)
             .sort((a, b) => b.amount - a.amount);
-          
+
           const topCategory = categories.length > 0 ? categories[0] : null;
-          
+
           setSummary({
             savingsRate,
             expenseRatio,
@@ -98,7 +100,7 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
         setIsLoading(false);
       }
     };
-    
+
     fetchAndCalculate();
   }, [walletId, selectedWallet]);
 
@@ -117,7 +119,7 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
         <div className="flex items-center mb-2">
           <div className="mr-2 text-blue-500">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
               <polyline points="17 6 23 6 23 12"></polyline>
@@ -130,11 +132,11 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
           {summary.savingsRate >= 20 ? 'Sangat baik!' : 'Coba tingkatkan ke 20%'}
         </p>
       </div>
-      
+
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
         <div className="flex items-center mb-2">
           <div className="mr-2 text-purple-500">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
               <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
@@ -147,11 +149,11 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
           {summary.expenseRatio <= 70 ? 'Terkendali' : 'Coba kurangi pengeluaran'}
         </p>
       </div>
-      
+
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
         <div className="flex items-center mb-2">
           <div className="mr-2 text-orange-500">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" 
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="20" x2="12" y2="10"></line>
               <line x1="18" y1="20" x2="18" y2="4"></line>
@@ -184,7 +186,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
   const walletId = selectedWalletId || (selectedWallet?.id || '');
   console.log('[DEBUG] WidgetRenderer walletId:', walletId, 'selectedWallet:', selectedWallet);
   const router = useRouter();
-  
+
   // Data state for widgets
   const [isLoading, setIsLoading] = React.useState(true);
   const [data, setData] = React.useState({
@@ -192,28 +194,30 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     income: 0,
     expense: 0,
   });
-  
+
   // Use the transaction modal provider
   const { openTransactionModal } = useTransactionModal();
-  
+
   // Fetch data for widgets
   React.useEffect(() => {
     if (!walletId) return;
-    
+
     const fetchData = async () => {
       setIsLoading(true);
       try {
         // Update balance data from selectedWallet
         if (selectedWallet) {
           // Get transactions for the selected wallet
-          const response = await fetch(`/api/transactions?walletId=${walletId}`);
+          const response = await fetch(`/api/transactions?walletId=${walletId}&limit=-1`, { cache: 'no-store' });
           if (response.ok) {
-            const transactions = await response.json();
-            
+            const json = await response.json();
+            // Handle both array and paginated response formats
+            const transactions = Array.isArray(json) ? json : json.data || [];
+
             // Calculate total income and expense
             let totalIncome = 0;
             let totalExpense = 0;
-            
+
             transactions.forEach((tx: any) => {
               if (tx.type === 'INCOME') {
                 totalIncome += tx.amount;
@@ -221,7 +225,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
                 totalExpense += tx.amount;
               }
             });
-            
+
             // Update data state
             setData({
               balance: selectedWallet.balance || 0,
@@ -236,10 +240,10 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
         setIsLoading(false);
       }
     };
-    
+
     fetchData();
   }, [walletId, selectedWallet]);
-  
+
   // If selectedWalletId is provided and different from current selectedWallet,
   // we update the context (this will cascade to child components)
   React.useEffect(() => {
@@ -251,12 +255,12 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       }
     }
   }, [selectedWalletId, selectedWallet?.id, wallets, setSelectedWalletAndPersist]);
-  
+
   // Render widget based on type
   switch (widget.type) {
     case 'summary':
       return <SummaryWidget walletId={walletId} />;
-      
+
     case 'balance':
       return (
         <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
@@ -271,7 +275,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           </div>
         </div>
       );
-      
+
     case 'income':
       return (
         <div className="flex items-center justify-between">
@@ -292,7 +296,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           )}
         </div>
       );
-      
+
     case 'expense':
       return (
         <div className="flex items-center justify-between">
@@ -313,25 +317,25 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           )}
         </div>
       );
-      
+
     case 'emergency-fund':
       console.log('[DEBUG] WidgetRenderer passing walletId to EmergencyFundCard:', walletId, 'selectedWallet:', selectedWallet);
       return <EmergencyFundCard walletId={walletId} />;
-      
+
     case 'expense-chart':
       return <ExpenseChart />;
-      
+
     case 'income-expense-chart':
       return <IncomeExpenseChart />;
-      
+
     case 'transaction-list':
       // Extract limit from widget config if available
       const limit = widget.config?.limit || 5;
       return <TransactionList limit={limit} />;
-      
+
     case 'budget-overview':
       return <BudgetOverview />;
-      
+
     case 'financial-tips':
       const tips = [
         'Sisihkan 20% penghasilan setiap bulan untuk dana darurat',
@@ -339,7 +343,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
         'Catat semua pengeluaran untuk identifikasi area yang bisa dihemat',
       ];
       const randomTip = tips[Math.floor(Math.random() * tips.length)];
-      
+
       return (
         <div className="flex items-start space-x-3">
           <div className="p-2 bg-yellow-100 rounded-full flex-shrink-0">
@@ -350,17 +354,17 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           </div>
         </div>
       );
-            
+
     case 'savings-goals':
       // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <SavingsGoalCard walletId={walletId} />;
-      
+
     case 'investment-performance':
       return <InvestmentPerformance />;
-    
+
     case 'summary-stats':
       return <SummaryStatsWidget walletId={selectedWalletId} />;
-      
+
     case 'quick-actions':
       return (
         <div className="bg-gray-50 rounded-lg border border-gray-100 p-4">
@@ -384,7 +388,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
                 <span className="text-sm">Tambah Pengeluaran</span>
               </div>
             </button>
-            <button 
+            <button
               onClick={() => openTransactionModal('INCOME')}
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
             >
@@ -393,12 +397,12 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
                 <span className="text-sm">Tambah Pemasukan</span>
               </div>
             </button>
-            <button 
+            <button
               onClick={() => router.push('/budgets')}
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
             >
               <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" 
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                   className="h-6 w-6 text-blue-500 mb-1">
                   <line x1="12" y1="20" x2="12" y2="10"></line>
@@ -413,7 +417,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
             >
               <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" 
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                   className="h-6 w-6 text-purple-500 mb-1">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -429,7 +433,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
               className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
             >
               <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" 
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                   className="h-6 w-6 text-pink-500 mb-1">
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
@@ -440,7 +444,7 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
           </div>
         </div>
       );
-      
+
     case 'top-spending':
       // @ts-ignore - walletId prop is valid but TypeScript doesn't recognize it
       return <TopSpendingWidget walletId={walletId} />;
@@ -473,6 +477,14 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return (
         <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
           <UpcomingRecurringWidget />
+        </React.Suspense>
+      );
+
+    case 'upcoming-bills':
+      const UpcomingBillsWidget = React.lazy(() => import('@/components/dashboard/UpcomingBillsWidget'));
+      return (
+        <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
+          <UpcomingBillsWidget />
         </React.Suspense>
       );
 

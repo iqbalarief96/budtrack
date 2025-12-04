@@ -169,8 +169,38 @@ export async function PUT(request: NextRequest) {
       where: { id: data.id },
       data: updateData
     });
-    
-    return NextResponse.json(updatedGoal);
+
+    // Handle tracked categories if provided
+    if (data.trackedCategoryIds !== undefined && Array.isArray(data.trackedCategoryIds)) {
+      // Delete existing tracked categories
+      await prisma.goalCategory.deleteMany({
+        where: { goalId: data.id }
+      });
+
+      // Create new tracked categories
+      if (data.trackedCategoryIds.length > 0) {
+        await prisma.goalCategory.createMany({
+          data: data.trackedCategoryIds.map((categoryId: string) => ({
+            goalId: data.id,
+            categoryId
+          }))
+        });
+      }
+    }
+
+    // Fetch updated goal with tracked categories
+    const updatedGoalWithCategories = await prisma.goal.findUnique({
+      where: { id: data.id },
+      include: {
+        goalCategories: {
+          include: {
+            category: true
+          }
+        }
+      }
+    });
+
+    return NextResponse.json(updatedGoalWithCategories);
   } catch (error) {
     console.error('Error updating goal:', error);
     return NextResponse.json({ error: 'Failed to update goal' }, { status: 500 });

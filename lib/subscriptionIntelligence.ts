@@ -177,7 +177,7 @@ export async function detectSubscriptions(
   const recurringTransactions = await prisma.recurringTransaction.findMany({
     where: {
       userId,
-      type: 'expense',
+      type: { in: ['expense', 'EXPENSE'] },
     },
     include: {
       wallet: true,

@@ -27,6 +27,8 @@ export function useTransactions(filters?: {
   type?: string
   startDate?: string
   endDate?: string
+  limit?: number // Optional limit, defaults to -1 (all)
+  page?: number
 }) {
   const queryKey = ['transactions', filters]
 
@@ -39,10 +41,20 @@ export function useTransactions(filters?: {
       if (filters?.startDate) params.append('startDate', filters.startDate)
       if (filters?.endDate) params.append('endDate', filters.endDate)
 
+      // Add pagination params - default to limit=-1 (fetch all) for dashboard/summary
+      const limit = filters?.limit !== undefined ? filters.limit : -1
+      params.append('limit', limit.toString())
+      if (filters?.page) params.append('page', filters.page.toString())
+
       const response = await fetch(`/api/transactions?${params}`)
       if (!response.ok) throw new Error('Failed to fetch transactions')
-      return response.json()
+      const json = await response.json()
+      // Handle both old format (array) and new paginated format
+      return Array.isArray(json) ? json : json.data || []
     },
+    staleTime: 0, // Always consider data stale
+    refetchOnMount: 'always', // Always refetch on component mount
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   })
 }
 

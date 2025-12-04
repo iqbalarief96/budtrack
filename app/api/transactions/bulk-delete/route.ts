@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { checkBudgetAlerts } from '@/lib/budgetAlerts';
+import { revalidatePath } from 'next/cache';
 
 /**
  * Bulk delete transactions using POST body (avoids URL length limits)
@@ -47,6 +48,58 @@ export async function POST(request: NextRequest) {
       
       await prisma.$transaction(async (tx) => {
         for (const t of batch) {
+          // CASCADE DELETE: If this is a savings EXPENSE, find and delete paired INCOME transaction
+          if (t.type === 'EXPENSE' && t.categoryId) {
+            const category = await tx.category.findUnique({
+              where: { id: t.categoryId }
+            });
+
+            if (category && category.name.toLowerCase().includes('saving')) {
+              // Find paired INCOME transaction in savings wallet
+              const pairedTransaction = await tx.transaction.findFirst({
+                where: {
+                  userId: session.user.id,
+                  type: 'INCOME',
+                  amount: t.amount,
+                  date: {
+                    gte: new Date(t.date.setHours(0, 0, 0, 0)),
+                    lte: new Date(t.date.setHours(23, 59, 59, 999))
+                  },
+                  description: {
+                    contains: t.description || ''
+                  },
+                  wallet: {
+                    type: 'SAVINGS'
+                  }
+                },
+                include: {
+                  wallet: true
+                }
+              });
+
+              if (pairedTransaction) {
+                console.log(`[CASCADE DELETE] Found paired transaction: ${pairedTransaction.id} in ${pairedTransaction.wallet.name}`);
+                
+                // Update paired wallet balance
+                await tx.wallet.update({
+                  where: { id: pairedTransaction.walletId },
+                  data: {
+                    balance: {
+                      decrement: pairedTransaction.amount
+                    }
+                  }
+                });
+
+                // Delete paired transaction
+                await tx.transaction.delete({
+                  where: { id: pairedTransaction.id }
+                });
+
+                console.log(`[CASCADE DELETE] Deleted paired transaction`);
+              }
+            }
+          }
+
           // Adjust wallet balance reversal
           await tx.wallet.update({
             where: { id: t.walletId },
@@ -97,6 +150,13 @@ export async function POST(request: NextRequest) {
 
       console.log(`[BULK-DELETE] Processed batch ${i / BATCH_SIZE + 1}, deleted ${deleted}/${transactions.length}`);
     }
+
+    // Revalidate all paths that depend on transaction data
+    revalidatePath('/');
+    revalidatePath('/transactions');
+    revalidatePath('/wallets');
+    revalidatePath('/goals');
+    revalidatePath('/budgets');
 
     return NextResponse.json({
       success: true,

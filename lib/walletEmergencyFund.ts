@@ -220,7 +220,7 @@ export async function calculateMonthlyExpenses(userId: string, walletId?: string
 
     const whereClause: any = {
       userId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: sixMonthsAgo,
       },

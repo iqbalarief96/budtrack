@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
-import { FiClock, FiTrendingUp, FiTarget, FiArrowRight, FiTrash2 } from 'react-icons/fi';
+import { FiClock, FiTrendingUp, FiTarget, FiArrowRight, FiTrash2, FiEdit } from 'react-icons/fi';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -23,9 +23,10 @@ interface GoalCardProps {
   };
   onUpdate?: (id: string, data: any) => void;
   onDelete?: (id: string) => void;
+  onEdit?: (id: string) => void;
 }
 
-export function GoalCard({ goal, onUpdate, onDelete }: GoalCardProps) {
+export function GoalCard({ goal, onUpdate, onDelete, onEdit }: GoalCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const progress = (goal.current / goal.target) * 100;
@@ -67,18 +68,18 @@ export function GoalCard({ goal, onUpdate, onDelete }: GoalCardProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault(); // Prevent the Link from being triggered
     e.stopPropagation();
-    
+
     if (!confirm('Are you sure you want to delete this goal?')) {
       return;
     }
-    
+
     setIsDeleting(true);
-    
+
     try {
       // Call parent's onDelete if provided
       if (onDelete) {
         onDelete(goal.id);
-        
+
         toast({
           title: 'Success',
           description: 'Goal deleted successfully!'
@@ -96,6 +97,15 @@ export function GoalCard({ goal, onUpdate, onDelete }: GoalCardProps) {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent the Link from being triggered
+    e.stopPropagation();
+
+    if (onEdit) {
+      onEdit(goal.id);
     }
   };
   
@@ -191,7 +201,11 @@ export function GoalCard({ goal, onUpdate, onDelete }: GoalCardProps) {
                 <FiArrowRight className="h-4 w-4 mr-2" />
                 View Details
               </Button>
-              
+
+              <Button variant="outline" className="w-auto" onClick={handleEdit}>
+                <FiEdit className="h-4 w-4" />
+              </Button>
+
               <Button variant="destructive" className="w-auto" onClick={handleDelete} disabled={isDeleting}>
                 <FiTrash2 className="h-4 w-4" />
               </Button>

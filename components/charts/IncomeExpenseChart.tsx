@@ -48,32 +48,34 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch transactions from API
-        const response = await fetch('/api/transactions');
+        // Fetch transactions from API (get all for accurate history)
+        const response = await fetch('/api/transactions?limit=-1', { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }
-        
-        const transactions = await response.json();
-        
+
+        const json = await response.json();
+        // Handle both array and paginated response formats
+        const transactions = Array.isArray(json) ? json : json.data || [];
+
         // Filter by selected wallet if available
         let filteredTransactions = transactions;
         if (selectedWallet?.id) {
           filteredTransactions = transactions.filter((tx: any) => tx.walletId === selectedWallet.id);
         }
-        
+
         let labels: string[] = [];
         let incomeData: number[] = [];
         let expenseData: number[] = [];
-        
+
         // Format data based on selected period
         if (period === 'monthly') {
           // Last 6 months
           labels = getLastNMonths(6);
-          
+
           // Group transactions by month
           const monthlyData = groupTransactionsByMonth(filteredTransactions, 6);
-          
+
           // Extract income and expense data
           labels.forEach(month => {
             const monthData = monthlyData[month] || { income: 0, expense: 0 };
@@ -83,10 +85,10 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
         } else if (period === 'weekly') {
           // Last 4 weeks
           labels = getLastNWeeks(4);
-          
+
           // Group transactions by week
           const weeklyData = groupTransactionsByWeek(filteredTransactions, 4);
-          
+
           // Extract income and expense data
           labels.forEach((week, i) => {
             const weekData = weeklyData[i] || { income: 0, expense: 0 };
@@ -102,10 +104,10 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
             (currentYear - 1).toString(),
             currentYear.toString()
           ];
-          
+
           // Group transactions by year
           const yearlyData = groupTransactionsByYear(filteredTransactions, 4);
-          
+
           // Extract income and expense data
           labels.forEach(year => {
             const yearData = yearlyData[year] || { income: 0, expense: 0 };
@@ -115,10 +117,10 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
         } else { // daily
           // Last 7 days
           labels = getLastNDays(7);
-          
+
           // Group transactions by day
           const dailyData = groupTransactionsByDay(filteredTransactions, 7);
-          
+
           // Extract income and expense data
           labels.forEach((day, i) => {
             const dayData = dailyData[i] || { income: 0, expense: 0 };
@@ -179,7 +181,7 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function (context: any) {
             const label = context.dataset.label || '';
             const value = context.raw;
             return `${label}: ${formatCurrency(value)}`;
@@ -196,7 +198,7 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: any) {
+          callback: function (value: any) {
             // Simplify the y-axis labels
             if (value >= 1000000) {
               return (value / 1000000).toFixed(1) + ' jt';
@@ -236,12 +238,12 @@ function getLastNMonths(n: number): string[] {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'];
   const today = new Date();
   const result = [];
-  
+
   for (let i = n - 1; i >= 0; i--) {
     const monthIndex = (today.getMonth() - i + 12) % 12;
     result.push(months[monthIndex]);
   }
-  
+
   return result;
 }
 
@@ -257,13 +259,13 @@ function getLastNDays(n: number): string[] {
   const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
   const today = new Date();
   const result = [];
-  
+
   for (let i = n - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(today.getDate() - i);
     result.push(days[date.getDay()]);
   }
-  
+
   return result;
 }
 
@@ -271,26 +273,26 @@ function groupTransactionsByMonth(transactions: any[], months: number) {
   const result: Record<string, { income: number, expense: number }> = {};
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'];
   const today = new Date();
-  
+
   // Initialize result with last n months
   for (let i = months - 1; i >= 0; i--) {
     const monthIndex = (today.getMonth() - i + 12) % 12;
     result[monthNames[monthIndex]] = { income: 0, expense: 0 };
   }
-  
+
   // Process transactions
   transactions.forEach((tx: any) => {
     const txDate = new Date(tx.date);
     const monthName = monthNames[txDate.getMonth()];
-    
+
     // Only include transactions from the last n months
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
     const txMonth = txDate.getMonth();
     const txYear = txDate.getFullYear();
-    
+
     const monthDiff = (currentYear - txYear) * 12 + (currentMonth - txMonth);
-    
+
     if (monthDiff < months && monthDiff >= 0) {
       if (tx.type === 'INCOME') {
         result[monthName].income += tx.amount;
@@ -299,29 +301,29 @@ function groupTransactionsByMonth(transactions: any[], months: number) {
       }
     }
   });
-  
+
   return result;
 }
 
 function groupTransactionsByWeek(transactions: any[], weeks: number) {
   // Create an array to hold data for each week
   const result: { income: number, expense: number }[] = Array(weeks).fill(null).map(() => ({ income: 0, expense: 0 }));
-  
+
   // Calculate date limits
   const today = new Date();
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - (weeks * 7));
-  
+
   // Process transactions
   transactions.forEach((tx: any) => {
     const txDate = new Date(tx.date);
-    
+
     // Only include transactions from the specified period
     if (txDate >= startDate && txDate <= today) {
       // Calculate which week this transaction belongs to
       const daysDiff = Math.floor((today.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24));
       const weekIndex = Math.floor(daysDiff / 7);
-      
+
       if (weekIndex < weeks) {
         if (tx.type === 'INCOME') {
           result[weekIndex].income += tx.amount;
@@ -331,25 +333,25 @@ function groupTransactionsByWeek(transactions: any[], weeks: number) {
       }
     }
   });
-  
+
   return result;
 }
 
 function groupTransactionsByDay(transactions: any[], days: number) {
   // Create an array to hold data for each day
   const result: { income: number, expense: number }[] = Array(days).fill(null).map(() => ({ income: 0, expense: 0 }));
-  
+
   // Calculate date limits
   const today = new Date();
   today.setHours(23, 59, 59, 999); // End of today
-  
+
   // Process transactions
   transactions.forEach((tx: any) => {
     const txDate = new Date(tx.date);
-    
+
     // Calculate days difference
     const daysDiff = Math.floor((today.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     // Only include transactions from the last n days
     if (daysDiff < days && daysDiff >= 0) {
       if (tx.type === 'INCOME') {
@@ -359,7 +361,7 @@ function groupTransactionsByDay(transactions: any[], days: number) {
       }
     }
   });
-  
+
   // Reverse the array so it's chronological
   return result.reverse();
 }
@@ -367,18 +369,18 @@ function groupTransactionsByDay(transactions: any[], days: number) {
 function groupTransactionsByYear(transactions: any[], years: number) {
   const result: Record<string, { income: number, expense: number }> = {};
   const currentYear = new Date().getFullYear();
-  
+
   // Initialize result with last n years
   for (let i = years - 1; i >= 0; i--) {
     const year = currentYear - i;
     result[year.toString()] = { income: 0, expense: 0 };
   }
-  
+
   // Process transactions
   transactions.forEach((tx: any) => {
     const txDate = new Date(tx.date);
     const txYear = txDate.getFullYear().toString();
-    
+
     // Only include transactions from the last n years
     if (txYear >= (currentYear - years + 1).toString() && txYear <= currentYear.toString()) {
       if (tx.type === 'INCOME') {
@@ -388,6 +390,6 @@ function groupTransactionsByYear(transactions: any[], years: number) {
       }
     }
   });
-  
+
   return result;
-} 
+}

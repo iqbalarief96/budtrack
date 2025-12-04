@@ -19,8 +19,13 @@ export function useWallets() {
     queryFn: async (): Promise<Wallet[]> => {
       const response = await fetch('/api/wallets')
       if (!response.ok) throw new Error('Failed to fetch wallets')
-      return response.json()
+      const json = await response.json()
+      // Handle both old format (array) and new paginated format
+      return Array.isArray(json) ? json : json.data || []
     },
+    staleTime: 0, // Always consider data stale
+    refetchOnMount: 'always', // Always refetch on component mount
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   })
 }
 

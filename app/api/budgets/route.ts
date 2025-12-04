@@ -13,6 +13,8 @@ import {
 } from '@/lib/budgetCalculations';
 import { BudgetSchema } from '@/lib/validators';
 import { z } from 'zod';
+import { parsePaginationParams } from '@/lib/pagination';
+import { paginatedResponse } from '@/lib/api-response';
 
 type BudgetWithRelations = Budget & {
   category: Category;
@@ -23,7 +25,7 @@ type BudgetWithRelations = Budget & {
   isActive: boolean;
 }
 
-// GET /api/budgets - Get all budgets for the current user
+// GET /api/budgets?page=1&limit=50&walletId=xxx - Get budgets with pagination
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -35,13 +37,22 @@ export async function GET(request: NextRequest) {
     const walletId = searchParams.get('walletId');
     const userId = searchParams.get('userId') || session.user.id;
 
+    // Parse pagination parameters
+    const { page, limit, offset } = parsePaginationParams(searchParams);
+
     const where: any = { userId };
     if (walletId) {
       where.walletId = walletId;
     }
 
+    // Count total budgets
+    const total = await prisma.budget.count({ where });
+
+    // Fetch paginated budgets
     const budgets = await prisma.budget.findMany({
       where,
+      skip: offset,
+      take: limit,
       orderBy: {
         createdAt: 'desc',
       },
@@ -79,7 +90,13 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    return NextResponse.json(budgetsWithSpending);
+    return paginatedResponse(
+      budgetsWithSpending,
+      page,
+      limit,
+      total,
+      'Budgets fetched successfully'
+    );
   } catch (error) {
     console.error('Error fetching budgets:', error);
     return NextResponse.json(

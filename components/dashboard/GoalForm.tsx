@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 interface GoalFormProps {
   onSubmit: (data: any) => void;
   initialData?: {
+    id?: string;
     name: string;
     target: number;
     type: string;
@@ -38,10 +39,10 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
     type: initialData?.type || 'EMERGENCY_FUND',
     description: initialData?.description || '',
     targetDate: initialData?.targetDate ? new Date(initialData.targetDate).toISOString().split('T')[0] : '',
-    trackedCategoryIds: initialData?.trackedCategories?.map((tc: any) => tc.categoryId) || [],
+    trackedCategoryIds: initialData?.trackedCategories?.map((tc: any) => tc.id || tc.categoryId) || [],
     categoryId: initialData?.categoryId || ''
   });
-  
+
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -60,24 +61,51 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
         setLoading(false);
       }
     };
-    
+
     fetchCategories();
   }, []);
 
+  // Fetch tracked categories for existing goal
+  useEffect(() => {
+    const fetchTrackedCategories = async () => {
+      if (isEditing && initialData && 'id' in initialData) {
+        try {
+          const goalId = (initialData as any).id;
+          const response = await fetch(`/api/goals/${goalId}/tracked-categories`);
+          if (response.ok) {
+            const data = await response.json();
+            // Handle both array and object response formats
+            const categoriesArray = Array.isArray(data) ? data : (data?.categories || []);
+            setFormData(prev => ({
+              ...prev,
+              trackedCategoryIds: categoriesArray.map((tc: any) => tc.categoryId || tc.id)
+            }));
+          }
+        } catch (error) {
+          console.error('Error fetching tracked categories:', error);
+        }
+      }
+    };
+
+    fetchTrackedCategories();
+    // Only depend on the goal ID, not the entire initialData object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, (initialData as any)?.id]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Prepare data for API - omit targetDate and use deadline instead
-    const { targetDate, ...rest } = formData;
-    
+
+    // Prepare data for API - omit targetDate and type, use deadline and category instead
+    const { targetDate, type, ...rest } = formData;
+
     // Ensure we have a valid date to work with
     let deadlineValue = null;
-    
+
     if (targetDate && targetDate.trim() !== '') {
       try {
         // Convert to a proper Date object
         const dateObj = new Date(targetDate);
-        
+
         // Check if valid date
         if (!isNaN(dateObj.getTime())) {
           deadlineValue = dateObj;
@@ -89,21 +117,23 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
         console.error("Error parsing date:", error);
       }
     }
-    
+
     const submissionData = {
       ...rest,
       target: Number(formData.target),
+      // Map 'type' to 'category' for database
+      category: type,
       // Use the correct field name for the API (deadline)
       deadline: deadlineValue,
     };
-    
+
     console.log("Form submission data:", {
       original: formData,
       submitted: submissionData,
       rawTargetDate: targetDate,
       parsedDate: deadlineValue
     });
-    
+
     onSubmit(submissionData);
   };
 
@@ -121,24 +151,24 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
       type: value,
     }));
   };
-  
+
   const handleCategoryChange = (value: string) => {
     setFormData(prev => ({
       ...prev,
       categoryId: value,
     }));
   };
-  
+
   const handleCategoryToggle = (categoryId: string) => {
     setFormData(prev => {
       // Check if category is already selected
       const isSelected = prev.trackedCategoryIds.includes(categoryId);
-      
+
       // If selected, remove it; otherwise, add it
       const newTrackedCategoryIds = isSelected
         ? prev.trackedCategoryIds.filter(id => id !== categoryId)
         : [...prev.trackedCategoryIds, categoryId];
-      
+
       return {
         ...prev,
         trackedCategoryIds: newTrackedCategoryIds
@@ -181,6 +211,9 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
             ))}
           </SelectContent>
         </Select>
+        <p className="text-sm text-gray-500 mt-1">
+          This determines how transactions are auto-tracked to this goal
+        </p>
       </div>
 
       {formType === 'budget' && (
@@ -257,17 +290,17 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
           placeholder={formType === 'budget' ? "Add some details about your budget" : "Add some details about your goal"}
         />
       </div>
-      
+
       <div className="space-y-3">
         <Label className="block mb-2">
           {formType === 'budget' ? 'Tracked Categories' : 'Auto-Track Categories'}
         </Label>
         <p className="text-sm text-gray-500 mb-3">
-          {formType === 'budget' 
+          {formType === 'budget'
             ? "This budget will track spending in these categories."
             : "Transactions with these categories will automatically update this goal's progress."}
         </p>
-        
+
         {loading ? (
           <div className="flex justify-center py-4">
             <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
@@ -281,7 +314,7 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
             ) : (
               categories.map(category => (
                 <div key={category.id} className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id={`category-${category.id}`}
                     checked={formData.trackedCategoryIds.includes(category.id)}
                     onCheckedChange={() => handleCategoryToggle(category.id)}
@@ -300,11 +333,11 @@ export function GoalForm({ onSubmit, initialData, isEditing = false, formType = 
       </div>
 
       <Button type="submit" className="w-full">
-        {isEditing 
+        {isEditing
           ? (formType === 'budget' ? 'Update Budget' : 'Update Goal')
           : (formType === 'budget' ? 'Create Budget' : 'Create Goal')
         }
       </Button>
     </form>
   );
-} 
+}

@@ -20,6 +20,7 @@ import { ReceiptPreviewModal } from '@/components/ReceiptPreviewModal';
 import TransactionItemsList from '@/components/transactions/TransactionItemsList';
 import AddTransactionItemDialog from '@/components/transactions/AddTransactionItemDialog';
 import { FixTransactionTypesButton } from '@/components/FixTransactionTypesButton';
+import { useQueryClient } from '@tanstack/react-query';
 
 
 
@@ -65,6 +66,7 @@ const TransactionsPage = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
   const typeParam = searchParams.get('type')
+  const queryClient = useQueryClient()
 
   const { selectedWallet, refreshWallets, wallets } = useWallet()
 
@@ -87,11 +89,18 @@ const TransactionsPage = () => {
   const [totalExpense, setTotalExpense] = useState(0)
   const [useAI, setUseAI] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState('monthly')
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]) // For summary calculations
   const [scannedReceiptData, setScannedReceiptData] = useState<any>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const [transactionItems, setTransactionItems] = useState<Record<string, any[]>>({});
+
+  // Pagination state
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
 
   // Hydration-safe localStorage init
@@ -170,7 +179,45 @@ const TransactionsPage = () => {
     }
   }, [typeParam, router])
 
-  // Fetch transactions
+  // Refetch when pagination or search changes
+  useEffect(() => {
+    if (isClientSide) {
+      fetchTransactions(activeFilters)
+      fetchAllTransactions() // Fetch all for summary
+    }
+  }, [currentPage, itemsPerPage, searchQuery])
+
+  // Fetch ALL transactions for summary calculations (no pagination, but filter by wallet and period)
+  const fetchAllTransactions = async () => {
+    try {
+      const queryParams = new URLSearchParams()
+
+      // Filter by selected wallet
+      if (selectedWallet) {
+        queryParams.append('walletId', selectedWallet.id)
+      }
+
+      queryParams.append('limit', '-1') // Fetch ALL transactions for this wallet
+      queryParams.append('period', selectedPeriod) // Use selected period
+
+      console.log('[SUMMARY] Fetching from:', `/api/transactions?${queryParams.toString()}`)
+      const response = await fetch(`/api/transactions?${queryParams.toString()}`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('Failed to fetch all transactions')
+      const json = await response.json()
+
+      console.log('[SUMMARY] Raw response:', json)
+      console.log('[SUMMARY] Is array?', Array.isArray(json))
+
+      // Response is always wrapped in {success, data} format
+      const allTxs = json.data || []
+      setAllTransactions(allTxs)
+      console.log('[SUMMARY] Fetched all transactions:', allTxs.length)
+      console.log('[SUMMARY] Transactions:', allTxs)
+    } catch (err) {
+      console.error('[SUMMARY] Error fetching all transactions:', err)
+    }
+  }
+
   const fetchTransactions = async (filters = {}) => {
     setIsLoading(true)
     setError('')
@@ -179,14 +226,64 @@ const TransactionsPage = () => {
       if (selectedWallet) {
         queryParams.append('walletId', selectedWallet.id)
       }
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value) queryParams.append(key, value.toString())
-      })
 
-      const response = await fetch(`/api/transactions?${queryParams.toString()}`)
+      // Add pagination params
+      if (itemsPerPage === -1) {
+        // -1 means "All" - fetch all transactions
+        queryParams.append('limit', '-1')
+      } else {
+        // Normal pagination
+        queryParams.append('page', currentPage.toString())
+        queryParams.append('limit', itemsPerPage.toString())
+      }
+
+      // Add search query
+      if (searchQuery.trim()) {
+        queryParams.append('search', searchQuery.trim())
+      }
+
+      // Add filters
+      const typedFilters = filters as FilterValues;
+
+      if (typedFilters.type) {
+        queryParams.append('type', typedFilters.type);
+      }
+
+      if (typedFilters.categoryId) {
+        queryParams.append('categoryId', typedFilters.categoryId);
+      }
+
+      if (typedFilters.dateRange?.start) {
+        queryParams.append('startDate', typedFilters.dateRange.start);
+      }
+
+      if (typedFilters.dateRange?.end) {
+        queryParams.append('endDate', typedFilters.dateRange.end);
+      }
+
+      if (typedFilters.amountRange?.min !== undefined) {
+        queryParams.append('minAmount', typedFilters.amountRange.min.toString());
+      }
+
+      if (typedFilters.amountRange?.max !== undefined) {
+        queryParams.append('maxAmount', typedFilters.amountRange.max.toString());
+      }
+
+      const response = await fetch(`/api/transactions?${queryParams.toString()}`, { cache: 'no-store' })
       if (!response.ok) throw new Error('Failed to fetch transactions')
-      const data = await response.json()
-      setTransactions(data)
+      const json = await response.json()
+
+      // Handle both array and paginated response formats
+      if (Array.isArray(json)) {
+        setTransactions(json)
+        setTotalItems(json.length)
+      } else {
+        const txData = json.data || []
+        setTransactions(txData)
+        // If meta exists (paginated), use meta.total. 
+        // If not (all items), use array length.
+        setTotalItems(json.meta?.total || txData.length)
+      }
 
       // Totals will be calculated in the useEffect that depends on transactions and selectedPeriod
     } catch (err) {
@@ -302,10 +399,13 @@ const TransactionsPage = () => {
     }
   };
 
-  // Fetch transactions when wallet changes
+  // Fetch transactions when wallet or period changes
   useEffect(() => {
-    fetchTransactions(activeFilters)
-  }, [selectedWallet, activeFilters])
+    if (isClientSide) {
+      fetchTransactions(activeFilters)
+      fetchAllTransactions() // Fetch all for summary
+    }
+  }, [selectedWallet, activeFilters, selectedPeriod, isClientSide])
 
   // Recalculate totals when transactions or period changes - MOVED BELOW calculateTotals definition
 
@@ -375,33 +475,9 @@ const TransactionsPage = () => {
   }
 
   // Filter transactions based on selected wallet and filters
-  const filteredTransactions = getSortedTransactions(
-    transactions.filter(tx => {
-      if (!activeFilters) return true
+  // NOW HANDLED BY API
+  const filteredTransactions = transactions
 
-      // Filter by type
-      if (activeFilters.type && tx.type !== activeFilters.type) return false
-
-      // Filter by category
-      if (activeFilters.categoryId && tx.category.id !== activeFilters.categoryId) return false
-
-      // Filter by date range
-      if (activeFilters.dateRange) {
-        const txDate = new Date(tx.date)
-        if (activeFilters.dateRange.start && txDate < new Date(activeFilters.dateRange.start)) return false
-        if (activeFilters.dateRange.end && txDate > new Date(activeFilters.dateRange.end)) return false
-      }
-
-      // Filter by amount range
-      if (activeFilters.amountRange) {
-        if (activeFilters.amountRange.min && tx.amount < activeFilters.amountRange.min) return false
-        if (activeFilters.amountRange.max && tx.amount > activeFilters.amountRange.max) return false
-      }
-
-      return true
-    }),
-    sortConfig
-  )
 
   const selectedCount = selectedTransactions.size
   const isAllSelected = filteredTransactions.length > 0 && filteredTransactions.every(tx => selectedTransactions.has(tx.id))
@@ -419,8 +495,22 @@ const TransactionsPage = () => {
       // Wait for the transaction to be saved (handled by TransactionModal)
       console.log('Transaction saved:', transactionData);
 
+      // FORCE refetch all React Query queries
+      await queryClient.refetchQueries({ queryKey: ['transactions'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['budgets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['wallets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['goals'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['emergencyFund'], type: 'active' })
+
+      // Wait for refetches to complete
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Refresh router to trigger server-side revalidation
+      router.refresh()
+
       // Refresh transaction list
       await fetchTransactions(activeFilters);
+      await fetchAllTransactions();
 
       // Refresh wallet balances
       await refreshWallets();
@@ -445,7 +535,7 @@ const TransactionsPage = () => {
 
     try {
       let response;
-      
+
       // Use bulk-delete endpoint for multiple transactions to avoid URL length limits
       if (ids.length > 1) {
         response = await fetch('/api/transactions/bulk-delete', {
@@ -471,8 +561,20 @@ const TransactionsPage = () => {
 
       const result = await response.json().catch(() => null)
 
-      await fetchTransactions(activeFilters)
-      await refreshWallets()
+      // FORCE refetch all React Query queries (not just invalidate!)
+      await queryClient.refetchQueries({ queryKey: ['transactions'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['budgets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['wallets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['goals'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['emergencyFund'], type: 'active' })
+
+      // Wait for refetches to complete
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Refresh router to trigger server-side revalidation
+      router.refresh()
+
+      // Clear local state and refetch
       setSelectedTransactions(new Set())
 
       const successMessage =
@@ -541,8 +643,22 @@ const TransactionsPage = () => {
 
   // Handle import complete
   const handleImportComplete = async () => {
+    // FORCE refetch all React Query queries
+    await queryClient.refetchQueries({ queryKey: ['transactions'], type: 'active' })
+    await queryClient.refetchQueries({ queryKey: ['budgets'], type: 'active' })
+    await queryClient.refetchQueries({ queryKey: ['wallets'], type: 'active' })
+    await queryClient.refetchQueries({ queryKey: ['goals'], type: 'active' })
+    await queryClient.refetchQueries({ queryKey: ['emergencyFund'], type: 'active' })
+
+    // Wait for refetches to complete
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    // Refresh router to trigger server-side revalidation
+    router.refresh()
+
     // Refresh transactions after import
     await fetchTransactions(activeFilters)
+    await fetchAllTransactions()
     await refreshWallets()
 
     toast.success('Import transaksi selesai')
@@ -649,8 +765,22 @@ const TransactionsPage = () => {
       const result = await response.json();
       toast.success(result.message || 'Transaction saved successfully!');
 
+      // FORCE refetch all React Query queries
+      await queryClient.refetchQueries({ queryKey: ['transactions'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['budgets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['wallets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['goals'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['emergencyFund'], type: 'active' })
+
+      // Wait for refetches to complete
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Refresh router to trigger server-side revalidation
+      router.refresh()
+
       // Refresh data
       await fetchTransactions(activeFilters);
+      await fetchAllTransactions();
       await refreshWallets();
 
       // Close modal
@@ -711,8 +841,22 @@ const TransactionsPage = () => {
       const result = await response.json();
       toast.success(`${result.count} transaksi berhasil disimpan!`);
 
+      // FORCE refetch all React Query queries
+      await queryClient.refetchQueries({ queryKey: ['transactions'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['budgets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['wallets'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['goals'], type: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['emergencyFund'], type: 'active' })
+
+      // Wait for refetches to complete
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Refresh router to trigger server-side revalidation
+      router.refresh()
+
       // Refresh data
       await fetchTransactions(activeFilters);
+      await fetchAllTransactions();
       await refreshWallets();
 
       setIsReceiptModalOpen(false);
@@ -787,12 +931,12 @@ const TransactionsPage = () => {
     return { income, expense };
   }, [selectedPeriod]);
 
-  // Recalculate totals when transactions or period changes
+  // Recalculate totals when ALL transactions or period changes (not paginated transactions)
   useEffect(() => {
-    const { income, expense } = calculateTotals(transactions);
+    const { income, expense } = calculateTotals(allTransactions);
     setTotalIncome(income);
     setTotalExpense(expense);
-  }, [transactions, calculateTotals]);
+  }, [allTransactions, calculateTotals, selectedPeriod]);
 
   // Add a refresh button for insights
   const handleRefreshInsights = () => {
@@ -1090,6 +1234,64 @@ const TransactionsPage = () => {
           {error}
         </div>
       )}
+
+      {/* Search and Pagination Controls */}
+      <div className="mb-4 flex flex-col sm:flex-row gap-3 sm:gap-4 items-start sm:items-center justify-between bg-white p-4 rounded-lg shadow">
+        {/* Search Bar */}
+        <div className="w-full sm:w-auto sm:flex-1">
+          <input
+            type="text"
+            placeholder="Cari transaksi..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+              setCurrentPage(1) // Reset to page 1 when searching
+            }}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-600 whitespace-nowrap">
+            {itemsPerPage === -1 ? 'All' : `${(currentPage - 1) * itemsPerPage + 1}-${Math.min(currentPage * itemsPerPage, totalItems)}`} of {totalItems}
+          </span>
+
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value))
+              setCurrentPage(1)
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={-1}>All</option>
+          </select>
+
+          {/* Page Navigation */}
+          {itemsPerPage !== -1 && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => p + 1)}
+                disabled={currentPage * itemsPerPage >= totalItems}
+                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Transactions Table - Desktop */}
       <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">

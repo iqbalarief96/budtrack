@@ -42,12 +42,14 @@ export default function TransactionList({ limit = 5 }: TransactionListProps) {
         params.append('limit', limit.toString());
         
         const response = await fetch(`/api/transactions?${params.toString()}`);
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }
-        
-        const data = await response.json();
+
+        const json = await response.json();
+        // Handle both array and paginated response formats
+        const data = Array.isArray(json) ? json : json.data || [];
         setTransactions(data);
         setIsLoading(false);
       } catch (error) {

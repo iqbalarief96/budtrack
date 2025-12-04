@@ -29,7 +29,7 @@ const buildFallbackInsight = (
   if (currentSavings > 0) {
     const savingsRate = currentIncome > 0 ? (currentSavings / currentIncome) * 100 : 0
     return {
-      tone: savingsRate >= 20 ? 'positive' : 'neutral',
+      tone: (savingsRate >= 20 ? 'positive' : 'neutral') as 'positive' | 'neutral',
       text:
         savingsRate >= 20
           ? `Cashflow kamu surplus ${formatCurrency(currentSavings)} dengan savings rate ${savingsRate.toFixed(1)}%. Pertahankan strategi ini!`
@@ -39,27 +39,27 @@ const buildFallbackInsight = (
 
   if (currentSavings < 0) {
     return {
-      tone: 'negative',
+      tone: 'negative' as 'negative',
       text: `Cashflow defisit ${formatCurrency(Math.abs(currentSavings))}. Tinjau pos pengeluaran yang naik ${expenseChangePct.toFixed(1)}% dari periode lalu.`
     }
   }
 
   if (incomeChangePct < -10) {
     return {
-      tone: 'warning',
+      tone: 'warning' as 'warning',
       text: `Income turun ${Math.abs(incomeChangePct).toFixed(1)}%. Pastikan pemasukan rutin sudah tercatat atau cari peluang income tambahan.`
     }
   }
 
   if (expenseChangePct > 15) {
     return {
-      tone: 'warning',
+      tone: 'warning' as 'warning',
       text: `Pengeluaran naik ${expenseChangePct.toFixed(1)}%. Cek kategori terbesar dan coba rem biaya yang nggak urgent.`
     }
   }
 
   return {
-    tone: 'neutral',
+    tone: 'neutral' as 'neutral',
     text: 'Cashflow kamu stabil. Kalau mau meningkatkan tabungan, targetkan surplus kecil secara konsisten tiap periode.'
   }
 }
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     }
 
     const { walletId, period } = await req.json()
-    
+
     if (!walletId) {
       return NextResponse.json({ error: 'Wallet ID is required' }, { status: 400 })
     }
@@ -125,12 +125,12 @@ export async function POST(req: Request) {
       currentPeriodStart = new Date(now.getFullYear(), currentQuarter * 3, 1)
       previousPeriodEnd = new Date(currentPeriodStart)
       previousPeriodEnd.setDate(previousPeriodEnd.getDate() - 1)
-      const previousQuarter = previousPeriodEnd.getMonth() < 3 
-        ? 3 
+      const previousQuarter = previousPeriodEnd.getMonth() < 3
+        ? 3
         : Math.floor(previousPeriodEnd.getMonth() / 3) * 3
       previousPeriodStart = new Date(
-        previousPeriodEnd.getMonth() < 3 ? previousPeriodEnd.getFullYear() - 1 : previousPeriodEnd.getFullYear(), 
-        previousQuarter, 
+        previousPeriodEnd.getMonth() < 3 ? previousPeriodEnd.getFullYear() - 1 : previousPeriodEnd.getFullYear(),
+        previousQuarter,
         1
       )
     } else {
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
       where: {
         walletId,
         userId: session.user.id,
-        type: 'INCOME',
+        type: { in: ['income', 'INCOME'] },
         date: {
           gte: currentPeriodStart,
           lte: currentPeriodEnd
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       where: {
         walletId,
         userId: session.user.id,
-        type: 'EXPENSE',
+        type: { in: ['expense', 'EXPENSE'] },
         date: {
           gte: currentPeriodStart,
           lte: currentPeriodEnd
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
       where: {
         walletId,
         userId: session.user.id,
-        type: 'INCOME',
+        type: { in: ['income', 'INCOME'] },
         date: {
           gte: previousPeriodStart,
           lte: previousPeriodEnd
@@ -182,7 +182,7 @@ export async function POST(req: Request) {
       where: {
         walletId,
         userId: session.user.id,
-        type: 'EXPENSE',
+        type: { in: ['expense', 'EXPENSE'] },
         date: {
           gte: previousPeriodStart,
           lte: previousPeriodEnd

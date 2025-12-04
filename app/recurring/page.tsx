@@ -130,8 +130,10 @@ export default function RecurringPage() {
         throw new Error('Failed to fetch wallets')
       }
       
-      const data = await response.json()
-      setWallets(data)
+      const result = await response.json()
+      // API returns { success: true, data: [...] } format
+      const walletsData = result.data || result
+      setWallets(Array.isArray(walletsData) ? walletsData : [])
     } catch (err) {
       console.error('Error fetching wallets:', err)
       setError('Failed to load wallets')
@@ -805,7 +807,7 @@ export default function RecurringPage() {
                       required
                     >
                       <option value="" disabled>Select a wallet</option>
-                      {wallets.map(wallet => (
+                      {(wallets || []).map(wallet => (
                         <option key={wallet.id} value={wallet.id}>
                           {wallet.name} ({displayAmount(wallet.balance, 'expense')})
                         </option>

@@ -123,7 +123,7 @@ async function analyzeSpendingPatterns(
         where: {
           userId,
           ...(walletId ? { walletId } : {}),
-          type: 'EXPENSE'
+          type: { in: ['expense', 'EXPENSE'] }
         },
         orderBy: {
           date: 'asc'
@@ -158,7 +158,7 @@ async function analyzeSpendingPatterns(
   // Base query filter
   const baseFilter: any = {
     userId,
-    type: 'EXPENSE'
+    type: { in: ['expense', 'EXPENSE'] }
   };
   
   if (walletId) {

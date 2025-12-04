@@ -130,7 +130,7 @@ export async function calculateSavingsSummary(
     // Query transactions
     const whereClause: any = {
       userId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       category: {
         OR: [
           { name: { contains: 'Saving' } },

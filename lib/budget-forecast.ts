@@ -51,7 +51,7 @@ export async function calculateBudgetForecast(
       userId,
       categoryId: budget.categoryId,
       walletId: budget.walletId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: startDate,
         lte: endDate,

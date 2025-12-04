@@ -81,6 +81,7 @@ export default function CustomizableTabContent({
     // NEW HIGH PRIORITY FEATURES
     { id: 'budget-forecast-widget', type: 'budget-forecast', size: 'large', title: 'Budget Forecast', position: 20 },
     { id: 'upcoming-recurring-widget', type: 'upcoming-recurring', size: 'medium', title: 'Upcoming Recurring', position: 21 },
+    { id: 'upcoming-bills-widget', type: 'upcoming-bills', size: 'medium', title: 'Bills Due This Week', position: 22 },
   ];
 
   // Add a new widget

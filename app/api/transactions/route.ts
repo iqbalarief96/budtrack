@@ -12,6 +12,10 @@ import { detectSavingsType } from '@/lib/savingsTracker'
 import { autoLinkSavingsToGoal } from '@/lib/savingsGoalAutoLink'
 import { TransactionSchema } from '@/lib/validators'
 import { z } from 'zod'
+import { TRANSACTION_THRESHOLDS } from '@/lib/constants'
+import { parsePaginationParams } from '@/lib/pagination'
+import { paginatedResponse, successResponse } from '@/lib/api-response'
+import { revalidatePath } from 'next/cache'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -109,41 +113,41 @@ export async function POST(request: Request) {
     console.log('Found category:', category)
 
     // Auto-route savings transactions to appropriate SAVINGS wallet
-    let finalWalletId = walletId
+    // Create TWO transactions: EXPENSE in main wallet + INCOME in savings wallet
+    let savingsWalletId: string | null = null
     if (type === 'EXPENSE' && category && description) {
       const { findOrCreateSavingsWallet } = await import('@/lib/savings-wallet-router')
-      const savingsWalletId = await findOrCreateSavingsWallet(
+      savingsWalletId = await findOrCreateSavingsWallet(
         session.user.id,
         description,
         category.name
       )
       if (savingsWalletId) {
-        console.log(`[Auto-Route] Routing to savings wallet: ${savingsWalletId}`)
-        finalWalletId = savingsWalletId
+        console.log(`[Auto-Route] Will create transfer to savings wallet: ${savingsWalletId}`)
       }
     }
 
-    // Prepare transaction data
+    // Prepare transaction data for main wallet (EXPENSE - money leaving)
     const transactionData: any = {
       amount: parseFloat(amount),
       type,
       date: new Date(date),
       description,
       userId: session.user.id,
-      walletId: finalWalletId,
+      walletId, // Keep in original wallet (main wallet)
     };
-    
+
     // Only add categoryId if it exists
     if (categoryId) {
       transactionData.categoryId = categoryId;
     }
-    
+
     // Only add goalId if it exists
     if (goalId) {
       transactionData.goalId = goalId;
     }
 
-    // Create the transaction
+    // Create the main transaction (EXPENSE in main wallet)
     const transaction = await prisma.transaction.create({
       data: transactionData,
       include: {
@@ -154,7 +158,7 @@ export async function POST(request: Request) {
 
     // Determine if we should increase or decrease the wallet balance
     const shouldIncrement = type === 'INCOME';
-    
+
     console.log('Transaction details:', {
       transactionType: type,
       categoryType: category?.type,
@@ -177,17 +181,46 @@ export async function POST(request: Request) {
         },
       },
     })
-    
+
     // Get updated wallet to verify balance change
     const updatedWallet = await prisma.wallet.findUnique({
       where: { id: walletId }
     });
-    
+
     console.log('Wallet balance after transaction:', {
       oldBalance: wallet.balance,
       newBalance: updatedWallet?.balance,
       difference: (updatedWallet?.balance || 0) - wallet.balance
     });
+
+    // If this is a savings transaction, create INCOME transaction in savings wallet
+    if (savingsWalletId && type === 'EXPENSE') {
+      console.log(`[Auto-Route] Creating INCOME transaction in savings wallet: ${savingsWalletId}`)
+
+      const savingsTransaction = await prisma.transaction.create({
+        data: {
+          amount: parseFloat(amount),
+          type: 'INCOME', // Money coming INTO savings wallet
+          date: new Date(date),
+          description: description + ' (auto-saved)',
+          userId: session.user.id,
+          walletId: savingsWalletId,
+          categoryId: categoryId || undefined,
+        }
+      })
+
+      // Update savings wallet balance (increment)
+      await prisma.wallet.update({
+        where: { id: savingsWalletId },
+        data: {
+          balance: {
+            increment: parseFloat(amount),
+          },
+        },
+      })
+
+      console.log(`[Auto-Route] Created savings transaction: ${savingsTransaction.id}`)
+    }
 
     // Auto-track transaction to relevant goals based on category
     if (categoryId) {
@@ -228,73 +261,26 @@ export async function POST(request: Request) {
       }
     }
 
-    // DEPRECATED: Old paired transaction logic
-    // Now using auto-routing above which directly routes to correct wallet
-    // Keeping this commented for reference
-    /*
-    if (type === 'EXPENSE' && category?.name.toLowerCase().includes('saving') && description?.toLowerCase().startsWith('tabungan')) {
+    // Auto-track transaction to goals based on tracked categories
+    if (categoryId) {
       try {
-        // Extract wallet name from description (e.g., "Tabungan Bank A" -> "Bank A")
-        const targetWalletName = description.substring('tabungan'.length).trim();
-        
-        if (targetWalletName) {
-          // Find or create target wallet
-          let targetWallet = await prisma.wallet.findFirst({
-            where: {
-              userId: session.user.id,
-              name: {
-                equals: targetWalletName,
-              },
-            },
-          });
+        const { autoTrackTransactionToGoals } = await import('@/lib/goalAutoTrack')
+        const trackResult = await autoTrackTransactionToGoals(
+          transaction.id,
+          session.user.id,
+          categoryId
+        )
 
-          // If wallet doesn't exist, create it
-          if (!targetWallet) {
-            targetWallet = await prisma.wallet.create({
-              data: {
-                name: targetWalletName,
-                balance: 0,
-                userId: session.user.id,
-                currencyCode: wallet.currencyCode,
-                isDefault: false,
-                type: 'SAVINGS', // Auto-created savings wallets
-              },
-            });
-            console.log(`Auto-created SAVINGS wallet: ${targetWalletName}`);
-          }
-
-          // Create paired INCOME transaction in target wallet
-          const pairedTransaction = await prisma.transaction.create({
-            data: {
-              amount: parseFloat(amount),
-              type: 'INCOME',
-              date: new Date(date),
-              description: `Transfer dari ${wallet.name}`,
-              userId: session.user.id,
-              walletId: targetWallet.id,
-              categoryId: categoryId, // Same category
-            },
-          });
-
-          // Update target wallet balance
-          await prisma.wallet.update({
-            where: { id: targetWallet.id },
-            data: {
-              balance: {
-                increment: parseFloat(amount),
-              },
-            },
-          });
-
-          console.log(`Auto-created paired transaction: ${transaction.id} -> ${pairedTransaction.id}`);
-          console.log(`Transfer: ${wallet.name} (${walletId}) -> ${targetWallet.name} (${targetWallet.id})`);
+        if (trackResult.tracked) {
+          console.log(`[Auto-Track] Transaction tracked to ${trackResult.goalIds.length} goal(s)`)
         }
-      } catch (pairError) {
-        console.error('Failed to create paired transaction:', pairError);
-        // Don't interrupt main transaction flow
+      } catch (trackError) {
+        console.error('[Auto-Track] Failed to auto-track to goals:', trackError)
+        // Don't interrupt transaction flow
       }
     }
-    */
+
+
 
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
@@ -357,16 +343,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Check if this is a large transaction (EXPENSE higher than 1,000,000)
-    if (type === 'EXPENSE' && parseFloat(amount) >= 1000000) {
+    // Check if this is a large transaction
+    if (type === 'EXPENSE' && parseFloat(amount) >= TRANSACTION_THRESHOLDS.LARGE_EXPENSE) {
       try {
         // Format the amount with commas
         const formattedAmount = parseFloat(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        
+
         // Create an alert for this large transaction using raw SQL
         const alertId = crypto.randomUUID();
         const alertDate = new Date().toISOString();
-        
+
         await prisma.$executeRaw`
           INSERT INTO Alert (id, userId, type, title, message, additionalData, isRead, createdAt)
           VALUES (
@@ -386,6 +372,13 @@ export async function POST(request: Request) {
       }
     }
 
+    // Revalidate all paths that depend on transaction data
+    revalidatePath('/')
+    revalidatePath('/transactions')
+    revalidatePath('/wallets')
+    revalidatePath('/goals')
+    revalidatePath('/budgets')
+
     return NextResponse.json({ transaction, triggerRefresh: true })
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -404,32 +397,36 @@ export async function GET(request: NextRequest) {
   try {
     // Check if user is authenticated
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
+
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const walletId = searchParams.get('walletId');
     const period = searchParams.get('period') || 'all';
-    
+    const search = searchParams.get('search');
+
+    // Parse pagination params
+    const { page, limit, offset } = parsePaginationParams(searchParams);
+
     // Get user ID from the session
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
     });
-    
+
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
-    
+
     // Calculate date filter based on period
     const now = new Date();
     let dateFilter = {};
-    
+
     if (period !== 'all') {
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
+
       switch (period) {
         case 'daily':
           // Transactions for today only
@@ -438,7 +435,7 @@ export async function GET(request: NextRequest) {
             lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) // Next day
           };
           break;
-        
+
         case 'weekly':
           // Transactions for the last 7 days
           const weekAgo = new Date(today);
@@ -447,7 +444,7 @@ export async function GET(request: NextRequest) {
             gte: weekAgo,
           };
           break;
-        
+
         case 'monthly':
           // Transactions for the current month
           const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -455,7 +452,7 @@ export async function GET(request: NextRequest) {
             gte: startOfMonth,
           };
           break;
-        
+
         case 'quarterly':
           // Transactions for the last 3 months
           const threeMonthsAgo = new Date(today);
@@ -464,7 +461,7 @@ export async function GET(request: NextRequest) {
             gte: threeMonthsAgo,
           };
           break;
-        
+
         case 'yearly':
           // Transactions for the current year
           const startOfYear = new Date(today.getFullYear(), 0, 1);
@@ -474,19 +471,76 @@ export async function GET(request: NextRequest) {
           break;
       }
     }
-    
-    // Build wallet filter
-    const walletFilter = walletId ? { id: walletId } : {};
-    
-    // Query transactions
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        wallet: {
-          ...walletFilter,
-          userId: user.id
-        },
-        ...(Object.keys(dateFilter).length > 0 && { date: dateFilter }),
+
+    const type = searchParams.get('type');
+    const categoryId = searchParams.get('categoryId');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const minAmount = searchParams.get('minAmount');
+    const maxAmount = searchParams.get('maxAmount');
+
+    // Handle custom date range (overrides period if provided)
+    if (startDate || endDate) {
+      dateFilter = {}; // Reset period filter
+      if (startDate) {
+        (dateFilter as any).gte = new Date(startDate);
+      }
+      if (endDate) {
+        (dateFilter as any).lte = new Date(endDate);
+      }
+    }
+
+    // Build where clause
+    const where: any = {
+      wallet: {
+        userId: user.id,
+        ...(walletId && { id: walletId }),
       },
+      ...(type && { type }),
+      ...(categoryId && { categoryId }),
+      ...(Object.keys(dateFilter).length > 0 && { date: dateFilter }),
+    };
+
+    // Add amount range filter
+    if (minAmount || maxAmount) {
+      where.amount = {};
+      if (minAmount) where.amount.gte = parseFloat(minAmount);
+      if (maxAmount) where.amount.lte = parseFloat(maxAmount);
+    }
+
+    // Add search filter if provided
+    if (search && search.trim()) {
+      where.OR = [
+        {
+          description: {
+            contains: search.trim(),
+          },
+        },
+        {
+          category: {
+            name: {
+              contains: search.trim(),
+            },
+          },
+        },
+      ];
+    }
+
+    // Get total count for pagination
+    const total = await prisma.transaction.count({ where });
+
+    console.log('[API] Fetching transactions with:', {
+      limit,
+      period,
+      walletId,
+      userId: user.id,
+      whereClause: JSON.stringify(where),
+      total
+    });
+
+    // Query transactions with pagination
+    const transactions = await prisma.transaction.findMany({
+      where,
       orderBy: {
         date: 'desc',
       },
@@ -494,10 +548,20 @@ export async function GET(request: NextRequest) {
         category: true,
         wallet: true,
       },
+      skip: limit === -1 ? undefined : offset,
+      take: limit === -1 ? undefined : limit,
     });
-    
-    return NextResponse.json(transactions);
-    
+
+    console.log('[API] Found transactions:', transactions.length);
+
+    // Return paginated response if limit is set, otherwise return all
+    if (limit === -1) {
+      // Use successResponse for consistency with other endpoints
+      return successResponse(transactions, 'Transactions fetched successfully');
+    }
+
+    return paginatedResponse(transactions, page, limit, total);
+
   } catch (error) {
     console.error('Error fetching transactions:', error);
     return NextResponse.json(
@@ -534,6 +598,8 @@ export async function PUT(request: Request) {
       description,
       goalId
     } = validated
+
+    const amountNum = amount !== undefined ? (typeof amount === 'string' ? parseFloat(amount) : amount) : undefined;
 
     // Get the old transaction
     const existingTransaction = await prisma.transaction.findUnique({
@@ -609,14 +675,13 @@ export async function PUT(request: Request) {
     }
 
     // Prepare transaction update data
-    const transactionData: any = {
-      amount: parseFloat(amount),
-      type,
-      date: new Date(date),
-      description,
-      walletId,
-    };
-    
+    const transactionData: any = {};
+    if (amountNum !== undefined) transactionData.amount = amountNum;
+    if (type) transactionData.type = type;
+    if (date) transactionData.date = new Date(date);
+    if (description !== undefined) transactionData.description = description;
+    if (walletId) transactionData.walletId = walletId;
+
     // Handle categoryId properly for Prisma
     if (categoryId) {
       transactionData.categoryId = categoryId;
@@ -624,11 +689,12 @@ export async function PUT(request: Request) {
       // Use Prisma's disconnect syntax for setting to null
       transactionData.category = { disconnect: true };
     }
-    
+
     // Only add goalId if it exists
     if (goalId) {
       transactionData.goalId = goalId;
     }
+
 
     console.log('Updating transaction with data:', JSON.stringify(transactionData, null, 2));
 
@@ -642,41 +708,31 @@ export async function PUT(request: Request) {
       },
     })
 
-    // Update the new wallet balance
-    await prisma.wallet.update({
-      where: { id: walletId },
-      data: {
-        balance: {
-          [type === 'INCOME' ? 'increment' : 'decrement']: parseFloat(amount),
-        },
-      },
-    })
-
-    // Auto-track transaction to relevant goals based on category if categoryId changed
     if (categoryId && categoryId !== existingTransaction.categoryId && !goalId && !existingTransaction.goalId) {
       await autoTrackTransactionToGoals(
         updatedTransaction.id,
         categoryId,
         session.user.id,
-        parseFloat(amount),
-        type,
-        description,
-        new Date(date)
+        updatedTransaction.amount,
+        updatedTransaction.type,
+        updatedTransaction.description || '',
+        updatedTransaction.date
       );
     }
 
     // If the new transaction is an expense and has a category, update the new budget
     if (type === 'EXPENSE' && categoryId) {
+      const targetDate = date ? new Date(date) : existingTransaction.date;
       const newBudget = await prisma.budget.findFirst({
         where: {
           userId: session.user.id,
           categoryId,
           walletId,
           startDate: {
-            lte: new Date(date),
+            lte: targetDate,
           },
           endDate: {
-            gte: new Date(date),
+            gte: targetDate,
           },
         },
         include: {
@@ -732,6 +788,13 @@ export async function PUT(request: Request) {
         })
       }
     }
+
+    // Revalidate all paths that depend on transaction data
+    revalidatePath('/')
+    revalidatePath('/transactions')
+    revalidatePath('/wallets')
+    revalidatePath('/goals')
+    revalidatePath('/budgets')
 
     return NextResponse.json({ transaction: updatedTransaction, triggerRefresh: true })
   } catch (error) {
@@ -843,6 +906,13 @@ export async function DELETE(request: Request) {
         }
       })
 
+      // Revalidate all paths that depend on transaction data
+      revalidatePath('/')
+      revalidatePath('/transactions')
+      revalidatePath('/wallets')
+      revalidatePath('/goals')
+      revalidatePath('/budgets')
+
       return NextResponse.json({ success: true, deleted: transactions.length })
     }
 
@@ -871,6 +941,54 @@ export async function DELETE(request: Request) {
       goalId: transaction.goalId,
       currentWalletBalance: transaction.wallet.balance
     });
+
+    // CASCADE DELETE: If this is a savings EXPENSE transaction, also delete the paired INCOME transaction
+    if (transaction.type === 'EXPENSE' && transaction.category?.name.toLowerCase().includes('saving')) {
+      console.log('[Cascade Delete] Checking for paired savings transaction...')
+
+      // Find the paired INCOME transaction in savings wallet
+      // Match by: amount, date (same day), and description contains original description
+      const pairedTransaction = await prisma.transaction.findFirst({
+        where: {
+          userId: session.user.id,
+          type: 'INCOME',
+          amount: transaction.amount,
+          date: {
+            gte: new Date(transaction.date.setHours(0, 0, 0, 0)),
+            lte: new Date(transaction.date.setHours(23, 59, 59, 999))
+          },
+          description: {
+            contains: transaction.description || ''
+          },
+
+        },
+        include: {
+          wallet: true
+        }
+      })
+
+      if (pairedTransaction && (pairedTransaction as any).wallet.type === 'SAVINGS') {
+        console.log(`[Cascade Delete] Found paired transaction: ${pairedTransaction.id} in ${(pairedTransaction as any).wallet.name}`)
+
+        // Delete the paired transaction and update its wallet balance
+        await prisma.wallet.update({
+          where: { id: pairedTransaction.walletId },
+          data: {
+            balance: {
+              decrement: pairedTransaction.amount // INCOME, so decrement to reverse
+            }
+          }
+        })
+
+        await prisma.transaction.delete({
+          where: { id: pairedTransaction.id }
+        })
+
+        console.log(`[Cascade Delete] Deleted paired transaction and updated wallet balance`)
+      } else {
+        console.log('[Cascade Delete] No paired transaction found')
+      }
+    }
 
     // If the transaction is linked to a goal, handle goal activity cleanup
     if (transaction.goalId) {
@@ -922,7 +1040,7 @@ export async function DELETE(request: Request) {
           if (goalActivities.length > 0) {
             // Use the sum of deleted activities to properly adjust goal amount
             const totalActivityAmount = goalActivities.reduce((sum, activity) => sum + activity.amount, 0);
-            
+
             console.log('Adjusting goal amount based on activities:', {
               goalId: goal.id,
               goalCurrent: goal.current,
@@ -938,12 +1056,12 @@ export async function DELETE(request: Request) {
             });
           } else {
             // Fallback to transaction-based logic if no activities found
-            const amountAdjustment = transaction.type === 'EXPENSE' 
+            const amountAdjustment = transaction.type === 'EXPENSE'
               ? transaction.amount
               : -transaction.amount;
-            
+
             console.log('Fallback: Adjusting goal amount based on transaction:', {
-              goalId: goal.id, 
+              goalId: goal.id,
               goalCurrent: goal.current,
               adjustment: amountAdjustment,
               newAmount: goal.current + amountAdjustment
@@ -973,12 +1091,12 @@ export async function DELETE(request: Request) {
         },
       },
     });
-    
+
     // Verify wallet balance was updated correctly
     const updatedWallet = await prisma.wallet.findUnique({
       where: { id: transaction.walletId },
     });
-    
+
     console.log('Updated wallet balance:', {
       oldBalance: transaction.wallet.balance,
       newBalance: updatedWallet?.balance,
@@ -1047,6 +1165,13 @@ export async function DELETE(request: Request) {
           where: { id },
         })
 
+        // Revalidate all paths that depend on transaction data
+        revalidatePath('/')
+        revalidatePath('/transactions')
+        revalidatePath('/wallets')
+        revalidatePath('/goals')
+        revalidatePath('/budgets')
+
         return NextResponse.json({
           success: true,
           message: 'Transaction deleted successfully',
@@ -1065,16 +1190,23 @@ export async function DELETE(request: Request) {
       where: { id },
     })
 
-    return NextResponse.json({ 
-      success: true, 
+    // Revalidate all paths that depend on transaction data
+    revalidatePath('/')
+    revalidatePath('/transactions')
+    revalidatePath('/wallets')
+    revalidatePath('/goals')
+    revalidatePath('/budgets')
+
+    return NextResponse.json({
+      success: true,
       message: 'Transaction deleted successfully',
-      transaction 
+      transaction
     })
   } catch (error) {
     console.error('Error deleting transaction:', error)
     return NextResponse.json(
-      { error: 'Failed to delete transaction' }, 
+      { error: 'Failed to delete transaction' },
       { status: 500 }
     )
   }
-} 
+}

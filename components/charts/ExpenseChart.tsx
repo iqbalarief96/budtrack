@@ -49,15 +49,18 @@ export default function ExpenseChart() {
   useEffect(() => {
     const fetchTransactions = async () => {
       if (!selectedWallet) return;
-      
+
       setIsLoading(true);
       try {
-        const response = await fetch('/api/transactions');
+        // Fetch ALL transactions for chart (limit=-1)
+        const response = await fetch('/api/transactions?limit=-1');
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }
-        
-        const data = await response.json();
+
+        const json = await response.json();
+        // Handle both array and paginated response formats
+        const data = Array.isArray(json) ? json : json.data || [];
         setTransactions(data);
       } catch (error) {
         console.error('Error fetching transactions:', error);

@@ -28,81 +28,83 @@ export const TopSpendingWidget = () => {
     const fetchData = async () => {
       setIsLoading(true);
       setHasError(false);
-      
+
       try {
         // Fetch transactions from API
-        const response = await fetch('/api/transactions');
+        const response = await fetch('/api/transactions?limit=-1', { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }
-        
-        const transactions = await response.json();
-        
+
+        const json = await response.json();
+        // Handle both array and paginated response formats
+        const transactions = Array.isArray(json) ? json : json.data || [];
+
         // Filter transactions
-        let filteredTransactions = transactions.filter((tx: any) => 
-          tx.type === 'EXPENSE' && 
+        let filteredTransactions = transactions.filter((tx: any) =>
+          tx.type === 'EXPENSE' &&
           (selectedWallet ? tx.walletId === selectedWallet.id : true)
         );
-        
+
         // Apply time filter
         const now = new Date();
         if (timeFrame === 'week') {
           const oneWeekAgo = new Date(now);
           oneWeekAgo.setDate(now.getDate() - 7);
-          filteredTransactions = filteredTransactions.filter((tx: any) => 
+          filteredTransactions = filteredTransactions.filter((tx: any) =>
             new Date(tx.date) >= oneWeekAgo
           );
         } else if (timeFrame === 'month') {
           const oneMonthAgo = new Date(now);
           oneMonthAgo.setMonth(now.getMonth() - 1);
-          filteredTransactions = filteredTransactions.filter((tx: any) => 
+          filteredTransactions = filteredTransactions.filter((tx: any) =>
             new Date(tx.date) >= oneMonthAgo
           );
         } else if (timeFrame === 'quarter') {
           const threeMonthsAgo = new Date(now);
           threeMonthsAgo.setMonth(now.getMonth() - 3);
-          filteredTransactions = filteredTransactions.filter((tx: any) => 
+          filteredTransactions = filteredTransactions.filter((tx: any) =>
             new Date(tx.date) >= threeMonthsAgo
           );
         } else if (timeFrame === 'year') {
           const oneYearAgo = new Date(now);
           oneYearAgo.setFullYear(now.getFullYear() - 1);
-          filteredTransactions = filteredTransactions.filter((tx: any) => 
+          filteredTransactions = filteredTransactions.filter((tx: any) =>
             new Date(tx.date) >= oneYearAgo
           );
         }
-        
+
         // Group by category
         const categoryMap = new Map<string, { id: string, name: string, amount: number }>();
-        
+
         filteredTransactions.forEach((tx: any) => {
           if (!tx.category) return;
-          
+
           const { id, name } = tx.category;
           const existing = categoryMap.get(id);
-          
+
           if (existing) {
             existing.amount += tx.amount;
           } else {
             categoryMap.set(id, { id, name, amount: tx.amount });
           }
         });
-        
+
         // Convert to array and sort by amount
         let categoriesArray = Array.from(categoryMap.values())
           .sort((a, b) => b.amount - a.amount)
           .slice(0, 5); // Top 5 categories
-        
+
         // Calculate total amount
         const totalAmount = categoriesArray.reduce((sum, cat) => sum + cat.amount, 0);
-        
+
         // Add percentage and color
         const formattedCategories = categoriesArray.map((cat, index) => ({
           ...cat,
           percentage: totalAmount > 0 ? (cat.amount / totalAmount) * 100 : 0,
           color: generateColor(index)
         }));
-        
+
         setCategories(formattedCategories);
       } catch (error) {
         console.error('Error fetching top spending data:', error);
@@ -125,7 +127,7 @@ export const TopSpendingWidget = () => {
       '#9966FF', // Purple
       '#FF9F40', // Orange
     ];
-    
+
     return colors[index % colors.length];
   };
 
@@ -161,7 +163,7 @@ export const TopSpendingWidget = () => {
     <Card>
       <CardHeader className="pb-1">
         <CardTitle className="text-lg font-semibold">Kategori Pengeluaran Terbesar</CardTitle>
-        <CardDescription>
+        <div className="text-sm text-muted-foreground">
           <div className="flex flex-wrap gap-1 mt-1 justify-start">
             {renderTimeFrameButton('week', 'Minggu Ini')}
             {renderTimeFrameButton('month', 'Bulan Ini')}
@@ -169,7 +171,7 @@ export const TopSpendingWidget = () => {
             {renderTimeFrameButton('year', 'Tahun Ini')}
             {renderTimeFrameButton('all', 'Semua')}
           </div>
-        </CardDescription>
+        </div>
       </CardHeader>
       <CardContent className="pt-1">
         {isLoading ? (
@@ -211,8 +213,8 @@ export const TopSpendingWidget = () => {
               {categories.map((category) => (
                 <div key={category.id} className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div 
-                      className="w-2 h-2 rounded-full mr-1" 
+                    <div
+                      className="w-2 h-2 rounded-full mr-1"
                       style={{ backgroundColor: category.color }}
                     />
                     <span className="text-xs text-gray-700">{category.name}</span>
@@ -230,4 +232,4 @@ export const TopSpendingWidget = () => {
   );
 };
 
-export default TopSpendingWidget; 
+export default TopSpendingWidget;

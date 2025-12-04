@@ -68,6 +68,28 @@ export async function processRecurringTransaction(recurringId: string) {
     throw new Error('Not yet due');
   }
 
+  // Check if already processed today (deduplication)
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const existingHistory = await prisma.recurringTransactionHistory.findFirst({
+    where: {
+      recurringTransactionId: recurringId,
+      status: 'CREATED',
+      processedDate: {
+        gte: todayStart,
+        lte: todayEnd,
+      },
+    },
+  });
+
+  if (existingHistory) {
+    console.log(`[RECURRING] Already processed today for ${recurring.name}, skipping`);
+    throw new Error('Already processed today');
+  }
+
   // Find category by name or use default
   let category = null;
   if (recurring.category) {
@@ -82,6 +104,11 @@ export async function processRecurringTransaction(recurringId: string) {
   // Create the transaction with proper description
   const description = recurring.description || recurring.name || 'Recurring Transaction';
   
+  // Ensure type is uppercase for database
+  const transactionType = recurring.type.toUpperCase() as 'INCOME' | 'EXPENSE';
+  
+  console.log(`[RECURRING] Creating transaction: ${description}, amount: ${recurring.amount}, originalType: ${recurring.type}, normalizedType: ${transactionType}`);
+  
   const transaction = await prisma.transaction.create({
     data: {
       userId: recurring.userId,
@@ -89,15 +116,15 @@ export async function processRecurringTransaction(recurringId: string) {
       categoryId: category?.id,
       description: description,
       amount: recurring.amount,
-      type: recurring.type as 'INCOME' | 'EXPENSE',
+      type: transactionType,
       date: recurring.nextPaymentDate,
     },
   });
 
-  console.log(`[RECURRING] Created transaction: ${description}, amount: ${recurring.amount}, type: ${recurring.type}, walletId: ${recurring.walletId}, userId: ${recurring.userId}`);
+  console.log(`[RECURRING] Created transaction: ${description}, type: ${transactionType}, walletId: ${recurring.walletId}`);
 
   // Update wallet balance based on transaction type
-  const shouldIncrement = recurring.type === 'INCOME';
+  const shouldIncrement = transactionType === 'INCOME';
   await prisma.wallet.update({
     where: { id: recurring.walletId },
     data: {
@@ -109,16 +136,88 @@ export async function processRecurringTransaction(recurringId: string) {
 
   console.log(`[RECURRING] Updated wallet balance: ${shouldIncrement ? '+' : '-'}${recurring.amount}`);
 
-  // Create history record
+  // Create history record with processedDate for deduplication
   await prisma.recurringTransactionHistory.create({
     data: {
       recurringTransactionId: recurring.id,
       transactionId: transaction.id,
+      processedDate: now,
       targetDate: recurring.nextPaymentDate,
       amount: recurring.amount,
       status: 'CREATED',
     },
   });
+
+  // Auto-mark linked bills as paid (if Bill model exists)
+  try {
+    // @ts-ignore - Bill model may not be generated yet
+    const linkedBill = await prisma.bill?.findFirst({
+      where: {
+        recurringTransactionId: recurring.id,
+        isPaid: false,
+      },
+    });
+
+    if (linkedBill) {
+      console.log(`[RECURRING] Auto-marking linked bill ${linkedBill.name} as paid`);
+      
+      // Calculate days early
+      const daysEarly = Math.ceil(
+        (new Date(linkedBill.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // Mark bill as paid
+      // @ts-ignore - Bill model may not be generated yet
+      await prisma.bill.update({
+        where: { id: linkedBill.id },
+        data: {
+          isPaid: true,
+          paidDate: now,
+        },
+      });
+
+      // Create payment record
+      // @ts-ignore - BillPayment model may not be generated yet
+      await prisma.billPayment.create({
+        data: {
+          billId: linkedBill.id,
+          amount: recurring.amount,
+          paidDate: now,
+          dueDate: linkedBill.dueDate,
+          daysEarly,
+          notes: 'Auto-paid via recurring transaction',
+        },
+      });
+
+      // If bill is recurring, create next bill
+      if (linkedBill.isRecurring && linkedBill.frequency) {
+        const nextDueDate = calculateNextPaymentDate(linkedBill.dueDate, linkedBill.frequency);
+        
+        // @ts-ignore - Bill model may not be generated yet
+        await prisma.bill.create({
+          data: {
+            userId: linkedBill.userId,
+            name: linkedBill.name,
+            amount: linkedBill.amount,
+            dueDate: nextDueDate,
+            categoryId: linkedBill.categoryId,
+            walletId: linkedBill.walletId,
+            recurringTransactionId: linkedBill.recurringTransactionId,
+            reminderDays: linkedBill.reminderDays,
+            notes: linkedBill.notes,
+            isRecurring: linkedBill.isRecurring,
+            frequency: linkedBill.frequency,
+            isPaid: false,
+          },
+        });
+
+        console.log(`[RECURRING] Created next bill instance due ${nextDueDate.toISOString()}`);
+      }
+    }
+  } catch (error) {
+    // Bill model may not exist yet, skip bill auto-marking
+    console.log(`[RECURRING] Bill auto-marking skipped: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 
   // Calculate next payment date
   const nextDate = calculateNextPaymentDate(recurring.nextPaymentDate, recurring.frequency);

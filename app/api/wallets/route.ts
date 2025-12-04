@@ -4,6 +4,16 @@ import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { WalletSchema } from '@/lib/validators'
 import { z } from 'zod'
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  conflictResponse,
+  createdResponse,
+  badRequestResponse,
+  internalErrorResponse,
+  handleZodError
+} from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,9 +21,9 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    
+
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorizedResponse()
     }
 
     // Get query parameters
@@ -38,7 +48,7 @@ export async function GET(request: Request) {
         const incomeSum = await prisma.transaction.aggregate({
           where: {
             walletId: wallet.id,
-            type: 'INCOME'
+            type: { in: ['income', 'INCOME'] }
           },
           _sum: {
             amount: true
@@ -48,7 +58,7 @@ export async function GET(request: Request) {
         const expenseSum = await prisma.transaction.aggregate({
           where: {
             walletId: wallet.id,
-            type: 'EXPENSE'
+            type: { in: ['expense', 'EXPENSE'] }
           },
           _sum: {
             amount: true
@@ -64,13 +74,10 @@ export async function GET(request: Request) {
       })
     )
 
-    return NextResponse.json(walletsWithBalance)
+    return successResponse(walletsWithBalance)
   } catch (error) {
     console.error('Error fetching wallets:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch wallets' },
-      { status: 500 }
-    )
+    return internalErrorResponse('Failed to fetch wallets', error)
   }
 }
 
@@ -80,7 +87,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorizedResponse()
     }
 
     const body = await request.json()
@@ -96,10 +103,7 @@ export async function POST(request: Request) {
     })
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
+      return notFoundResponse('User')
     }
 
     // Check if wallet with same name exists
@@ -111,10 +115,7 @@ export async function POST(request: Request) {
     })
 
     if (existingWallet) {
-      return NextResponse.json(
-        { error: 'Wallet with this name already exists' },
-        { status: 400 }
-      )
+      return conflictResponse('Wallet with this name already exists')
     }
 
     const wallet = await prisma.wallet.create({
@@ -127,19 +128,13 @@ export async function POST(request: Request) {
       }
     })
 
-    return NextResponse.json(wallet)
+    return createdResponse(wallet, 'Wallet created successfully')
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
-        { status: 400 }
-      )
+      return handleZodError(error)
     }
     console.error('Error creating wallet:', error)
-    return NextResponse.json(
-      { error: 'Failed to create wallet' },
-      { status: 500 }
-    )
+    return internalErrorResponse('Failed to create wallet', error)
   }
 }
 
@@ -148,18 +143,15 @@ export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions)
 
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user?.id) {
+      return unauthorizedResponse()
     }
 
     const body = await request.json()
     const { id, ...updateFields } = body
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'Wallet ID is required' },
-        { status: 400 }
-      )
+      return badRequestResponse('Wallet ID is required')
     }
 
     // Validate input with Zod (partial allows optional fields for updates)
@@ -171,35 +163,26 @@ export async function PUT(request: Request) {
     })
 
     if (!wallet) {
-      return NextResponse.json(
-        { error: 'Wallet not found' },
-        { status: 404 }
-      )
+      return notFoundResponse('Wallet')
     }
 
     if (wallet.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return unauthorizedResponse()
     }
 
     // Check if wallet with same name exists
-    const existingWallet = await prisma.wallet.findFirst({
-      where: {
-        name,
-        userId: session.user.id,
-        NOT: {
-          id
+    if (name) {
+      const existingWallet = await prisma.wallet.findFirst({
+        where: {
+          name,
+          userId: session.user.id,
+          NOT: { id }
         }
-      }
-    })
+      })
 
-    if (existingWallet) {
-      return NextResponse.json(
-        { error: 'Wallet with this name already exists' },
-        { status: 400 }
-      )
+      if (existingWallet) {
+        return conflictResponse('Wallet with this name already exists')
+      }
     }
 
     // If setting as default, unset other default wallets
@@ -208,9 +191,7 @@ export async function PUT(request: Request) {
         where: {
           userId: session.user.id,
           isDefault: true,
-          NOT: {
-            id
-          }
+          NOT: { id }
         },
         data: {
           isDefault: false
@@ -221,47 +202,39 @@ export async function PUT(request: Request) {
     // Update the wallet
     const updatedWallet = await prisma.wallet.update({
       where: { id },
-      data: { 
+      data: {
         name,
         color,
         icon,
-        isDefault: isDefault ?? wallet.isDefault // Keep existing value if not provided
+        isDefault: isDefault ?? wallet.isDefault
       }
     })
 
-    return NextResponse.json(updatedWallet)
+    return successResponse(updatedWallet, 'Wallet updated successfully')
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
-        { status: 400 }
-      )
+      return handleZodError(error)
     }
     console.error('Error updating wallet:', error)
-    return NextResponse.json(
-      { error: 'Failed to update wallet' },
-      { status: 500 }
-    )
+    return internalErrorResponse('Failed to update wallet', error)
   }
 }
 
-// DELETE /api/wallets/:id
+// DELETE /api/wallets/:id?force=true
 export async function DELETE(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (!session?.user?.id) {
+      return unauthorizedResponse()
     }
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
+    const force = searchParams.get('force') === 'true'
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'Wallet ID is required' },
-        { status: 400 }
-      )
+      return badRequestResponse('Wallet ID is required')
     }
 
     // Check if wallet exists and belongs to user
@@ -270,43 +243,49 @@ export async function DELETE(request: Request) {
     })
 
     if (!wallet) {
-      return NextResponse.json(
-        { error: 'Wallet not found' },
-        { status: 404 }
-      )
+      return notFoundResponse('Wallet')
     }
 
     if (wallet.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return unauthorizedResponse()
     }
 
     // Check if wallet has transactions
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        walletId: id
-      }
+    const transactionCount = await prisma.transaction.count({
+      where: { walletId: id }
     })
 
-    if (transactions.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete wallet that has transactions' },
-        { status: 400 }
+    if (transactionCount > 0 && !force) {
+      return badRequestResponse(
+        'Cannot delete wallet that has transactions',
+        {
+          transactionCount,
+          message: `Wallet has ${transactionCount} transaction(s). Please delete or move them first, or use force=true to delete all.`
+        }
       )
+    }
+
+    // If force=true, delete all transactions first
+    if (force && transactionCount > 0) {
+      await prisma.transaction.deleteMany({
+        where: { walletId: id }
+      })
+      console.log(`Force deleted ${transactionCount} transactions from wallet ${id}`)
     }
 
     await prisma.wallet.delete({
       where: { id }
     })
 
-    return NextResponse.json({ success: true })
+    return successResponse(
+      {
+        id,
+        deletedTransactions: force ? transactionCount : 0
+      },
+      'Wallet deleted successfully'
+    )
   } catch (error) {
     console.error('Error deleting wallet:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete wallet' },
-      { status: 500 }
-    )
+    return internalErrorResponse('Failed to delete wallet', error)
   }
 } 

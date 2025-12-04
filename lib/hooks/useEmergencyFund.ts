@@ -20,6 +20,9 @@ export function useEmergencyFund(walletId?: string) {
       if (!response.ok) throw new Error('Failed to fetch emergency fund')
       return response.json()
     },
+    staleTime: 0, // Always consider data stale
+    refetchOnMount: 'always', // Always refetch on component mount
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   })
 }
 

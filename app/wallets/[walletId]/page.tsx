@@ -132,10 +132,13 @@ export default function WalletDetailPage({ params }: { params: { walletId: strin
 
   const fetchTransactions = async () => {
     try {
-      const response = await fetch(`/api/transactions?walletId=${params.walletId}`)
+      // Fetch all transactions for this wallet (limit=-1)
+      const response = await fetch(`/api/transactions?walletId=${params.walletId}&limit=-1`)
 
       if (response.ok) {
-        const data = await response.json()
+        const json = await response.json()
+        // Handle both array and paginated response formats
+        const data = Array.isArray(json) ? json : json.data || []
         setTransactions(data)
       }
     } catch (error) {

@@ -166,7 +166,7 @@ async function calculateEmergencyFundScore(
   const expenses = await prisma.transaction.aggregate({
     where: {
       userId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: periodStartDate,
       },
@@ -267,7 +267,7 @@ async function calculateSavingsRateScore(
     prisma.transaction.aggregate({
       where: {
         userId,
-        type: 'INCOME',
+        type: { in: ['income', 'INCOME'] },
         date: { gte: periodStartDate },
         ...(walletId && { walletId }),
       },
@@ -276,7 +276,7 @@ async function calculateSavingsRateScore(
     prisma.transaction.aggregate({
       where: {
         userId,
-        type: 'EXPENSE',
+        type: { in: ['expense', 'EXPENSE'] },
         date: { gte: periodStartDate },
         // Exclude savings/investment categories from expenses
         categoryId: { notIn: savingsCategoryIds.length > 0 ? savingsCategoryIds : undefined },
@@ -375,7 +375,7 @@ async function calculateBudgetAdherenceScore(
           userId,
           categoryId: budget.categoryId,
           walletId: budget.walletId,
-          type: 'EXPENSE',
+          type: { in: ['expense', 'EXPENSE'] },
           date: {
             gte: budget.startDate,
             lte: budget.endDate,
@@ -464,7 +464,7 @@ async function calculateSpendingConsistencyScore(
   const transactions = await prisma.transaction.findMany({
     where: {
       userId,
-      type: 'EXPENSE',
+      type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: periodStartDate,
       },

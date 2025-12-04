@@ -208,9 +208,10 @@ function calculateMonthlyAverages(transactions: any[]): {
       monthlyData[monthKey] = { income: 0, expense: 0 }
     }
 
-    if (tx.type === 'INCOME') {
+    const txType = tx.type.toUpperCase()
+    if (txType === 'INCOME') {
       monthlyData[monthKey].income += tx.amount
-    } else if (tx.type === 'EXPENSE') {
+    } else if (txType === 'EXPENSE') {
       monthlyData[monthKey].expense += tx.amount
     }
   })
@@ -250,7 +251,8 @@ function calculateRecurringForMonth(
   let total = 0
 
   recurring.forEach((rec) => {
-    if (rec.type !== type) return
+    // Handle both lowercase and uppercase type values
+    if (rec.type.toLowerCase() !== type.toLowerCase()) return
 
     // Calculate how many times this recurring transaction occurs in this month
     const occurrences = calculateOccurrencesInMonth(
