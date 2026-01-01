@@ -6,21 +6,102 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { GoalCard } from '@/components/dashboard/GoalCard';
 import { GoalForm } from '@/components/dashboard/GoalForm';
 import { FiPlus, FiTarget } from 'react-icons/fi';
+import WalletSelector from '@/app/components/WalletSelector';
+import { useWallet } from '@/app/providers/WalletProvider';
+
+// Aggregated goal type for group view
+interface AggregatedGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  progress: number;
+  walletId: string;
+  walletName?: string;
+  walletColor?: string;
+  category?: { id: string; name: string };
+}
+
+// Transform API response to match expected format
+function transformGoalApiResponse(goal: any): AggregatedGoal {
+  // Get wallet info from contributions if available
+  const firstContribution = goal.walletContributions?.[0];
+  
+  return {
+    id: goal.id,
+    name: goal.name,
+    targetAmount: goal.targetAmount,
+    currentAmount: goal.currentAmount,
+    deadline: goal.targetDate || goal.deadline,
+    progress: goal.progress,
+    walletId: firstContribution?.walletId || '',
+    walletName: firstContribution?.walletName,
+    walletColor: firstContribution?.walletColor,
+    category: goal.category ? { id: goal.category, name: goal.category } : undefined,
+  };
+}
 
 export function GoalsContent() {
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [goals, setGoals] = useState<any[]>([]);
+  const [groupGoals, setGroupGoals] = useState<AggregatedGoal[]>([]);
+  const [combinedSavingsRate, setCombinedSavingsRate] = useState<number>(0);
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isLoadingGroupGoals, setIsLoadingGroupGoals] = useState(false);
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [goalToEdit, setGoalToEdit] = useState<any>(null);
 
   useEffect(() => {
-    fetchGoals();
-  }, []);
+    if (!isGroupSelected) {
+      fetchGoals();
+    } else {
+      // When group is selected, set loading to false since we use isLoadingGroupGoals instead
+      setLoading(false);
+    }
+  }, [selectedWallet, isGroupSelected]);
+
+  // Fetch group goals when a group is selected
+  useEffect(() => {
+    const fetchGroupGoals = async () => {
+      if (!isGroupSelected || !selectedGroup) {
+        setGroupGoals([]);
+        setCombinedSavingsRate(0);
+        return;
+      }
+
+      try {
+        setIsLoadingGroupGoals(true);
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/goals`);
+        if (response.ok) {
+          const responseData = await response.json();
+          // API returns { success: true, data: {...} } format
+          const data = responseData.data || responseData;
+          // Transform goals to match expected format
+          const goalsArray = data.goals || data || [];
+          const transformedGoals = goalsArray.map(transformGoalApiResponse);
+          setGroupGoals(transformedGoals);
+          setCombinedSavingsRate(data.combinedSavingsRate || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching group goals:', error);
+      } finally {
+        setIsLoadingGroupGoals(false);
+      }
+    };
+
+    fetchGroupGoals();
+  }, [isGroupSelected, selectedGroup]);
 
   const fetchGoals = async () => {
     try {
-      const response = await fetch('/api/goals');
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (selectedWallet) {
+        params.append('walletId', selectedWallet.id);
+      }
+      const response = await fetch(`/api/goals?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch goals');
       const data = await response.json();
       setGoals(data);
@@ -116,7 +197,7 @@ export function GoalsContent() {
     }
   };
 
-  if (loading) {
+  if (loading || isLoadingGroupGoals) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="relative w-12 h-12">
@@ -127,8 +208,48 @@ export function GoalsContent() {
     );
   }
 
+  // Use group goals when group is selected
+  const displayGoals = isGroupSelected ? groupGoals : goals;
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
   return (
     <div className="space-y-8">
+      {/* Wallet/Group Selector */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <WalletSelector />
+        {isGroupSelected && selectedGroup && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+            <span>Group: {selectedGroup.name}</span>
+            <span className="bg-purple-200 px-2 py-0.5 rounded-full text-xs">
+              {selectedGroup.wallets?.length || 0} wallets
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Combined Savings Rate for Group View */}
+      {isGroupSelected && combinedSavingsRate > 0 && (
+        <div className="bg-gradient-to-r from-green-500 to-emerald-400 rounded-xl p-6 text-white shadow-lg">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-medium text-green-100">Combined Savings Rate</h3>
+              <p className="text-3xl font-bold mt-1">{combinedSavingsRate.toFixed(1)}%</p>
+            </div>
+            <div className="p-3 bg-white/20 rounded-full">
+              <FiTarget className="h-8 w-8" />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-gradient-to-r from-blue-600 to-blue-400 rounded-xl p-6 text-white shadow-lg">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -137,23 +258,29 @@ export function GoalsContent() {
             </div>
             <div>
               <h3 className="text-xl font-semibold">Financial Goals</h3>
-              <p className="text-sm text-blue-100">Track your progress toward financial freedom</p>
+              <p className="text-sm text-blue-100">
+                {isGroupSelected 
+                  ? `Aggregated goals from ${selectedGroup?.wallets?.length || 0} wallets`
+                  : 'Track your progress toward financial freedom'}
+              </p>
             </div>
           </div>
-          <Dialog open={isAddingGoal} onOpenChange={setIsAddingGoal}>
-            <DialogTrigger asChild>
-              <Button className="bg-white text-blue-600 hover:bg-blue-50 flex items-center gap-1">
-                <FiPlus className="h-4 w-4" />
-                Add Goal
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Goal</DialogTitle>
-              </DialogHeader>
-              <GoalForm onSubmit={handleCreateGoal} />
-            </DialogContent>
-          </Dialog>
+          {!isGroupSelected && (
+            <Dialog open={isAddingGoal} onOpenChange={setIsAddingGoal}>
+              <DialogTrigger asChild>
+                <Button className="bg-white text-blue-600 hover:bg-blue-50 flex items-center gap-1">
+                  <FiPlus className="h-4 w-4" />
+                  Add Goal
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Goal</DialogTitle>
+                </DialogHeader>
+                <GoalForm onSubmit={handleCreateGoal} />
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
@@ -172,33 +299,48 @@ export function GoalsContent() {
         </DialogContent>
       </Dialog>
 
-      {goals.length === 0 ? (
+      {displayGoals.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-xl border border-gray-200 shadow-sm">
           <div className="bg-blue-50 rounded-full p-4 w-16 h-16 flex items-center justify-center mx-auto">
             <FiTarget className="h-8 w-8 text-blue-500" />
           </div>
           <h3 className="text-xl font-semibold text-gray-800 mt-4">No goals yet</h3>
           <p className="text-gray-500 mt-2 max-w-md mx-auto">
-            Set financial goals to track your progress and stay motivated on your financial journey.
+            {isGroupSelected 
+              ? 'No goals found for this wallet group.'
+              : 'Set financial goals to track your progress and stay motivated on your financial journey.'}
           </p>
-          <Button
-            className="mt-6 bg-blue-600 hover:bg-blue-700"
-            onClick={() => setIsAddingGoal(true)}
-          >
-            <FiPlus className="mr-2 h-4 w-4" />
-            Create Your First Goal
-          </Button>
+          {!isGroupSelected && (
+            <Button
+              className="mt-6 bg-blue-600 hover:bg-blue-700"
+              onClick={() => setIsAddingGoal(true)}
+            >
+              <FiPlus className="mr-2 h-4 w-4" />
+              Create Your First Goal
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
-          {goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              onUpdate={handleUpdateGoal}
-              onDelete={handleDeleteGoal}
-              onEdit={handleEditGoal}
-            />
+          {displayGoals.map((goal) => (
+            <div key={goal.id} className="relative">
+              {/* Wallet indicator for group view */}
+              {isGroupSelected && (goal as AggregatedGoal).walletName && (
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-0.5 bg-white/90 rounded-full text-xs shadow-sm">
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: (goal as AggregatedGoal).walletColor || '#6366f1' }}
+                  />
+                  <span className="text-gray-600">{(goal as AggregatedGoal).walletName}</span>
+                </div>
+              )}
+              <GoalCard
+                goal={goal}
+                onUpdate={isGroupSelected ? undefined : handleUpdateGoal}
+                onDelete={isGroupSelected ? undefined : handleDeleteGoal}
+                onEdit={isGroupSelected ? undefined : handleEditGoal}
+              />
+            </div>
           ))}
         </div>
       )}

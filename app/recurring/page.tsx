@@ -8,6 +8,7 @@ import {
   FiX, FiCalendar, FiDollarSign, FiTag, FiRefreshCw
 } from 'react-icons/fi'
 import { useWallet } from '@/app/providers/WalletProvider'
+import WalletSelector from '@/app/components/WalletSelector'
 
 // Tipe data untuk transaksi berulang
 interface RecurringTransaction {
@@ -19,6 +20,9 @@ interface RecurringTransaction {
   nextPaymentDate: string;
   isActive: boolean;
   type: string;
+  walletId?: string;
+  walletName?: string;
+  walletColor?: string;
 }
 
 // Interface untuk wallet
@@ -62,9 +66,42 @@ interface RecurringTransactionHistory {
   } | null;
 }
 
+// Aggregated recurring data for group view
+interface AggregatedRecurringData {
+  recurring: RecurringTransaction[];
+  totalMonthlyIncome: number;
+  totalMonthlyExpense: number;
+  totalRecurring: number;
+}
+
+// Transform API response to match expected format
+function transformRecurringApiResponse(data: any): AggregatedRecurringData {
+  // Map recurring transactions to expected format
+  const recurring = (data.recurring || []).map((rt: any) => ({
+    id: rt.id,
+    name: rt.name,
+    amount: rt.amount,
+    category: rt.category,
+    frequency: rt.frequency,
+    nextPaymentDate: rt.nextDate || rt.nextPaymentDate,
+    isActive: rt.isActive,
+    type: rt.type,
+    walletId: rt.walletId,
+    walletName: rt.walletName,
+    walletColor: rt.walletColor,
+  }));
+
+  return {
+    recurring,
+    totalMonthlyIncome: data.totalRecurringIncome || 0,
+    totalMonthlyExpense: data.totalRecurringExpense || 0,
+    totalRecurring: recurring.length,
+  };
+}
+
 export default function RecurringPage() {
   const { data: session, status } = useSession()
-  const { selectedWallet, refreshWallets } = useWallet()
+  const { selectedWallet, selectedGroup, isGroupSelected, refreshWallets } = useWallet()
   const [activeTab, setActiveTab] = useState('overview')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [wallets, setWallets] = useState<Wallet[]>([])
@@ -80,6 +117,8 @@ export default function RecurringPage() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([])
+  const [groupRecurringData, setGroupRecurringData] = useState<AggregatedRecurringData | null>(null)
+  const [isLoadingGroupRecurring, setIsLoadingGroupRecurring] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSynchronizing, setIsSynchronizing] = useState(false)
   const [syncResult, setSyncResult] = useState<{success: number; skipped: number} | null>(null)
@@ -96,16 +135,50 @@ export default function RecurringPage() {
 
   // Fetch recurring transactions when wallet changes
   useEffect(() => {
-    if (selectedWallet && session) {
-      fetchRecurringTransactions()
-      
-      // Atur default walletId ke selectedWallet saat buka form
-      setFormData(prev => ({
-        ...prev,
-        walletId: selectedWallet.id
-      }))
+    if (session && !isGroupSelected) {
+      if (selectedWallet) {
+        fetchRecurringTransactions()
+        
+        // Atur default walletId ke selectedWallet saat buka form
+        setFormData(prev => ({
+          ...prev,
+          walletId: selectedWallet.id
+        }))
+      }
+    } else if (isGroupSelected) {
+      // When group is selected, set isLoading to false since we use isLoadingGroupRecurring instead
+      setIsLoading(false)
     }
-  }, [selectedWallet, session])
+  }, [selectedWallet, session, isGroupSelected])
+
+  // Fetch group recurring when a group is selected
+  useEffect(() => {
+    const fetchGroupRecurring = async () => {
+      if (!isGroupSelected || !selectedGroup) {
+        setGroupRecurringData(null)
+        return
+      }
+
+      try {
+        setIsLoadingGroupRecurring(true)
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/recurring`)
+        if (response.ok) {
+          const responseData = await response.json()
+          // API returns { success: true, data: {...} } format
+          const data = responseData.data || responseData
+          // Transform API response to match expected format
+          const transformedData = transformRecurringApiResponse(data)
+          setGroupRecurringData(transformedData)
+        }
+      } catch (error) {
+        console.error('Error fetching group recurring:', error)
+      } finally {
+        setIsLoadingGroupRecurring(false)
+      }
+    }
+
+    fetchGroupRecurring()
+  }, [isGroupSelected, selectedGroup])
 
   // Fetch kategori saat komponen dimount
   useEffect(() => {
@@ -261,7 +334,7 @@ export default function RecurringPage() {
     }
   };
 
-  if (status === 'loading' || isLoading) {
+  if (status === 'loading' || isLoading || isLoadingGroupRecurring) {
     return <div className="p-8 flex justify-center">Loading...</div>
   }
 
@@ -509,7 +582,11 @@ export default function RecurringPage() {
   }
 
   // Get upcoming transactions (within 7 days)
-  const upcomingTransactions = recurringTransactions
+  const displayRecurring = isGroupSelected && groupRecurringData 
+    ? groupRecurringData.recurring 
+    : recurringTransactions
+
+  const upcomingTransactions = displayRecurring
     .filter(transaction => {
       const daysUntil = getDaysUntil(transaction.nextPaymentDate)
       return daysUntil >= 0 && daysUntil <= 7
@@ -674,22 +751,57 @@ export default function RecurringPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Recurring Transaction</h1>
         <div className="flex gap-2">
-          <button
-            onClick={synchronizeTransactions}
-            disabled={isSynchronizing}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50"
-          >
-            <FiRefreshCw className={isSynchronizing ? "animate-spin" : ""} /> 
-            {isSynchronizing ? "Synchronizing..." : "Sync Transactions"}
-          </button>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-          >
-            <FiPlus /> Add New Recurring
-          </button>
+          {!isGroupSelected && (
+            <>
+              <button
+                onClick={synchronizeTransactions}
+                disabled={isSynchronizing}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50"
+              >
+                <FiRefreshCw className={isSynchronizing ? "animate-spin" : ""} /> 
+                {isSynchronizing ? "Synchronizing..." : "Sync Transactions"}
+              </button>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+              >
+                <FiPlus /> Add New Recurring
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Wallet/Group Selector */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <WalletSelector />
+        {isGroupSelected && selectedGroup && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+            <span>Group: {selectedGroup.name}</span>
+            <span className="bg-purple-200 px-2 py-0.5 rounded-full text-xs">
+              {selectedGroup.wallets?.length || 0} wallets
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Group Summary Stats */}
+      {isGroupSelected && groupRecurringData && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-800 mb-1">Total Recurring</h3>
+            <p className="text-2xl font-bold">{groupRecurringData.totalRecurring} items</p>
+          </div>
+          <div className="bg-red-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-red-800 mb-1">Monthly Expense</h3>
+            <p className="text-2xl font-bold">{displayAmount(groupRecurringData.totalMonthlyExpense, 'expense')}</p>
+          </div>
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-green-800 mb-1">Monthly Income</h3>
+            <p className="text-2xl font-bold">{displayAmount(groupRecurringData.totalMonthlyIncome, 'income')}</p>
+          </div>
+        </div>
+      )}
 
       {/* Display synchronization result if available */}
       {syncResult && (
@@ -960,13 +1072,13 @@ export default function RecurringPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <h3 className="text-lg font-semibold text-blue-800 mb-1">Total Recurring</h3>
-                  <p className="text-2xl font-bold">{recurringTransactions.length} items</p>
+                  <p className="text-2xl font-bold">{displayRecurring.length} items</p>
                 </div>
                 <div className="bg-red-50 p-4 rounded-lg">
                   <h3 className="text-lg font-semibold text-red-800 mb-1">Monthly Cost</h3>
                   <p className="text-2xl font-bold">
                     {displayAmount(
-                      recurringTransactions
+                      displayRecurring
                         .filter(t => t.frequency === 'Monthly' && t.type === 'expense')
                         .reduce((sum, t) => sum + t.amount, 0),
                       'expense'
@@ -977,7 +1089,7 @@ export default function RecurringPage() {
                   <h3 className="text-lg font-semibold text-green-800 mb-1">Monthly Income</h3>
                   <p className="text-2xl font-bold">
                     {displayAmount(
-                      recurringTransactions
+                      displayRecurring
                         .filter(t => t.frequency === 'Monthly' && t.type === 'income')
                         .reduce((sum, t) => sum + t.amount, 0),
                       'income'
@@ -1105,11 +1217,11 @@ export default function RecurringPage() {
           {/* Active Tab */}
           {activeTab === 'active' && (
             <div className="space-y-4">
-              {recurringTransactions.length > 0 ? (
+              {displayRecurring.length > 0 ? (
                 <>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
                     <FiCheckCircle className="text-blue-500" size={20} />
-                    <span>Kamu memiliki {recurringTransactions.length} subscription dan tagihan berulang aktif.</span>
+                    <span>Kamu memiliki {displayRecurring.length} subscription dan tagihan berulang aktif{isGroupSelected ? ' di semua wallet' : ''}.</span>
                   </div>
                   
                   <div className="overflow-x-auto">
@@ -1117,34 +1229,48 @@ export default function RecurringPage() {
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="py-3 px-4 text-left">Nama</th>
+                          {isGroupSelected && <th className="py-3 px-4 text-left">Wallet</th>}
                           <th className="py-3 px-4 text-left">Kategori</th>
                           <th className="py-3 px-4 text-left">Frekuensi</th>
                           <th className="py-3 px-4 text-left">Jumlah</th>
                           <th className="py-3 px-4 text-left">Next Payment</th>
-                          <th className="py-3 px-4 text-center">Aksi</th>
+                          {!isGroupSelected && <th className="py-3 px-4 text-center">Aksi</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {recurringTransactions.map((transaction) => (
+                        {displayRecurring.map((transaction) => (
                           <tr key={transaction.id}>
                             <td className="py-3 px-4">{transaction.name}</td>
+                            {isGroupSelected && (
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-1">
+                                  <div 
+                                    className="w-2 h-2 rounded-full" 
+                                    style={{ backgroundColor: transaction.walletColor || '#6366f1' }}
+                                  />
+                                  <span className="text-sm">{transaction.walletName || '-'}</span>
+                                </div>
+                              </td>
+                            )}
                             <td className="py-3 px-4">{transaction.category || '-'}</td>
                             <td className="py-3 px-4">{transaction.frequency}</td>
                             <td className="py-3 px-4">
                               {displayAmount(transaction.amount, transaction.type)}
                             </td>
                             <td className="py-3 px-4">{formatDate(transaction.nextPaymentDate)}</td>
-                            <td className="py-3 px-4 flex justify-center gap-2">
-                              <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
-                                <FiEdit size={18} />
-                              </button>
-                              <button 
-                                className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                onClick={() => handleDelete(transaction.id)}
-                              >
-                                <FiTrash2 size={18} />
-                              </button>
-                            </td>
+                            {!isGroupSelected && (
+                              <td className="py-3 px-4 flex justify-center gap-2">
+                                <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                  <FiEdit size={18} />
+                                </button>
+                                <button 
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                  onClick={() => handleDelete(transaction.id)}
+                                >
+                                  <FiTrash2 size={18} />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1155,7 +1281,7 @@ export default function RecurringPage() {
                 <div className="bg-gray-50 border rounded-lg p-8 text-center text-gray-500">
                   <FiRepeat className="mx-auto mb-4" size={40} />
                   <p className="text-lg font-medium mb-2">No recurring transactions</p>
-                  <p>Click the "Add New Recurring" button to create your first recurring transaction.</p>
+                  <p>{isGroupSelected ? 'No recurring transactions found in this wallet group.' : 'Click the "Add New Recurring" button to create your first recurring transaction.'}</p>
                 </div>
               )}
             </div>
