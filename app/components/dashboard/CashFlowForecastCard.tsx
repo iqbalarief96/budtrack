@@ -208,8 +208,9 @@ export default function CashFlowForecastCard() {
             <p className="text-sm text-gray-600">Projected ({monthsToShow}mo)</p>
             <p className="text-xl font-bold">
               {formatCurrency(
-                forecastData.forecastMonths[forecastData.forecastMonths.length - 1]
-                  ?.endingBalance || 0,
+                forecastData.forecastMonths?.length > 0
+                  ? forecastData.forecastMonths[forecastData.forecastMonths.length - 1]?.endingBalance || 0
+                  : 0,
                 forecastData.currencyCode
               )}
             </p>
@@ -236,7 +237,7 @@ export default function CashFlowForecastCard() {
         <div className="space-y-2">
           <h3 className="font-medium text-sm text-gray-700">Monthly Projection</h3>
           <div className="space-y-2">
-            {forecastData.forecastMonths.map((month) => (
+            {(forecastData.forecastMonths || []).map((month) => (
               <div key={month.month}>
                 <div
                   className={`border-l-4 ${getStatusColor(month.status)} p-3 rounded cursor-pointer hover:shadow-sm transition-shadow`}

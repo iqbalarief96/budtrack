@@ -4,15 +4,18 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   FiPlusCircle, FiTrash, FiEdit, FiX, FiShoppingBag, FiCoffee, FiHome, FiDollarSign,
   FiCreditCard as FiCreditCardIcon, FiGift, FiHeart, FiSmile, FiTruck, FiBookmark,
-  FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiArrowRight
+  FiShoppingCart, FiMusic, FiMonitor, FiActivity, FiArrowRight, FiUsers
 } from 'react-icons/fi'
 import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useWallet } from '../providers/WalletProvider'
 import { formatCurrency } from '../lib/utils'
 import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard'
 import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 import { MigrateWalletTypesButton } from '@/components/MigrateWalletTypesButton'
+import WalletGroupForm from '@/components/wallet-group/WalletGroupForm'
+import WalletGroupCard from '@/components/wallet-group/WalletGroupCard'
 
 // Define Icon mapping
 const AVAILABLE_ICONS = [
@@ -76,8 +79,20 @@ type Wallet = {
   currencyCode: string
 }
 
+// Wallet Group type
+type WalletGroup = {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  color?: string | null
+  wallets: { walletId: string; wallet: { id: string; name: string; balance: number } }[]
+}
+
 const WalletsPage = () => {
   const { wallets, filteredWallets, isLoading, refreshWallets } = useWallet()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null)
   const [formData, setFormData] = useState({
@@ -95,6 +110,12 @@ const WalletsPage = () => {
   const [isEmergencyFundLoading, setIsEmergencyFundLoading] = useState(false)
   const [emergencyFundError, setEmergencyFundError] = useState<string | null>(null)
   const [walletEmergencyData, setWalletEmergencyData] = useState<Record<string, EmergencyFundResponse>>({})
+  
+  // Wallet Group states
+  const [walletGroups, setWalletGroups] = useState<WalletGroup[]>([])
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<WalletGroup | null>(null)
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false)
   const [walletEmergencyLoading, setWalletEmergencyLoading] = useState(false)
   const [walletEmergencyErrors, setWalletEmergencyErrors] = useState<Record<string, string>>({})
 
@@ -268,6 +289,90 @@ const WalletsPage = () => {
     const icon = AVAILABLE_ICONS.find(i => i.name === iconName);
     const IconComponent = icon?.component || FiCreditCardIcon;
     return IconComponent;
+  }
+
+  // Fetch wallet groups
+  const fetchWalletGroups = async () => {
+    try {
+      setIsLoadingGroups(true)
+      const response = await fetch('/api/wallet-groups')
+      if (response.ok) {
+        const data = await response.json()
+        const groups = Array.isArray(data) ? data : data.data || []
+        setWalletGroups(groups)
+      }
+    } catch (error) {
+      console.error('Error fetching wallet groups:', error)
+    } finally {
+      setIsLoadingGroups(false)
+    }
+  }
+
+  // Handle createGroup query param
+  useEffect(() => {
+    if (searchParams.get('createGroup') === 'true') {
+      setIsGroupFormOpen(true)
+      // Clear the query param
+      router.replace('/wallets', { scroll: false })
+    }
+  }, [searchParams, router])
+
+  // Fetch wallet groups on mount
+  useEffect(() => {
+    fetchWalletGroups()
+  }, [])
+
+  // Handle wallet group form submit
+  const handleGroupSubmit = async (data: {
+    name: string
+    description?: string
+    icon?: string
+    color?: string
+    walletIds: string[]
+  }) => {
+    const url = editingGroup ? `/api/wallet-groups/${editingGroup.id}` : '/api/wallet-groups'
+    const method = editingGroup ? 'PUT' : 'POST'
+    
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to save wallet group')
+    }
+    
+    await fetchWalletGroups()
+    setIsGroupFormOpen(false)
+    setEditingGroup(null)
+  }
+
+  // Handle wallet group delete
+  const handleGroupDelete = async (groupId: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus wallet group ini?')) return
+    
+    try {
+      const response = await fetch(`/api/wallet-groups/${groupId}`, {
+        method: 'DELETE',
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete wallet group')
+      }
+      
+      await fetchWalletGroups()
+    } catch (error) {
+      console.error('Error deleting wallet group:', error)
+      alert('Gagal menghapus wallet group')
+    }
+  }
+
+  // Handle wallet group edit
+  const handleGroupEdit = (group: WalletGroup) => {
+    setEditingGroup(group)
+    setIsGroupFormOpen(true)
   }
 
   useEffect(() => {
@@ -569,6 +674,44 @@ const WalletsPage = () => {
       {/* Wallet Type Tabs */}
       <WalletTypeTabs />
 
+      {/* Wallet Groups Section */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <FiUsers className="text-purple-600" />
+            Wallet Groups
+          </h2>
+          <button
+            className="btn btn-outline flex items-center gap-1 text-purple-600 border-purple-600 hover:bg-purple-50"
+            onClick={() => setIsGroupFormOpen(true)}
+          >
+            <FiPlusCircle />
+            <span>Buat Group</span>
+          </button>
+        </div>
+        
+        {isLoadingGroups ? (
+          <div className="text-sm text-gray-500">Memuat wallet groups...</div>
+        ) : walletGroups.length === 0 ? (
+          <div className="card bg-purple-50 border border-purple-100">
+            <p className="text-sm text-purple-700">
+              Belum ada wallet group. Buat wallet group untuk menggabungkan beberapa dompet dan melihat laporan gabungan.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {walletGroups.map((group) => (
+              <WalletGroupCard
+                key={group.id}
+                group={group}
+                onEdit={() => handleGroupEdit(group)}
+                onDelete={() => handleGroupDelete(group.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredWallets.map((wallet) => {
@@ -803,6 +946,18 @@ const WalletsPage = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Wallet Group Form Modal */}
+      {isGroupFormOpen && (
+        <WalletGroupForm
+          group={editingGroup || undefined}
+          onSubmit={handleGroupSubmit}
+          onClose={() => {
+            setIsGroupFormOpen(false)
+            setEditingGroup(null)
+          }}
+        />
       )}
     </div>
   )

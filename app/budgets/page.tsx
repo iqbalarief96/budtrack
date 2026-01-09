@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import BudgetDashboard from "@/components/budget/BudgetDashboard";
+import BudgetPageClient from "@/components/budget/BudgetPageClient";
 
 // Define proper types if not imported
 interface Budget {
@@ -126,7 +126,7 @@ export default async function BudgetPage() {
         <h1 className="text-3xl font-bold">Budget Planning</h1>
       </div>
 
-      <BudgetDashboard 
+      <BudgetPageClient 
         initialBudgets={budgets}
         categories={categories}
         wallets={wallets}

@@ -37,6 +37,15 @@ ChartJS.register(
   Filler
 )
 
+// Wallet comparison interface for group insights
+interface WalletComparison {
+  walletId: string
+  walletName: string
+  totalSpending: number
+  percentageOfGroup: number
+  topCategories: CategoryBreakdown[]
+}
+
 type TrendGrouping = 'month' | 'quarter' | 'year'
 
 interface TrendData {
@@ -125,7 +134,7 @@ const CATEGORY_COLORS = [
 ]
 
 const InsightsPage = () => {
-  const { selectedWallet } = useWallet()
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [chartData, setChartData] = useState<ChartData | null>(null)
@@ -139,14 +148,27 @@ const InsightsPage = () => {
     analysis: string | null;
   }>({ summary: null, analysis: null })
   const [dateRange, setDateRange] = useState(() => getDefaultRangeForPeriod('month'))
+  
+  // Group-specific insights data
+  const [groupInsightsData, setGroupInsightsData] = useState<any>(null)
+  const [walletComparison, setWalletComparison] = useState<WalletComparison[]>([])
 
   useEffect(() => {
-    if (selectedWallet) {
+    if (selectedWallet || isGroupSelected) {
       loadSavedAnalysis()
     }
-  }, [selectedWallet])
+  }, [selectedWallet, isGroupSelected])
 
   useEffect(() => {
+    // Handle group insights
+    if (isGroupSelected && selectedGroup) {
+      const fetchKey = `group-${selectedGroup.id}|${dateRange.startDate}|${dateRange.endDate}|${selectedPeriod}`
+      if (lastFetchKeyRef.current === fetchKey) return
+      lastFetchKeyRef.current = fetchKey
+      fetchGroupInsights()
+      return
+    }
+
     if (!selectedWallet) return
 
     const fetchKey = `${selectedWallet.id}|${dateRange.startDate}|${dateRange.endDate}|${selectedPeriod}`
@@ -155,14 +177,104 @@ const InsightsPage = () => {
     }
     lastFetchKeyRef.current = fetchKey
     fetchInsights(fetchKey)
-  }, [selectedWallet, dateRange.startDate, dateRange.endDate, selectedPeriod])
+  }, [selectedWallet, selectedGroup, isGroupSelected, dateRange.startDate, dateRange.endDate, selectedPeriod])
+
+  // Fetch group insights
+  const fetchGroupInsights = async () => {
+    if (!selectedGroup) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/insights?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch group insights')
+      }
+
+      const responseData = await response.json()
+      // API returns { success: true, data: {...} } format
+      const data = responseData.data || responseData
+      setGroupInsightsData(data)
+      
+      // Set wallet comparison data
+      if (data.walletComparison) {
+        setWalletComparison(data.walletComparison)
+      }
+
+      // Convert group data to chart data format
+      if (data.spendingPatterns || data.trends || data.walletComparison) {
+        // Convert SpendingTrend[] to TrendData format
+        const trendsArray = data.trends || []
+        const trendData: TrendData = {
+          labels: trendsArray.map((t: any) => t.period || ''),
+          income: trendsArray.map(() => 0), // Group insights don't have income breakdown by period
+          expense: trendsArray.map((t: any) => t.totalSpending || 0),
+          net: trendsArray.map((t: any) => -(t.totalSpending || 0)), // Negative since it's expense
+          grouping: selectedPeriod
+        }
+
+        // Calculate total expense from wallet comparison
+        const totalExpense = (data.walletComparison || []).reduce(
+          (sum: number, w: any) => sum + (w.totalSpending || 0), 
+          0
+        )
+
+        // Convert spending patterns to category breakdown
+        const categoryBreakdown: CategoryBreakdown[] = (data.spendingPatterns || []).map((pattern: any) => ({
+          name: pattern.categoryName || 'Unknown',
+          amount: pattern.averageAmount || 0,
+          percentage: totalExpense > 0 ? ((pattern.averageAmount || 0) / totalExpense) * 100 : 0
+        }))
+
+        const convertedChartData: ChartData = {
+          totalIncome: 0, // Group insights focus on expenses
+          totalExpense,
+          netSavings: -totalExpense,
+          period: selectedPeriod,
+          summaryRange: { start: dateRange.startDate, end: dateRange.endDate },
+          trend: trendData,
+          categoryBreakdown,
+          expensesByCategory: {},
+          incomeByCategory: {},
+          monthlyData: {}
+        }
+        setChartData(convertedChartData)
+      } else {
+        // Set empty chart data to prevent errors
+        setChartData({
+          totalIncome: 0,
+          totalExpense: 0,
+          netSavings: 0,
+          period: selectedPeriod,
+          summaryRange: { start: dateRange.startDate, end: dateRange.endDate },
+          trend: { labels: [], income: [], expense: [], net: [], grouping: selectedPeriod },
+          categoryBreakdown: [],
+          expensesByCategory: {},
+          incomeByCategory: {},
+          monthlyData: {}
+        })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Load saved analysis from localStorage
   const loadSavedAnalysis = () => {
-    if (!selectedWallet) return
+    const storageKey = isGroupSelected && selectedGroup 
+      ? `financial-analysis-group-${selectedGroup.id}`
+      : selectedWallet 
+        ? `financial-analysis-${selectedWallet.id}`
+        : null
+    
+    if (!storageKey) return
     
     try {
-      const savedAnalysis = localStorage.getItem(`financial-analysis-${selectedWallet.id}`)
+      const savedAnalysis = localStorage.getItem(storageKey)
       if (savedAnalysis) {
         const parsedAnalysis = JSON.parse(savedAnalysis)
         setAnalysisResult(parsedAnalysis)
@@ -174,10 +286,16 @@ const InsightsPage = () => {
 
   // Save analysis to localStorage
   const saveAnalysisToStorage = (analysis: { summary: string | null; analysis: string | null }) => {
-    if (!selectedWallet) return
+    const storageKey = isGroupSelected && selectedGroup 
+      ? `financial-analysis-group-${selectedGroup.id}`
+      : selectedWallet 
+        ? `financial-analysis-${selectedWallet.id}`
+        : null
+    
+    if (!storageKey) return
     
     try {
-      localStorage.setItem(`financial-analysis-${selectedWallet.id}`, JSON.stringify(analysis))
+      localStorage.setItem(storageKey, JSON.stringify(analysis))
     } catch (err) {
       console.error('Failed to save analysis to storage:', err)
     }
@@ -185,10 +303,16 @@ const InsightsPage = () => {
 
   // Clear saved analysis
   const clearSavedAnalysis = () => {
-    if (!selectedWallet) return
+    const storageKey = isGroupSelected && selectedGroup 
+      ? `financial-analysis-group-${selectedGroup.id}`
+      : selectedWallet 
+        ? `financial-analysis-${selectedWallet.id}`
+        : null
+    
+    if (!storageKey) return
     
     try {
-      localStorage.removeItem(`financial-analysis-${selectedWallet.id}`)
+      localStorage.removeItem(storageKey)
       setAnalysisResult({ summary: null, analysis: null })
     } catch (err) {
       console.error('Failed to clear saved analysis:', err)
@@ -297,22 +421,35 @@ const InsightsPage = () => {
     setDateRange(getDefaultRangeForPeriod(normalized))
   }
 
-  if (!selectedWallet) {
+  if (!selectedWallet && !isGroupSelected) {
     return (
       <div className="p-6">
         <WalletSelector />
         <div className="mt-4 text-center text-gray-500">
-          Please select a wallet to view insights
+          Please select a wallet or wallet group to view insights
         </div>
       </div>
     )
   }
+
+  // Get display name
+  const displayName = isGroupSelected && selectedGroup 
+    ? selectedGroup.name 
+    : selectedWallet?.name || 'Wallet'
 
   return (
     <div className="p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-col sm:flex-row gap-4">
           <WalletSelector />
+          {isGroupSelected && selectedGroup && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+              <span>Group: {selectedGroup.name}</span>
+              <span className="bg-purple-200 px-2 py-0.5 rounded-full text-xs">
+                {selectedGroup.wallets?.length || 0} wallets
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex gap-4">
           <input
@@ -358,15 +495,15 @@ const InsightsPage = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Monthly Trend</h3>
               <span className="text-xs uppercase tracking-wide text-gray-400">
-                {chartData.trend.grouping === 'month'
+                {chartData.trend?.grouping === 'month'
                   ? 'Bulanan'
-                  : chartData.trend.grouping === 'quarter'
+                  : chartData.trend?.grouping === 'quarter'
                   ? 'Kuartalan'
                   : 'Tahunan'}
               </span>
             </div>
             <div className="h-64">
-              {chartData.trend && chartData.trend.labels.length > 0 ? (() => {
+              {chartData.trend && chartData.trend.labels && chartData.trend.labels.length > 0 ? (() => {
                 const labels = chartData.trend.labels
                 const shouldUseBarFallback = labels.length <= 1
                 const lineData = {
@@ -599,6 +736,46 @@ const InsightsPage = () => {
               </div>
             )}
           </div>
+
+          {/* Wallet Comparison - Only show for groups */}
+          {isGroupSelected && walletComparison.length > 0 && (
+            <div className="rounded-lg bg-white p-6 shadow-md">
+              <h3 className="mb-4 text-lg font-semibold">Wallet Comparison</h3>
+              <div className="space-y-4">
+                {walletComparison.map((wallet, idx) => (
+                  <div key={wallet.walletId} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-gray-800">{wallet.walletName}</span>
+                      <span className="text-sm text-gray-600">
+                        {formatCurrency(wallet.totalSpending)} ({wallet.percentageOfGroup.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-gray-100">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.max(wallet.percentageOfGroup, 2)}%`,
+                          backgroundColor: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+                        }}
+                      />
+                    </div>
+                    {wallet.topCategories && wallet.topCategories.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {wallet.topCategories.slice(0, 3).map((cat) => (
+                          <span 
+                            key={cat.name} 
+                            className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"
+                          >
+                            {cat.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Advanced Analytics Card */}
           <div className="rounded-lg bg-white p-6 shadow-md lg:col-span-2">

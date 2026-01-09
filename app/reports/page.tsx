@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { FiDownload, FiMail, FiFileText, FiCalendar, FiBarChart2, FiPieChart, FiList, FiFilter } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
+import WalletSelector from '../components/WalletSelector'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { 
@@ -15,7 +16,7 @@ type ExportFormat = 'pdf' | 'excel' | 'csv'
 type Period = 'month' | 'quarter' | 'year' | 'custom'
 
 const ReportsPage = () => {
-  const { selectedWallet, wallets } = useWallet()
+  const { selectedWallet, wallets, selectedGroup, isGroupSelected } = useWallet()
   const [reportType, setReportType] = useState<ReportType>('summary')
   const [period, setPeriod] = useState<Period>('month')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
@@ -51,19 +52,115 @@ const ReportsPage = () => {
   }, [period])
 
   const generateReport = async () => {
-    if (!startDate || !endDate || !selectedWallet) return
+    if (!startDate || !endDate) return
+    
+    // Check if we have a valid wallet or group selected
+    if (!selectedWallet && !isGroupSelected) return
     
     setIsLoading(true)
     
     try {
-      // Fetch the data needed for the report
-      const response = await fetch(`/api/reports/generate?walletId=${selectedWallet.id}&start=${startDate.toISOString()}&end=${endDate.toISOString()}&type=${reportType}`)
+      let url: string
+      
+      if (isGroupSelected && selectedGroup) {
+        // Fetch from group reports API
+        url = `/api/wallet-groups/${selectedGroup.id}/reports?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}&type=${reportType}`
+      } else if (selectedWallet) {
+        // Fetch from wallet reports API
+        url = `/api/reports/generate?walletId=${selectedWallet.id}&start=${startDate.toISOString()}&end=${endDate.toISOString()}&type=${reportType}`
+      } else {
+        return
+      }
+      
+      const response = await fetch(url)
       
       if (!response.ok) {
         throw new Error('Failed to generate report')
       }
       
-      const data = await response.json()
+      const responseData = await response.json()
+      // Handle both { success: true, data: {...} } and direct data format
+      let data = responseData.data || responseData
+      
+      // Transform group data to match expected format
+      if (isGroupSelected && data) {
+        // Calculate expense categories with percentages
+        const expenseCategories = (data.transactionsByCategory || [])
+          .filter((cat: any) => cat.totalExpense > 0)
+          .map((cat: any) => ({
+            id: cat.categoryId,
+            name: cat.categoryName,
+            amount: cat.totalExpense,
+            color: cat.categoryColor,
+            percentage: data.totalExpense > 0 
+              ? (cat.totalExpense / data.totalExpense) * 100 
+              : 0
+          }))
+          .sort((a: any, b: any) => b.amount - a.amount)
+        
+        // Calculate income categories with percentages
+        const incomeCategories = (data.transactionsByCategory || [])
+          .filter((cat: any) => cat.totalIncome > 0)
+          .map((cat: any) => ({
+            id: cat.categoryId,
+            name: cat.categoryName,
+            amount: cat.totalIncome,
+            color: cat.categoryColor,
+            percentage: data.totalIncome > 0 
+              ? (cat.totalIncome / data.totalIncome) * 100 
+              : 0
+          }))
+          .sort((a: any, b: any) => b.amount - a.amount)
+        
+        // Calculate monthly data from transactions
+        const monthlyMap = new Map<string, { income: number; expenses: number }>()
+        for (const tx of (data.transactions || [])) {
+          const date = new Date(tx.date)
+          const monthKey = `${date.toLocaleString('id-ID', { month: 'short' })} ${date.getFullYear()}`
+          if (!monthlyMap.has(monthKey)) {
+            monthlyMap.set(monthKey, { income: 0, expenses: 0 })
+          }
+          const monthData = monthlyMap.get(monthKey)!
+          const isIncome = tx.type === 'income' || tx.type === 'INCOME'
+          if (isIncome) {
+            monthData.income += tx.amount
+          } else {
+            monthData.expenses += tx.amount
+          }
+        }
+        
+        const monthlyData = Array.from(monthlyMap.entries())
+          .map(([month, values]) => ({
+            month,
+            income: values.income,
+            expenses: values.expenses,
+            net: values.income - values.expenses
+          }))
+          .sort((a, b) => {
+            // Sort by date
+            const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+            const aMonth = a.month.split(' ')[0]
+            const bMonth = b.month.split(' ')[0]
+            const aYear = parseInt(a.month.split(' ')[1])
+            const bYear = parseInt(b.month.split(' ')[1])
+            if (aYear !== bYear) return aYear - bYear
+            return monthOrder.indexOf(aMonth) - monthOrder.indexOf(bMonth)
+          })
+        
+        // Transform to expected format
+        data = {
+          ...data,
+          totalExpenses: data.totalExpense,
+          netCashFlow: data.netSavings,
+          topExpenseCategories: expenseCategories.slice(0, 5),
+          expenseCategories,
+          incomeCategories,
+          monthlyData,
+          // Keep transactions as-is
+          transactions: data.transactions || []
+        }
+      }
+      
       setReportData(data)
     } catch (error) {
       console.error('Error generating report:', error)
@@ -74,7 +171,8 @@ const ReportsPage = () => {
   }
 
   const exportReport = async (format: ExportFormat) => {
-    if (!reportData || !selectedWallet) return
+    if (!reportData) return
+    if (!selectedWallet && !isGroupSelected) return
     
     setIsLoading(true)
     
@@ -85,7 +183,8 @@ const ReportsPage = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          walletId: selectedWallet.id,
+          walletId: isGroupSelected ? null : selectedWallet?.id,
+          groupId: isGroupSelected ? selectedGroup?.id : null,
           startDate: startDate?.toISOString(),
           endDate: endDate?.toISOString(),
           reportType,
@@ -139,7 +238,8 @@ const ReportsPage = () => {
   }
 
   const shareReport = async (email: string) => {
-    if (!reportData || !selectedWallet) return
+    if (!reportData) return
+    if (!selectedWallet && !isGroupSelected) return
     
     setIsLoading(true)
     
@@ -150,7 +250,8 @@ const ReportsPage = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          walletId: selectedWallet.id,
+          walletId: isGroupSelected ? null : selectedWallet?.id,
+          groupId: isGroupSelected ? selectedGroup?.id : null,
           email,
           startDate: startDate?.toISOString(),
           endDate: endDate?.toISOString(),
@@ -328,16 +429,16 @@ const ReportsPage = () => {
   const renderActions = () => (
     <div className="flex flex-col sm:flex-row gap-3 mb-6">
       <button
-        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center"
+        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center disabled:bg-blue-300"
         onClick={generateReport}
-        disabled={isLoading || !selectedWallet}
+        disabled={isLoading || (!selectedWallet && !isGroupSelected)}
       >
         <FiFileText className="mr-2" />
         {isLoading ? 'Generating...' : 'Generate Report'}
       </button>
       
       <button
-        className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center"
+        className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center disabled:bg-green-300"
         onClick={() => exportReport(exportFormat)}
         disabled={isLoading || !reportData}
       >
@@ -346,7 +447,7 @@ const ReportsPage = () => {
       </button>
       
       <button
-        className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center justify-center"
+        className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center justify-center disabled:bg-purple-300"
         onClick={() => {
           const email = prompt('Enter email address to share report:')
           if (email) shareReport(email)
@@ -361,32 +462,53 @@ const ReportsPage = () => {
 
   return (
     <div className="container mx-auto p-4 max-w-6xl">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center mb-6">
         <h1 className="text-2xl font-bold">Reports & Export</h1>
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          <WalletSelector />
+          {isGroupSelected && selectedGroup && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+              <span>Group: {selectedGroup.name}</span>
+              <span className="bg-purple-200 px-2 py-0.5 rounded-full text-xs">
+                {selectedGroup.wallets?.length || 0} wallets
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {renderReportOptions()}
-      {renderActions()}
-
-      {isLoading ? (
-        <div className="bg-white rounded-lg shadow p-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-500">Generating report...</p>
-        </div>
-      ) : reportData ? (
-        <div className="bg-white rounded-lg shadow">
-          {reportType === 'summary' && <SummaryReportView data={reportData} />}
-          {reportType === 'transactions' && <TransactionsReportView data={reportData} />}
-          {reportType === 'categories' && <CategoriesReportView data={reportData} />}
-          {reportType === 'trends' && <TrendsReportView data={reportData} />}
-          {reportType === 'all' && <AllReportView data={reportData} />}
-        </div>
-      ) : (
+      {!selectedWallet && !isGroupSelected ? (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <FiFileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-medium text-gray-700 mb-1">No Report Generated</h3>
-          <p className="text-gray-500">Select your report options and click 'Generate Report' to view your data.</p>
+          <h3 className="text-lg font-medium text-gray-700 mb-1">Pilih Wallet atau Group</h3>
+          <p className="text-gray-500">Pilih wallet atau wallet group untuk membuat laporan.</p>
         </div>
+      ) : (
+        <>
+          {renderReportOptions()}
+          {renderActions()}
+
+          {isLoading ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">Generating report...</p>
+            </div>
+          ) : reportData ? (
+            <div className="bg-white rounded-lg shadow">
+              {reportType === 'summary' && <SummaryReportView data={reportData} />}
+              {reportType === 'transactions' && <TransactionsReportView data={reportData} />}
+              {reportType === 'categories' && <CategoriesReportView data={reportData} />}
+              {reportType === 'trends' && <TrendsReportView data={reportData} />}
+              {reportType === 'all' && <AllReportView data={reportData} />}
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <FiFileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-700 mb-1">No Report Generated</h3>
+              <p className="text-gray-500">Select your report options and click 'Generate Report' to view your data.</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

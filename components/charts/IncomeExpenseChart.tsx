@@ -36,7 +36,7 @@ type ChartDataType = {
 };
 
 export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpenseChartProps) {
-  const { selectedWallet } = useWallet();
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [isLoading, setIsLoading] = useState(true);
   const [chartData, setChartData] = useState<ChartDataType>({
     labels: [],
@@ -48,6 +48,22 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
     const fetchData = async () => {
       setIsLoading(true);
       try {
+        // For group selection, fetch from group transactions API
+        if (isGroupSelected && selectedGroup) {
+          const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions`, { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error('Failed to fetch group transactions');
+          }
+          const responseData = await response.json();
+          // API returns { success: true, data: {...} } format
+          const groupData = responseData.data || responseData;
+          const transactions = groupData.transactions || groupData || [];
+          
+          // Process transactions same as individual wallet
+          processTransactions(transactions);
+          return;
+        }
+        
         // Fetch transactions from API (get all for accurate history)
         const response = await fetch('/api/transactions?limit=-1', { cache: 'no-store' });
         if (!response.ok) {
@@ -64,76 +80,7 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
           filteredTransactions = transactions.filter((tx: any) => tx.walletId === selectedWallet.id);
         }
 
-        let labels: string[] = [];
-        let incomeData: number[] = [];
-        let expenseData: number[] = [];
-
-        // Format data based on selected period
-        if (period === 'monthly') {
-          // Last 6 months
-          labels = getLastNMonths(6);
-
-          // Group transactions by month
-          const monthlyData = groupTransactionsByMonth(filteredTransactions, 6);
-
-          // Extract income and expense data
-          labels.forEach(month => {
-            const monthData = monthlyData[month] || { income: 0, expense: 0 };
-            incomeData.push(monthData.income);
-            expenseData.push(monthData.expense);
-          });
-        } else if (period === 'weekly') {
-          // Last 4 weeks
-          labels = getLastNWeeks(4);
-
-          // Group transactions by week
-          const weeklyData = groupTransactionsByWeek(filteredTransactions, 4);
-
-          // Extract income and expense data
-          labels.forEach((week, i) => {
-            const weekData = weeklyData[i] || { income: 0, expense: 0 };
-            incomeData.push(weekData.income);
-            expenseData.push(weekData.expense);
-          });
-        } else if (period === 'yearly') {
-          // Last 4 years
-          const currentYear = new Date().getFullYear();
-          labels = [
-            (currentYear - 3).toString(),
-            (currentYear - 2).toString(),
-            (currentYear - 1).toString(),
-            currentYear.toString()
-          ];
-
-          // Group transactions by year
-          const yearlyData = groupTransactionsByYear(filteredTransactions, 4);
-
-          // Extract income and expense data
-          labels.forEach(year => {
-            const yearData = yearlyData[year] || { income: 0, expense: 0 };
-            incomeData.push(yearData.income);
-            expenseData.push(yearData.expense);
-          });
-        } else { // daily
-          // Last 7 days
-          labels = getLastNDays(7);
-
-          // Group transactions by day
-          const dailyData = groupTransactionsByDay(filteredTransactions, 7);
-
-          // Extract income and expense data
-          labels.forEach((day, i) => {
-            const dayData = dailyData[i] || { income: 0, expense: 0 };
-            incomeData.push(dayData.income);
-            expenseData.push(dayData.expense);
-          });
-        }
-
-        setChartData({
-          labels,
-          income: incomeData,
-          expense: expenseData
-        });
+        processTransactions(filteredTransactions);
       } catch (error) {
         console.error('Error fetching income/expense data:', error);
         toast.error('Gagal memuat data grafik');
@@ -141,9 +88,82 @@ export default function IncomeExpenseChart({ period = 'monthly' }: IncomeExpense
         setIsLoading(false);
       }
     };
+    
+    const processTransactions = (filteredTransactions: any[]) => {
+      let labels: string[] = [];
+      let incomeData: number[] = [];
+      let expenseData: number[] = [];
+
+      // Format data based on selected period
+      if (period === 'monthly') {
+        // Last 6 months
+        labels = getLastNMonths(6);
+
+        // Group transactions by month
+        const monthlyData = groupTransactionsByMonth(filteredTransactions, 6);
+
+        // Extract income and expense data
+        labels.forEach(month => {
+          const monthData = monthlyData[month] || { income: 0, expense: 0 };
+          incomeData.push(monthData.income);
+          expenseData.push(monthData.expense);
+        });
+      } else if (period === 'weekly') {
+        // Last 4 weeks
+        labels = getLastNWeeks(4);
+
+        // Group transactions by week
+        const weeklyData = groupTransactionsByWeek(filteredTransactions, 4);
+
+        // Extract income and expense data
+        labels.forEach((week, i) => {
+          const weekData = weeklyData[i] || { income: 0, expense: 0 };
+          incomeData.push(weekData.income);
+          expenseData.push(weekData.expense);
+        });
+      } else if (period === 'yearly') {
+        // Last 4 years
+        const currentYear = new Date().getFullYear();
+        labels = [
+          (currentYear - 3).toString(),
+          (currentYear - 2).toString(),
+          (currentYear - 1).toString(),
+          currentYear.toString()
+        ];
+
+        // Group transactions by year
+        const yearlyData = groupTransactionsByYear(filteredTransactions, 4);
+
+        // Extract income and expense data
+        labels.forEach(year => {
+          const yearData = yearlyData[year] || { income: 0, expense: 0 };
+          incomeData.push(yearData.income);
+          expenseData.push(yearData.expense);
+        });
+      } else { // daily
+        // Last 7 days
+        labels = getLastNDays(7);
+
+        // Group transactions by day
+        const dailyData = groupTransactionsByDay(filteredTransactions, 7);
+
+        // Extract income and expense data
+        labels.forEach((day, i) => {
+          const dayData = dailyData[i] || { income: 0, expense: 0 };
+          incomeData.push(dayData.income);
+          expenseData.push(dayData.expense);
+        });
+      }
+
+      setChartData({
+        labels,
+        income: incomeData,
+        expense: expenseData
+      });
+    };
 
     fetchData();
-  }, [selectedWallet, period]);
+  }, [selectedWallet, selectedGroup, isGroupSelected, period]);
 
   const data = {
     labels: chartData.labels,

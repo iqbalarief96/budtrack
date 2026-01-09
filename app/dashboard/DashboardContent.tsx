@@ -32,13 +32,17 @@ interface Props {
 }
 
 const DashboardContent = ({ budgets = [] }: Props) => {
-  const { wallets, selectedWallet, refreshWallets } = useWallet()
+  const { wallets, selectedWallet, refreshWallets, selectedGroup, isGroupSelected } = useWallet()
   
   // React Query hooks for data fetching
   const [selectedPeriod, setSelectedPeriod] = useState('all')
   const { data: allTransactions = [], isLoading: isLoadingTransactions } = useTransactions()
   const { data: allBudgets = [], isLoading: isLoadingBudgets } = useBudgets()
   const { data: savingsData, isLoading: isLoadingSavings } = useEmergencyFund(selectedWallet?.id)
+  
+  // Group-specific data
+  const [groupDashboardData, setGroupDashboardData] = useState<any>(null)
+  const [isLoadingGroupData, setIsLoadingGroupData] = useState(false)
   
   const [summary, setSummary] = useState({ total: 0, income: 0, expense: 0 })
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([])
@@ -145,13 +149,131 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   }, [ringkasanWidgets]);
 
+  // Helper function to calculate date range from period
+  const getDateRangeFromPeriod = (period: string): { startDate?: Date; endDate?: Date } => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    
+    switch (period) {
+      case 'daily':
+        return { startDate: today, endDate: now }
+      case 'weekly':
+        const weekAgo = new Date(today)
+        weekAgo.setDate(today.getDate() - 7)
+        return { startDate: weekAgo, endDate: now }
+      case 'monthly':
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+        return { startDate: startOfMonth, endDate: now }
+      case 'quarterly':
+        const threeMonthsAgo = new Date(today)
+        threeMonthsAgo.setMonth(today.getMonth() - 3)
+        return { startDate: threeMonthsAgo, endDate: now }
+      case 'yearly':
+        const startOfYear = new Date(today.getFullYear(), 0, 1)
+        return { startDate: startOfYear, endDate: now }
+      default:
+        return {} // 'all' - no date filter
+    }
+  }
+
+  // Fetch group dashboard data when a group is selected
+  useEffect(() => {
+    const fetchGroupDashboard = async () => {
+      if (!isGroupSelected || !selectedGroup || !selectedGroup.id) {
+        setGroupDashboardData(null)
+        return
+      }
+
+      try {
+        setIsLoadingGroupData(true)
+        // Clear individual wallet data when viewing group
+        setFilteredTransactions([])
+        console.log('[DashboardContent] Fetching group dashboard for:', selectedGroup.id, 'period:', selectedPeriod)
+        
+        // Build URL with date range parameters
+        const dateRange = getDateRangeFromPeriod(selectedPeriod)
+        const params = new URLSearchParams()
+        if (dateRange.startDate) {
+          params.set('startDate', dateRange.startDate.toISOString())
+        }
+        if (dateRange.endDate) {
+          params.set('endDate', dateRange.endDate.toISOString())
+        }
+        const queryString = params.toString()
+        const url = `/api/wallet-groups/${selectedGroup.id}/dashboard${queryString ? `?${queryString}` : ''}`
+        
+        const response = await fetch(url)
+        console.log('[DashboardContent] Response status:', response.status)
+        if (response.ok) {
+          const responseData = await response.json()
+          console.log('[DashboardContent] Raw API response:', responseData)
+          // API returns { success: true, data: {...} } format
+          const data = responseData.data || responseData
+          console.log('[DashboardContent] Parsed data:', data)
+          console.log('[DashboardContent] totalBalance:', data.totalBalance, 'totalIncome:', data.totalIncome, 'totalExpense:', data.totalExpense)
+          setGroupDashboardData(data)
+          
+          // Update summary from group data
+          setSummary({
+            total: data.totalBalance || 0,
+            income: data.totalIncome || 0,
+            expense: data.totalExpense || 0,
+          })
+          console.log('[DashboardContent] Summary updated:', { total: data.totalBalance || 0, income: data.totalIncome || 0, expense: data.totalExpense || 0 })
+          
+          // Update spending by category from group data
+          if (data.spendingByCategory && data.spendingByCategory.length > 0) {
+            const colors = [
+              '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', 
+              '#FF9F40', '#8AC926', '#1982C4', '#6A4C93', '#FF595E'
+            ]
+            const categoryData = data.spendingByCategory.map((cat: any, index: number) => ({
+              name: cat.categoryName || cat.name,
+              amount: cat.amount,
+              color: colors[index % colors.length]
+            }))
+            setSpendingByCategory(categoryData.sort((a: any, b: any) => b.amount - a.amount))
+          } else {
+            // Clear spending by category if no data for this period
+            setSpendingByCategory([])
+          }
+          
+          // Update transaction history from group data if available
+          if (data.transactionHistory && data.transactionHistory.length > 0) {
+            setTransactionHistory(data.transactionHistory)
+          } else {
+            // Clear transaction history for groups (API doesn't return it)
+            setTransactionHistory([])
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching group dashboard:', error)
+      } finally {
+        setIsLoadingGroupData(false)
+      }
+    }
+
+    fetchGroupDashboard()
+  }, [isGroupSelected, selectedGroup, selectedPeriod])
+
   // Filtered transactions and budgets
-  const filteredBudgets = selectedWallet && allBudgets
-    ? allBudgets.filter(budget => budget.walletId === selectedWallet.id)
-    : allBudgets || []
+  const filteredBudgets = React.useMemo(() => {
+    if (isGroupSelected && selectedGroup && selectedGroup.wallets) {
+      // For groups, filter budgets that belong to any wallet in the group
+      const groupWalletIds = selectedGroup.wallets.map(w => w.walletId)
+      return allBudgets?.filter(budget => groupWalletIds.includes(budget.walletId)) || []
+    }
+    if (selectedWallet && allBudgets) {
+      return allBudgets.filter(budget => budget.walletId === selectedWallet.id)
+    }
+    return allBudgets || []
+  }, [isGroupSelected, selectedGroup, selectedWallet, allBudgets])
 
   // Calculate totals and filter transactions when wallet or transaction data changes
   useEffect(() => {
+    // Skip if group is selected - we use group dashboard data instead
+    if (isGroupSelected) return
+    
     if (selectedWallet && allTransactions.length > 0) {
       // Filter transaksi untuk wallet yang dipilih
       let filteredTx = allTransactions.filter(
@@ -232,12 +354,15 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         expense,
       });
     }
-  }, [selectedWallet, allTransactions, selectedPeriod]);
+  }, [selectedWallet, allTransactions, selectedPeriod, isGroupSelected]);
 
   // Savings data is now fetched via React Query hook (useEmergencyFund)
 
   // Get transactions grouped by category for pie chart
   useEffect(() => {
+    // Skip if group is selected - we use group dashboard data instead
+    if (isGroupSelected) return
+    
     if (selectedWallet && allTransactions.length > 0) {
       const walletTxs = allTransactions.filter(tx => 
         tx.walletId === selectedWallet.id && 
@@ -269,10 +394,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       
       setSpendingByCategory(result.sort((a, b) => b.amount - a.amount))
     }
-  }, [selectedWallet, allTransactions])
+  }, [selectedWallet, allTransactions, isGroupSelected])
   
   // Get monthly transaction history data for the bar chart
   useEffect(() => {
+    // Skip if group is selected - we use group dashboard data instead
+    if (isGroupSelected) return
+    
     if (selectedWallet && allTransactions.length > 0) {
       const now = new Date()
       const sixMonthsAgo = new Date()
@@ -313,7 +441,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       
       setTransactionHistory(months)
     }
-  }, [selectedWallet, allTransactions])
+  }, [selectedWallet, allTransactions, isGroupSelected])
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -340,7 +468,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
   // Calculate financial stats
   const calculateFinancialStats = () => {
-    if (!selectedWallet) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
+    if (!selectedWallet && !isGroupSelected) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
     
     // Calculate savings rate (income - expense) / income
     const savingsRate = summary.income > 0 
@@ -467,17 +595,33 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   };
 
-  if (!selectedWallet) {
+  if (!selectedWallet && !isGroupSelected) {
     return <div>Loading...</div>
   }
 
+  // Get display name for header
+  const displayName = isGroupSelected && selectedGroup 
+    ? selectedGroup.name 
+    : selectedWallet?.name || 'Personal'
+
   return (
     <div className="space-y-8">
-      <div className="bg-gradient-to-r from-blue-700 to-blue-500 rounded-xl p-6 text-white shadow-lg">
+      <div className={`bg-gradient-to-r ${isGroupSelected ? 'from-purple-700 to-purple-500' : 'from-blue-700 to-blue-500'} rounded-xl p-6 text-white shadow-lg`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">Beranda</h1>
-            <p className="text-blue-100 mt-1">Selamat datang kembali! Pantau keuangan Anda.</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              Beranda
+              {isGroupSelected && selectedGroup && selectedGroup.wallets && (
+                <span className="text-sm font-normal bg-white/20 px-2 py-1 rounded-full">
+                  {selectedGroup.wallets.length} wallets
+                </span>
+              )}
+            </h1>
+            <p className={`${isGroupSelected ? 'text-purple-100' : 'text-blue-100'} mt-1`}>
+              {isGroupSelected 
+                ? `Melihat data gabungan dari ${displayName}` 
+                : 'Selamat datang kembali! Pantau keuangan Anda.'}
+            </p>
           </div>
           
           <div className="mt-4 md:mt-0">
@@ -485,8 +629,27 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </div>
         </div>
 
-        {/* Wallet Type Tabs */}
-        <WalletTypeTabs />
+        {/* Wallet Type Tabs - only show for individual wallets */}
+        {!isGroupSelected && <WalletTypeTabs />}
+        
+        {/* Group Wallet Breakdown - show when group is selected */}
+        {isGroupSelected && selectedGroup && groupDashboardData?.walletBreakdown && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {groupDashboardData.walletBreakdown.map((wallet: any) => (
+              <div 
+                key={wallet.walletId} 
+                className="bg-white/10 px-3 py-1.5 rounded-full text-sm flex items-center gap-2"
+              >
+                <span 
+                  className="w-2 h-2 rounded-full" 
+                  style={{ backgroundColor: wallet.walletColor || '#fff' }}
+                />
+                <span>{wallet.walletName}</span>
+                <span className="text-white/70">({wallet.percentage?.toFixed(0) || 0}%)</span>
+              </div>
+            ))}
+          </div>
+        )}
         
         {/* Quick Stats */}
         <div className="mb-4">

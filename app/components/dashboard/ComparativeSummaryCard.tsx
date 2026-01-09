@@ -25,12 +25,52 @@ interface ComparativeSummaryCardProps {
 }
 
 const ComparativeSummaryCard = ({ period = 'month' }: ComparativeSummaryCardProps) => {
-  const { selectedWallet } = useWallet()
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet()
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<SummaryData | null>(null)
 
   const fetchData = async () => {
+    // For group selection, fetch from group dashboard API
+    if (isGroupSelected && selectedGroup) {
+      setIsLoading(true)
+      setError(null)
+      
+      try {
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/dashboard`)
+        
+        if (!response.ok) throw new Error('Failed to fetch group summary data')
+        
+        const responseData = await response.json()
+        console.log('[ComparativeSummaryCard] Raw API response:', responseData)
+        // API returns { success: true, data: {...} } format
+        const groupData = responseData.data || responseData
+        console.log('[ComparativeSummaryCard] Group data:', groupData)
+        console.log('[ComparativeSummaryCard] totalIncome:', groupData.totalIncome, 'totalExpense:', groupData.totalExpense, 'totalBalance:', groupData.totalBalance)
+        
+        // Convert group dashboard data to summary format
+        setData({
+          currentPeriod: {
+            income: groupData.totalIncome || 0,
+            expense: groupData.totalExpense || 0,
+            savings: (groupData.totalIncome || 0) - (groupData.totalExpense || 0)
+          },
+          previousPeriod: {
+            income: 0,
+            expense: 0,
+            savings: 0
+          }
+        })
+      } catch (err) {
+        console.error('Error fetching group summary:', err)
+        setError('Gagal load data summary group')
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+    
+    // For individual wallet selection
     if (!selectedWallet) return
     
     setIsLoading(true)
@@ -56,10 +96,12 @@ const ComparativeSummaryCard = ({ period = 'month' }: ComparativeSummaryCardProp
   }
   
   useEffect(() => {
-    if (selectedWallet) {
+    if (isGroupSelected && selectedGroup) {
+      fetchData()
+    } else if (selectedWallet) {
       fetchData()
     }
-  }, [selectedWallet, period])
+  }, [selectedWallet, selectedGroup, isGroupSelected, period])
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {

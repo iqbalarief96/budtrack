@@ -9,11 +9,22 @@ import BillCard from '@/components/bills/BillCard'
 import BillForm from '@/components/bills/BillForm'
 import BillStatsCard from '@/components/bills/BillStatsCard'
 import BillImportModal from '@/components/bills/BillImportModal'
+import WalletSelector from '@/app/components/WalletSelector'
+import { useWallet } from '@/app/providers/WalletProvider'
+
+// Aggregated bill type for group view
+interface AggregatedBill extends Bill {
+  walletName?: string;
+  walletColor?: string;
+}
 
 export default function BillsPage() {
   const { data: session, status } = useSession()
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet()
   const [bills, setBills] = useState<Bill[]>([])
+  const [groupBills, setGroupBills] = useState<AggregatedBill[]>([])
   const [loading, setLoading] = useState(true)
+  const [isLoadingGroupBills, setIsLoadingGroupBills] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editingBill, setEditingBill] = useState<Bill | null>(null)
@@ -28,11 +39,38 @@ export default function BillsPage() {
   }, [status])
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (session?.user?.id && !isGroupSelected) {
       fetchBills()
       fetchCategories()
     }
-  }, [session?.user?.id, statusFilter, categoryFilter])
+  }, [session?.user?.id, statusFilter, categoryFilter, selectedWallet, isGroupSelected])
+
+  // Fetch group bills when a group is selected
+  useEffect(() => {
+    const fetchGroupBills = async () => {
+      if (!isGroupSelected || !selectedGroup) {
+        setGroupBills([])
+        return
+      }
+
+      try {
+        setIsLoadingGroupBills(true)
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/bills`)
+        if (response.ok) {
+          const responseData = await response.json()
+          // API returns { success: true, data: {...} } format
+          const data = responseData.data || responseData
+          setGroupBills(data.bills || data || [])
+        }
+      } catch (error) {
+        console.error('Error fetching group bills:', error)
+      } finally {
+        setIsLoadingGroupBills(false)
+      }
+    }
+
+    fetchGroupBills()
+  }, [isGroupSelected, selectedGroup])
 
   const fetchBills = async () => {
     try {
@@ -44,6 +82,9 @@ export default function BillsPage() {
       }
       if (categoryFilter !== 'ALL') {
         params.append('categoryId', categoryFilter)
+      }
+      if (selectedWallet) {
+        params.append('walletId', selectedWallet.id)
       }
 
       const response = await fetch(`/api/bills?${params.toString()}`)
@@ -146,7 +187,7 @@ export default function BillsPage() {
     fetchBills()
   }
 
-  if (status === 'loading' || loading) {
+  if (status === 'loading' || loading || isLoadingGroupBills) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -154,11 +195,14 @@ export default function BillsPage() {
     )
   }
 
+  // Use group bills when group is selected, otherwise use regular bills
+  const displayBills = isGroupSelected ? groupBills : bills
+
   const statusCounts = {
-    UPCOMING: bills.filter(b => b.status === 'UPCOMING').length,
-    DUE_SOON: bills.filter(b => b.status === 'DUE_SOON').length,
-    OVERDUE: bills.filter(b => b.status === 'OVERDUE').length,
-    PAID: bills.filter(b => b.status === 'PAID').length,
+    UPCOMING: displayBills.filter(b => b.status === 'UPCOMING').length,
+    DUE_SOON: displayBills.filter(b => b.status === 'DUE_SOON').length,
+    OVERDUE: displayBills.filter(b => b.status === 'OVERDUE').length,
+    PAID: displayBills.filter(b => b.status === 'PAID').length,
   }
 
   return (
@@ -177,14 +221,29 @@ export default function BillsPage() {
             <FiDownload size={18} />
             Import from Recurring
           </button>
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <FiPlus size={18} />
-            Add Bill
-          </button>
+          {!isGroupSelected && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <FiPlus size={18} />
+              Add Bill
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* Wallet/Group Selector */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <WalletSelector />
+        {isGroupSelected && selectedGroup && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+            <span>Group: {selectedGroup.name}</span>
+            <span className="bg-purple-200 px-2 py-0.5 rounded-full text-xs">
+              {selectedGroup.wallets?.length || 0} wallets
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Stats Card */}
@@ -241,33 +300,48 @@ export default function BillsPage() {
       </div>
 
       {/* Bills List */}
-      {bills.length === 0 ? (
+      {displayBills.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg">
           <FiCheckCircle className="mx-auto text-gray-400 mb-4" size={48} />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No bills found</h3>
           <p className="text-gray-600 mb-4">
             {statusFilter !== 'ALL' || categoryFilter !== 'ALL'
               ? 'Try adjusting your filters'
+              : isGroupSelected
+              ? 'No bills found for this wallet group'
               : 'Add your first bill to start tracking'}
           </p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <FiPlus size={18} />
-            Add Bill
-          </button>
+          {!isGroupSelected && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <FiPlus size={18} />
+              Add Bill
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {bills.map((bill) => (
-            <BillCard
-              key={bill.id}
-              bill={bill}
-              onEdit={() => setEditingBill(bill)}
-              onDelete={() => handleDeleteBill(bill.id)}
-              onMarkAsPaid={() => handleMarkAsPaid(bill.id)}
-            />
+          {displayBills.map((bill) => (
+            <div key={bill.id} className="relative">
+              {/* Wallet indicator for group view */}
+              {isGroupSelected && (bill as AggregatedBill).walletName && (
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-0.5 bg-white/90 rounded-full text-xs shadow-sm">
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: (bill as AggregatedBill).walletColor || '#6366f1' }}
+                  />
+                  <span className="text-gray-600">{(bill as AggregatedBill).walletName}</span>
+                </div>
+              )}
+              <BillCard
+                bill={bill}
+                onEdit={() => !isGroupSelected && setEditingBill(bill)}
+                onDelete={() => !isGroupSelected && handleDeleteBill(bill.id)}
+                onMarkAsPaid={() => !isGroupSelected && handleMarkAsPaid(bill.id)}
+              />
+            </div>
           ))}
         </div>
       )}

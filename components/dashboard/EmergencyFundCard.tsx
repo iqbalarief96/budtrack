@@ -17,6 +17,7 @@ import { Edit2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { useWallet } from '@/app/providers/WalletProvider';
 
 // Define the props including walletId
 interface EmergencyFundCardProps {
@@ -57,6 +58,7 @@ const fixMarkdown = (text: string) => {
 };
 
 export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className, walletId }) => {
+  const { selectedGroup, isGroupSelected } = useWallet();
   const [data, setData] = useState<EmergencyFundData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +85,60 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
       // Build API URL with walletId and cache-busting
       const timestamp = new Date().getTime();
       let url = `/api/emergency-fund?t=${timestamp}`;
+      
+      // If group is selected, fetch from group dashboard API instead
+      if (isGroupSelected && selectedGroup) {
+        console.log('[DEBUG] EmergencyFundCard: Fetching group data for:', selectedGroup.id);
+        const groupUrl = `/api/wallet-groups/${selectedGroup.id}/dashboard?t=${timestamp}`;
+        const response = await fetch(groupUrl, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status}`);
+        }
+        
+        const responseData = await response.json();
+        console.log('[DEBUG] EmergencyFundCard: Group API response:', responseData);
+        const groupData = responseData.data || responseData;
+        
+        // Transform group data to emergency fund format
+        // Aggregate savings from all wallets in the group
+        const walletBreakdown = groupData.walletBreakdown || [];
+        const savingsByType: Record<string, number> = {};
+        let totalSavings = 0;
+        
+        walletBreakdown.forEach((wallet: any) => {
+          if (wallet.walletName && wallet.balance > 0) {
+            savingsByType[wallet.walletName] = wallet.balance;
+            totalSavings += wallet.balance;
+          }
+        });
+        
+        const result: EmergencyFundData = {
+          targetAmount: groupData.emergencyFundTarget || 20000000, // Default target for groups
+          currentAmount: groupData.totalBalance || 0,
+          monthlyContribution: 0,
+          isActive: true,
+          totalSavings: totalSavings,
+          savingsByType: savingsByType
+        };
+        
+        console.log('[DEBUG] EmergencyFundCard: Transformed group data:', result);
+        setData(result);
+        setIsRefreshing(false);
+        
+        if (isRefreshing) {
+          toast.success('Data berhasil diperbarui!');
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // Individual wallet fetch
       if (walletId) {
         url += `&walletId=${encodeURIComponent(walletId)}`;
         console.log('[DEBUG] EmergencyFundCard: Fetching with walletId:', walletId, 'encoded:', encodeURIComponent(walletId));
@@ -154,7 +210,7 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
   // Initial data load
   useEffect(() => {
     fetchData();
-  }, [walletId]); // Re-fetch when walletId changes
+  }, [walletId, isGroupSelected, selectedGroup?.id]); // Re-fetch when walletId or group changes
 
   // Handle refresh button click
   const handleRefresh = () => {
@@ -368,7 +424,12 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
         <div className="flex justify-between items-center">
           <CardTitle className="text-lg flex items-center">
             <BsShieldLockFill className="mr-2" /> Dana Darurat
-            {walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
+            {isGroupSelected && selectedGroup && (
+              <Badge variant="secondary" className="ml-2 bg-purple-100 text-purple-700">
+                {selectedGroup.name}
+              </Badge>
+            )}
+            {!isGroupSelected && walletId && <Badge variant="outline" className="ml-2">Filter Aktif</Badge>}
           </CardTitle>
           
           <div className="flex items-center gap-2">
@@ -401,7 +462,9 @@ export const EmergencyFundCard: React.FC<EmergencyFundCardProps> = ({ className,
           </div>
         </div>
         <CardDescription>
-          Dana darurat yang telah terkumpul
+          {isGroupSelected && selectedGroup 
+            ? `Total saldo gabungan dari ${selectedGroup.wallets?.length || 0} wallet`
+            : 'Dana darurat yang telah terkumpul'}
         </CardDescription>
       </CardHeader>
       <CardContent>

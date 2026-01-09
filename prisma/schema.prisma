@@ -78,6 +78,7 @@ model User {
   spendingInsights        SpendingInsight[]
   spendingAlerts          SpendingAlert[]
   spendingStats           SpendingStats[]
+  walletGroups            WalletGroup[]
 }
 
 model Account {
@@ -133,6 +134,7 @@ model Wallet {
   transactions          Transaction[]
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   bills                 Bill[]
+  walletGroupMembers    WalletGroupMember[]
 
   @@index([userId])
   @@index([userId, type])
@@ -1145,4 +1147,39 @@ model SpendingStats {
   @@index([categoryId])
   @@index([date])
   @@map("spending_stats")
+}
+
+
+// Wallet Linking Models
+
+model WalletGroup {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  userId      String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallets WalletGroupMember[]
+
+  @@index([userId])
+  @@map("wallet_groups")
+}
+
+model WalletGroupMember {
+  id            String   @id @default(cuid())
+  walletGroupId String
+  walletId      String
+  addedAt       DateTime @default(now())
+
+  walletGroup WalletGroup @relation(fields: [walletGroupId], references: [id], onDelete: Cascade)
+  wallet      Wallet      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletGroupId, walletId])
+  @@index([walletGroupId])
+  @@index([walletId])
+  @@map("wallet_group_members")
 }

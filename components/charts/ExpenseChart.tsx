@@ -31,7 +31,7 @@ const BORDER_COLORS = COLORS.map(color => color.replace('0.7', '1'));
 type TimeFrame = 'week' | 'month' | 'quarter' | 'year' | 'all';
 
 export default function ExpenseChart() {
-  const { selectedWallet } = useWallet();
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [isLoading, setIsLoading] = useState(true);
   const [timeFrame, setTimeFrame] = useState<TimeFrame>('month');
   const [expenseData, setExpenseData] = useState<{
@@ -48,6 +48,46 @@ export default function ExpenseChart() {
   // Fetch transactions first
   useEffect(() => {
     const fetchTransactions = async () => {
+      // For group selection, fetch from group dashboard API
+      if (isGroupSelected && selectedGroup) {
+        console.log('[ExpenseChart] Group selected, fetching from group dashboard API');
+        setIsLoading(true);
+        try {
+          const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/dashboard`);
+          console.log('[ExpenseChart] Response status:', response.status);
+          if (!response.ok) {
+            throw new Error('Failed to fetch group data');
+          }
+          const responseData = await response.json();
+          console.log('[ExpenseChart] Raw API response:', responseData);
+          // API returns { success: true, data: {...} } format
+          const groupData = responseData.data || responseData;
+          console.log('[ExpenseChart] Group data:', groupData);
+          console.log('[ExpenseChart] spendingByCategory:', groupData.spendingByCategory);
+          
+          // Use spendingByCategory from group dashboard
+          if (groupData.spendingByCategory && groupData.spendingByCategory.length > 0) {
+            const total = groupData.spendingByCategory.reduce((sum: number, cat: any) => sum + cat.amount, 0);
+            console.log('[ExpenseChart] Setting expense data with total:', total);
+            setExpenseData({
+              labels: groupData.spendingByCategory.map((cat: any) => cat.categoryName),
+              values: groupData.spendingByCategory.map((cat: any) => cat.amount),
+              total
+            });
+          } else {
+            console.log('[ExpenseChart] No spendingByCategory data, setting empty');
+            setExpenseData({ labels: [], values: [], total: 0 });
+          }
+        } catch (error) {
+          console.error('[ExpenseChart] Error fetching group data:', error);
+          toast.error('Gagal mengambil data group');
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+      
+      console.log('[ExpenseChart] Individual wallet selected:', selectedWallet?.id);
       if (!selectedWallet) return;
 
       setIsLoading(true);
@@ -71,10 +111,13 @@ export default function ExpenseChart() {
     };
 
     fetchTransactions();
-  }, [selectedWallet]);
+  }, [selectedWallet, selectedGroup, isGroupSelected]);
 
-  // Process transactions to get expense data
+  // Process transactions to get expense data (only for individual wallet)
   useEffect(() => {
+    // Skip if group is selected - data is already set from group dashboard
+    if (isGroupSelected) return;
+    
     if (!selectedWallet || transactions.length === 0) return;
     
     // Filter transactions for the current wallet and EXPENSE type

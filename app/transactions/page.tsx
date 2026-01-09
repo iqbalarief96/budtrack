@@ -68,7 +68,7 @@ const TransactionsPage = () => {
   const typeParam = searchParams.get('type')
   const queryClient = useQueryClient()
 
-  const { selectedWallet, refreshWallets, wallets } = useWallet()
+  const { selectedWallet, refreshWallets, wallets, selectedGroup, isGroupSelected } = useWallet()
 
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -192,6 +192,19 @@ const TransactionsPage = () => {
     try {
       const queryParams = new URLSearchParams()
 
+      // If a group is selected, fetch aggregated transactions
+      if (isGroupSelected && selectedGroup) {
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions?limit=-1&period=${selectedPeriod}`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Failed to fetch group transactions')
+        const json = await response.json()
+        // API returns { success: true, data: {...} } format
+        const responseData = json.data || json
+        const allTxs = responseData.transactions || responseData || []
+        setAllTransactions(allTxs)
+        console.log('[SUMMARY] Fetched group transactions:', allTxs.length)
+        return
+      }
+
       // Filter by selected wallet
       if (selectedWallet) {
         queryParams.append('walletId', selectedWallet.id)
@@ -222,6 +235,42 @@ const TransactionsPage = () => {
     setIsLoading(true)
     setError('')
     try {
+      // If a group is selected, fetch aggregated transactions
+      if (isGroupSelected && selectedGroup) {
+        const queryParams = new URLSearchParams()
+        
+        // Add pagination params
+        if (itemsPerPage === -1) {
+          queryParams.append('limit', '-1')
+        } else {
+          queryParams.append('page', currentPage.toString())
+          queryParams.append('limit', itemsPerPage.toString())
+        }
+
+        // Add search query
+        if (searchQuery.trim()) {
+          queryParams.append('search', searchQuery.trim())
+        }
+
+        // Add filters
+        const typedFilters = filters as FilterValues;
+        if (typedFilters.type) queryParams.append('type', typedFilters.type);
+        if (typedFilters.categoryId) queryParams.append('categoryId', typedFilters.categoryId);
+        if (typedFilters.dateRange?.start) queryParams.append('startDate', typedFilters.dateRange.start);
+        if (typedFilters.dateRange?.end) queryParams.append('endDate', typedFilters.dateRange.end);
+
+        const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions?${queryParams.toString()}`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Failed to fetch group transactions')
+        const json = await response.json()
+        // API returns { success: true, data: {...} } format
+        const responseData = json.data || json
+        const txData = responseData.transactions || responseData || []
+        setTransactions(txData)
+        setTotalItems(json.meta?.total || responseData.meta?.total || txData.length)
+        setIsLoading(false)
+        return
+      }
+
       const queryParams = new URLSearchParams()
       if (selectedWallet) {
         queryParams.append('walletId', selectedWallet.id)
@@ -405,7 +454,7 @@ const TransactionsPage = () => {
       fetchTransactions(activeFilters)
       fetchAllTransactions() // Fetch all for summary
     }
-  }, [selectedWallet, activeFilters, selectedPeriod, isClientSide])
+  }, [selectedWallet, selectedGroup, isGroupSelected, activeFilters, selectedPeriod, isClientSide])
 
   // Recalculate totals when transactions or period changes - MOVED BELOW calculateTotals definition
 
@@ -954,7 +1003,7 @@ const TransactionsPage = () => {
     fetchInsights();
   };
 
-  if (!selectedWallet) {
+  if (!selectedWallet && !isGroupSelected) {
     return (
       <div className="text-center py-8 text-gray-500">
         Pilih dompet terlebih dahulu
@@ -962,11 +1011,23 @@ const TransactionsPage = () => {
     )
   }
 
+  // Get display name for header
+  const displayName = isGroupSelected && selectedGroup 
+    ? `${selectedGroup.name} (Group)` 
+    : selectedWallet?.name || 'Personal'
+
   return (
     <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
       {/* Header - Desktop */}
       <div className="hidden md:flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Transactions - {selectedWallet?.name || 'Personal'}</h1>
+        <h1 className="text-2xl font-bold">
+          Transactions - {displayName}
+          {isGroupSelected && selectedGroup && (
+            <span className="ml-2 text-sm font-normal text-purple-600 bg-purple-100 px-2 py-1 rounded-full">
+              {selectedGroup.wallets?.length || 0} wallets
+            </span>
+          )}
+        </h1>
         <div className="flex gap-2">
           <button
             onClick={() => setIsFilterModalOpen(true)}
@@ -1029,7 +1090,14 @@ const TransactionsPage = () => {
 
       {/* Header - Mobile */}
       <div className="md:hidden mb-4">
-        <h1 className="text-lg font-bold mb-3">Transactions - {selectedWallet?.name || 'Personal'}</h1>
+        <h1 className="text-lg font-bold mb-3">
+          Transactions - {displayName}
+          {isGroupSelected && selectedGroup && (
+            <span className="ml-2 text-xs font-normal text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+              {selectedGroup.wallets?.length || 0} wallets
+            </span>
+          )}
+        </h1>
 
         {/* Action Buttons Row 1 */}
         <div className="flex gap-2 mb-2">
@@ -1413,7 +1481,15 @@ const TransactionsPage = () => {
                       {transaction.category?.name || 'Tanpa Kategori'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {transaction.wallet?.name || '-'}
+                      <div className="flex items-center gap-2">
+                        {transaction.walletColor && (
+                          <span 
+                            className="w-2 h-2 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: transaction.walletColor || '#6B7280' }}
+                          />
+                        )}
+                        <span>{transaction.wallet?.name || transaction.walletName || '-'}</span>
+                      </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'
                       }`}>
@@ -1527,8 +1603,16 @@ const TransactionsPage = () => {
                       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                         {transaction.category?.name || 'Tanpa Kategori'}
                       </span>
-                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-gray-50 text-gray-600 border border-gray-200">
-                        {transaction.wallet?.name || '-'}
+                      <span 
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-50 text-gray-600 border border-gray-200"
+                      >
+                        {transaction.walletColor && (
+                          <span 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: transaction.walletColor || '#6B7280' }}
+                          />
+                        )}
+                        {transaction.wallet?.name || transaction.walletName || '-'}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">

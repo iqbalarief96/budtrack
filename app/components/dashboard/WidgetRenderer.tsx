@@ -26,7 +26,7 @@ import DebtPayoffPlannerCard from '@/app/components/dashboard/DebtPayoffPlannerC
 
 // New SummaryStatsWidget component
 function SummaryStatsWidget({ walletId }: { walletId?: string }) {
-  const { selectedWallet } = useWallet();
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [summary, setSummary] = useState({
     savingsRate: 0,
     expenseRatio: 0,
@@ -38,6 +38,41 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
     const fetchAndCalculate = async () => {
       try {
         setIsLoading(true);
+        
+        // For group selection, fetch from group dashboard API
+        if (isGroupSelected && selectedGroup) {
+          const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/dashboard`);
+          if (response.ok) {
+            const responseData = await response.json();
+            console.log('[SummaryStatsWidget] Raw API response:', responseData);
+            // API returns { success: true, data: {...} } format
+            const groupData = responseData.data || responseData;
+            console.log('[SummaryStatsWidget] Group data:', groupData);
+            
+            const income = groupData.totalIncome || 0;
+            const expense = groupData.totalExpense || 0;
+            console.log('[SummaryStatsWidget] income:', income, 'expense:', expense);
+            
+            // Calculate ratios
+            const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
+            const expenseRatio = income > 0 ? (expense / income) * 100 : 0;
+            
+            // Get top spending category from group data
+            const topCategory = groupData.spendingByCategory && groupData.spendingByCategory.length > 0
+              ? { name: groupData.spendingByCategory[0].categoryName, amount: groupData.spendingByCategory[0].amount }
+              : null;
+            
+            setSummary({
+              savingsRate,
+              expenseRatio,
+              topCategory
+            });
+          }
+          setIsLoading(false);
+          return;
+        }
+        
+        // For individual wallet selection
         const response = await fetch('/api/transactions?limit=-1', { cache: 'no-store' });
         if (response.ok) {
           const json = await response.json();
@@ -102,7 +137,7 @@ function SummaryStatsWidget({ walletId }: { walletId?: string }) {
     };
 
     fetchAndCalculate();
-  }, [walletId, selectedWallet]);
+  }, [walletId, selectedWallet, selectedGroup, isGroupSelected]);
 
   if (isLoading) {
     return (

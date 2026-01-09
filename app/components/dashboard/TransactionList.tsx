@@ -17,6 +17,7 @@ interface Transaction {
     icon?: string;
     color?: string;
   };
+  walletName?: string;
 }
 
 interface TransactionListProps {
@@ -24,7 +25,7 @@ interface TransactionListProps {
 }
 
 export default function TransactionList({ limit = 5 }: TransactionListProps) {
-  const { selectedWallet } = useWallet();
+  const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,22 @@ export default function TransactionList({ limit = 5 }: TransactionListProps) {
         setIsLoading(true);
         setError(null);
         
+        // For group selection, fetch from group transactions API
+        if (isGroupSelected && selectedGroup) {
+          const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions?limit=${limit}`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch group transactions');
+          }
+          const responseData = await response.json();
+          // API returns { success: true, data: {...} } format
+          const groupData = responseData.data || responseData;
+          const txList = groupData.transactions || groupData || [];
+          setTransactions(txList);
+          setIsLoading(false);
+          return;
+        }
+        
+        // For individual wallet selection
         const params = new URLSearchParams();
         if (selectedWallet?.id) {
           params.append('walletId', selectedWallet.id);
@@ -60,7 +77,7 @@ export default function TransactionList({ limit = 5 }: TransactionListProps) {
     };
     
     fetchTransactions();
-  }, [selectedWallet, limit]);
+  }, [selectedWallet, selectedGroup, isGroupSelected, limit]);
   
   if (isLoading) {
     return (
