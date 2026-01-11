@@ -65,8 +65,11 @@ export default function PredictionChart({ transactionsData, predictedExpense }: 
   
   // Process data for chart
   const processData = () => {
+    // Ensure transactionsData is an array
+    const transactions = Array.isArray(transactionsData) ? transactionsData : [];
+    
     // Group by month
-    const monthlyTotals = transactionsData
+    const monthlyTotals = transactions
       .filter(tx => tx.type === 'EXPENSE')
       .reduce<Map<string, number>>((acc, tx) => {
         const date = new Date(tx.date);

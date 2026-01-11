@@ -189,7 +189,9 @@ export default function AdvancedAnalyticsPage() {
       // Fetch historical transaction data
       const response = await fetch(`/api/transactions?walletId=${selectedWallet?.id}`);
       if (!response.ok) throw new Error('Failed to fetch transactions');
-      const data = await response.json();
+      const responseData = await response.json();
+      // Handle API response format: { success: true, data: [...] } or direct array
+      const data = Array.isArray(responseData) ? responseData : (responseData.data || []);
       setTransactionsData(data);
       
       // Calculate predictions
@@ -208,7 +210,9 @@ export default function AdvancedAnalyticsPage() {
   };
 
   const calculatePredictions = (data: Transaction[]) => {
-    const monthlySeries = getMonthlyExpenseSeries(data);
+    // Ensure data is an array
+    const transactions = Array.isArray(data) ? data : [];
+    const monthlySeries = getMonthlyExpenseSeries(transactions);
 
     if (monthlySeries.length === 0) {
       setPredictedExpense(0);
@@ -224,8 +228,11 @@ export default function AdvancedAnalyticsPage() {
   };
 
   const detectAnomalies = (data: Transaction[]) => {
+    // Ensure data is an array
+    const transactions = Array.isArray(data) ? data : [];
+    
     // Group by category
-    const expensesByCategory = data
+    const expensesByCategory = transactions
       .filter(tx => tx.type === 'EXPENSE' && tx.category && tx.category.name)
       .reduce<Record<string, Transaction[]>>((acc, tx) => {
         const catName = tx.category.name;
@@ -255,8 +262,11 @@ export default function AdvancedAnalyticsPage() {
   };
 
   const analyzeSeasonalPattern = (data: Transaction[]) => {
+    // Ensure data is an array
+    const transactions = Array.isArray(data) ? data : [];
+    
     // Group by month
-    const monthlyData = data
+    const monthlyData = transactions
       .filter(tx => tx.type === 'EXPENSE')
       .reduce<Record<number, number>>((acc, tx) => {
         const month = new Date(tx.date).getMonth();

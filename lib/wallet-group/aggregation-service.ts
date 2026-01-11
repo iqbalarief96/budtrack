@@ -96,9 +96,9 @@ export async function getAggregatedTransactions(
     }
   }
 
-  // Apply type filter (Requirement 3.3)
+  // Apply type filter (Requirement 3.3) - support both uppercase and lowercase
   if (options.type) {
-    whereClause.type = options.type
+    whereClause.type = { in: [options.type, options.type.toUpperCase()] }
   }
 
   // Apply category filter (Requirement 3.3)
@@ -127,8 +127,9 @@ export async function getAggregatedTransactions(
       },
     },
     orderBy: { date: 'desc' },
-    take: options.limit,
-    skip: options.offset,
+    // Only apply take if limit is a positive number
+    ...(options.limit && options.limit > 0 ? { take: options.limit } : {}),
+    ...(options.offset && options.offset > 0 ? { skip: options.offset } : {}),
   })
 
   // Transform to AggregatedTransaction format (Requirement 3.2 - include wallet info)

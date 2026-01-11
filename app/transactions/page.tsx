@@ -197,11 +197,10 @@ const TransactionsPage = () => {
         const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions?limit=-1&period=${selectedPeriod}`, { cache: 'no-store' })
         if (!response.ok) throw new Error('Failed to fetch group transactions')
         const json = await response.json()
-        // API returns { success: true, data: {...} } format
-        const responseData = json.data || json
-        const allTxs = responseData.transactions || responseData || []
+        // API returns { success: true, data: [...] } format where data is the array directly
+        const allTxs = json.data || []
         setAllTransactions(allTxs)
-        console.log('[SUMMARY] Fetched group transactions:', allTxs.length)
+        console.log('[SUMMARY] Fetched group transactions:', allTxs.length, 'Sample:', allTxs[0])
         return
       }
 
@@ -239,6 +238,10 @@ const TransactionsPage = () => {
       if (isGroupSelected && selectedGroup) {
         const queryParams = new URLSearchParams()
         
+        // Add period filter for date range
+        queryParams.append('period', selectedPeriod)
+        console.log('[FETCH-TX] Group fetch with period:', selectedPeriod)
+        
         // Add pagination params
         if (itemsPerPage === -1) {
           queryParams.append('limit', '-1')
@@ -262,11 +265,10 @@ const TransactionsPage = () => {
         const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/transactions?${queryParams.toString()}`, { cache: 'no-store' })
         if (!response.ok) throw new Error('Failed to fetch group transactions')
         const json = await response.json()
-        // API returns { success: true, data: {...} } format
-        const responseData = json.data || json
-        const txData = responseData.transactions || responseData || []
+        // API returns { success: true, data: [...] } format where data is the array directly
+        const txData = json.data || []
         setTransactions(txData)
-        setTotalItems(json.meta?.total || responseData.meta?.total || txData.length)
+        setTotalItems(json.meta?.total || txData.length)
         setIsLoading(false)
         return
       }
@@ -924,7 +926,26 @@ const TransactionsPage = () => {
   }
 
   // Update the calculation logic for totals based on period selection
+  // Note: When fetching from group API with period parameter, data is already filtered
+  // so we skip client-side period filtering for groups
   const calculateTotals = React.useCallback((transactions: Transaction[]) => {
+    // If group is selected, API already filters by period, so just calculate totals directly
+    if (isGroupSelected && selectedGroup) {
+      console.log('[TOTALS] Group selected, using pre-filtered data. Total transactions:', transactions.length);
+      
+      const income = transactions
+        .filter((tx: Transaction) => tx.type.toUpperCase() === 'INCOME')
+        .reduce((sum: number, tx: Transaction) => sum + tx.amount, 0);
+
+      const expense = transactions
+        .filter((tx: Transaction) => tx.type.toUpperCase() === 'EXPENSE')
+        .reduce((sum: number, tx: Transaction) => sum + tx.amount, 0);
+
+      console.log('[TOTALS] Group Income:', income, 'Expense:', expense);
+      return { income, expense };
+    }
+
+    // For individual wallets, apply client-side period filtering
     const now = new Date();
     let periodStart = new Date();
 
@@ -978,14 +999,17 @@ const TransactionsPage = () => {
     console.log('[TOTALS] Income:', income, 'Expense:', expense);
 
     return { income, expense };
-  }, [selectedPeriod]);
+  }, [selectedPeriod, isGroupSelected, selectedGroup]);
 
-  // Recalculate totals when ALL transactions or period changes (not paginated transactions)
+  // Recalculate totals when transactions change
+  // For both groups and individual wallets: use allTransactions (fetched separately for summary)
+  // This ensures the summary shows totals for ALL transactions in the period, not just the current page
   useEffect(() => {
+    // Use allTransactions for summary calculation (contains all transactions for the period)
     const { income, expense } = calculateTotals(allTransactions);
     setTotalIncome(income);
     setTotalExpense(expense);
-  }, [allTransactions, calculateTotals, selectedPeriod]);
+  }, [allTransactions, calculateTotals, selectedPeriod, isGroupSelected, selectedGroup]);
 
   // Add a refresh button for insights
   const handleRefreshInsights = () => {

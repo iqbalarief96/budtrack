@@ -223,6 +223,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           
           // Update spending by category from group data
           if (data.spendingByCategory && data.spendingByCategory.length > 0) {
+            console.log('[DashboardContent] Group spendingByCategory from API:', data.spendingByCategory.length, 'categories')
             const colors = [
               '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', 
               '#FF9F40', '#8AC926', '#1982C4', '#6A4C93', '#FF595E'
@@ -232,8 +233,10 @@ const DashboardContent = ({ budgets = [] }: Props) => {
               amount: cat.amount,
               color: colors[index % colors.length]
             }))
+            console.log('[DashboardContent] Setting spendingByCategory for group:', categoryData.length, 'Total:', categoryData.reduce((sum: number, c: any) => sum + c.amount, 0))
             setSpendingByCategory(categoryData.sort((a: any, b: any) => b.amount - a.amount))
           } else {
+            console.log('[DashboardContent] No spendingByCategory from group API, clearing')
             // Clear spending by category if no data for this period
             setSpendingByCategory([])
           }
@@ -361,9 +364,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   // Get transactions grouped by category for pie chart
   useEffect(() => {
     // Skip if group is selected - we use group dashboard data instead
-    if (isGroupSelected) return
+    if (isGroupSelected) {
+      console.log('[DashboardContent] Skipping individual wallet spendingByCategory - group is selected')
+      return
+    }
     
     if (selectedWallet && allTransactions.length > 0) {
+      console.log('[DashboardContent] Calculating spendingByCategory for individual wallet:', selectedWallet.id)
       const walletTxs = allTransactions.filter(tx => 
         tx.walletId === selectedWallet.id && 
         tx.type === 'EXPENSE' &&

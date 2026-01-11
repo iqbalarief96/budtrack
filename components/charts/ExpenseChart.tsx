@@ -50,10 +50,36 @@ export default function ExpenseChart() {
     const fetchTransactions = async () => {
       // For group selection, fetch from group dashboard API
       if (isGroupSelected && selectedGroup) {
-        console.log('[ExpenseChart] Group selected, fetching from group dashboard API');
+        console.log('[ExpenseChart] Group selected, fetching from group dashboard API with timeFrame:', timeFrame);
         setIsLoading(true);
         try {
-          const response = await fetch(`/api/wallet-groups/${selectedGroup.id}/dashboard`);
+          // Build date range based on timeFrame
+          const now = new Date();
+          let startDate = new Date();
+          
+          if (timeFrame === 'week') {
+            startDate.setDate(now.getDate() - 7);
+          } else if (timeFrame === 'month') {
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          } else if (timeFrame === 'quarter') {
+            startDate.setMonth(now.getMonth() - 3);
+          } else if (timeFrame === 'year') {
+            startDate = new Date(now.getFullYear(), 0, 1);
+          } else if (timeFrame === 'all') {
+            startDate = new Date(2000, 0, 1); // Very old date for "all"
+          }
+          
+          // Build URL with date range
+          const params = new URLSearchParams();
+          if (timeFrame !== 'all') {
+            params.set('startDate', startDate.toISOString());
+            params.set('endDate', now.toISOString());
+          }
+          const queryString = params.toString();
+          const url = `/api/wallet-groups/${selectedGroup.id}/dashboard${queryString ? `?${queryString}` : ''}`;
+          
+          console.log('[ExpenseChart] Fetching from URL:', url);
+          const response = await fetch(url);
           console.log('[ExpenseChart] Response status:', response.status);
           if (!response.ok) {
             throw new Error('Failed to fetch group data');
@@ -111,7 +137,7 @@ export default function ExpenseChart() {
     };
 
     fetchTransactions();
-  }, [selectedWallet, selectedGroup, isGroupSelected]);
+  }, [selectedWallet, selectedGroup, isGroupSelected, timeFrame]);
 
   // Process transactions to get expense data (only for individual wallet)
   useEffect(() => {
