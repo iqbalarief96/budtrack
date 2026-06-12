@@ -98,5 +98,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^5",
     "vitest": "^4.0.14"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.4"
   }
 }
