@@ -51,14 +51,15 @@ export function checkThreshold(
   }
 
   const percentage = currentAmount / threshold
+  const epsilon = Number.EPSILON
 
   // Check exceeded first (>= 100%)
-  if (percentage >= EXCEEDED_THRESHOLD_PERCENT) {
+  if (percentage + epsilon >= EXCEEDED_THRESHOLD_PERCENT) {
     return 'exceeded'
   }
 
   // Check warning (>= 80%)
-  if (percentage >= WARNING_THRESHOLD_PERCENT) {
+  if (percentage + epsilon >= WARNING_THRESHOLD_PERCENT) {
     return 'warning'
   }
 
