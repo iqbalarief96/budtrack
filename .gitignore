@@ -33,3 +33,17 @@ dist-ssr
 # Google Cloud Vision credentials (NEVER commit!)
 credentials/*.json
 !credentials/README.md
+
+# Junk / backups / leaked-secret dirs (cleaned up 2026-06-28)
+Budtrack.rar
+*.rar
+oldvps/
+build-output/
+tmp/
+backups/
+*.db
+*.sqlite
+*.pem
+*-env-backup
+cookies.txt
+tsconfig.tsbuildinfo
