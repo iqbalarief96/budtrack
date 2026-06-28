@@ -13,7 +13,6 @@ import './sidebar.css'
 import { Toaster } from 'sonner'
 import ChatbotButton from './components/ChatbotButton'
 import { TransactionModalProvider } from './providers/TransactionModalProvider'
-import SessionClientProvider from './providers/SessionClientProvider'
 // Validate environment variables on startup
 import '@/lib/env'
 
@@ -34,31 +33,29 @@ export default async function RootLayout({
   return (
     <html lang="id">
       <body className={inter.className}>
-        <SessionClientProvider>
-          <AuthProvider session={session}>
-            <QueryProvider>
-              <ThemeProvider>
-                {session ? (
-                  <WalletProvider>
-                    <TransactionModalProvider>
-                      <Sidebar session={session} />
-                      <main className="content-area">
-                        {children}
-                      </main>
-                      <Toaster />
-                      <ChatbotButton />
-                    </TransactionModalProvider>
-                  </WalletProvider>
-                ) : (
-                  <main className="min-h-screen bg-gray-50 dark:bg-gray-900">
-                    {children}
+        <AuthProvider session={session}>
+          <QueryProvider>
+            <ThemeProvider>
+              {session ? (
+                <WalletProvider>
+                  <TransactionModalProvider>
+                    <Sidebar session={session} />
+                    <main className="content-area">
+                      {children}
+                    </main>
                     <Toaster />
-                  </main>
-                )}
-              </ThemeProvider>
-            </QueryProvider>
-          </AuthProvider>
-        </SessionClientProvider>
+                    <ChatbotButton />
+                  </TransactionModalProvider>
+                </WalletProvider>
+              ) : (
+                <main className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                  {children}
+                  <Toaster />
+                </main>
+              )}
+            </ThemeProvider>
+          </QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   )
