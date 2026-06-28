@@ -374,6 +374,17 @@ model RecurringTransactionHistory {
   @@index([transactionId])
 }
 
+// ============================================================================
+// SISTEM GRUP #1 — COLLABORATIVE / MULTI-USER  (model Group dst di bawah ini)
+// ----------------------------------------------------------------------------
+// Dipakai untuk berbagi anggaran ANTAR-USER (mis. keluarga/tim): ada members,
+// roles, invites, dan wallet milik grup sendiri (GroupWallet).
+// API: app/api/groups/**   UI: menu "Group Budget" (Sidebar) / route /groups
+// Status: AKTIF (GROUP_FEATURE_ENABLED = true di app/api/groups/*).
+//
+// JANGAN ketuker dengan SISTEM GRUP #2 (WalletGroup) di bawah — itu untuk
+// satu user yang menggabung wallet-nya sendiri, BUKAN kolaborasi antar-user.
+// ============================================================================
 model Group {
   id           String              @id @default(cuid())
   name         String
@@ -1150,8 +1161,18 @@ model SpendingStats {
 }
 
 
-// Wallet Linking Models
-
+// ============================================================================
+// SISTEM GRUP #2 — PERSONAL WALLET LINKING  (single-user)
+// ----------------------------------------------------------------------------
+// Dipakai SATU user untuk menggabung beberapa wallet MILIKNYA SENDIRI jadi
+// satu tampilan agregat (mis. lihat Dompet Utama + Selly sekaligus). TIDAK ada
+// members/invites/roles — murni view gabungan. Maks 5 grup per user.
+// API: app/api/wallet-groups/**   UI: "Wallet Groups" di WalletSelector
+// Service agregasi: lib/wallet-group/*.
+//
+// JANGAN ketuker dengan SISTEM GRUP #1 (Group) di atas — itu kolaborasi
+// antar-user dengan wallet milik grup, beda total dari penggabungan ini.
+// ============================================================================
 model WalletGroup {
   id          String              @id @default(cuid())
   name        String

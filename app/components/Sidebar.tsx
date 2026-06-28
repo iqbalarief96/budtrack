@@ -92,7 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       items: [
         { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
         { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
-        { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
+        { path: '/groups', icon: <FiUsers size={20} />, label: 'Grup Bersama' },
         { path: '/alerts', icon: <FiBell size={20} />, label: 'Alerts' },
       ]
     },
