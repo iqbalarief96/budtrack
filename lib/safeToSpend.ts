@@ -311,10 +311,28 @@ export async function calculateSafeToSpend(
 /**
  * Calculate safe-to-spend across all wallets for a user
  */
-export async function calculateAllWalletsSafeToSpend(userId: string) {
+export async function calculateAllWalletsSafeToSpend(
+  userId: string,
+  walletGroupId?: string
+) {
+  // If a walletGroupId is provided, restrict to the wallets linked in that group
+  // (personal Wallet Linking / WalletGroup). The group must belong to the user.
+  let walletIdFilter: string[] | undefined
+  if (walletGroupId) {
+    const group = await prisma.walletGroup.findFirst({
+      where: { id: walletGroupId, userId },
+      include: { wallets: { select: { walletId: true } } },
+    })
+    if (!group) {
+      throw new Error('Wallet group not found')
+    }
+    walletIdFilter = group.wallets.map((w) => w.walletId)
+  }
+
   const wallets = await prisma.wallet.findMany({
     where: {
       userId,
+      ...(walletIdFilter ? { id: { in: walletIdFilter } } : {}),
     },
     orderBy: {
       isDefault: 'desc',

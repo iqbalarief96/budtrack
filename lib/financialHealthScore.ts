@@ -1,5 +1,20 @@
 import prisma from '@/lib/prisma'
 
+/**
+ * Build a Prisma where-fragment to scope a query by wallet.
+ * - single walletId  -> { walletId }
+ * - walletIds array  -> { walletId: { in: [...] } }   (personal Wallet Group)
+ * - neither          -> {}  (all wallets for the user)
+ */
+function walletScope(
+  walletId?: string,
+  walletIds?: string[]
+): Record<string, unknown> {
+  if (walletId) return { walletId }
+  if (walletIds && walletIds.length > 0) return { walletId: { in: walletIds } }
+  return {}
+}
+
 export interface ScoreComponent {
   name: string
   score: number // 0-100
@@ -66,14 +81,15 @@ export interface FinancialHealthScore {
 async function calculateEmergencyFundScore(
   userId: string,
   walletId?: string,
-  period: number = 3
+  period: number = 3,
+  walletIds?: string[]
 ): Promise<ScoreComponent> {
-  // Get all wallet emergency funds (filtered by walletId if provided)
+  // Get all wallet emergency funds (filtered by walletId / walletIds if provided)
   const walletEmergencyFunds = await prisma.walletEmergencyFund.findMany({
     where: {
       userId,
       isActive: true,
-      ...(walletId && { walletId }),
+      ...walletScope(walletId, walletIds),
     },
     include: {
       wallet: true,
@@ -102,6 +118,13 @@ async function calculateEmergencyFundScore(
       let wallet
       if (walletId) {
         wallet = await prisma.wallet.findUnique({ where: { id: walletId } })
+        totalCurrent = wallet?.balance || 0
+      } else if (walletIds && walletIds.length > 0) {
+        // Wallet Group: sum balances of the group's wallets
+        const groupWallets = await prisma.wallet.findMany({
+          where: { userId, id: { in: walletIds } },
+        })
+        totalCurrent = groupWallets.reduce((sum, w) => sum + (w.balance || 0), 0)
       } else {
         const defaultWallet = await prisma.wallet.findFirst({
           where: {
@@ -114,9 +137,8 @@ async function calculateEmergencyFundScore(
           where: { userId },
           orderBy: { createdAt: 'asc' },
         })
+        totalCurrent = wallet?.balance || 0
       }
-
-      totalCurrent = wallet?.balance || 0
     } else {
       // Auto-detect wallets with "emergency" or "darurat" in the name
       if (walletId) {
@@ -137,9 +159,10 @@ async function calculateEmergencyFundScore(
           }
         }
       } else {
-        // If no specific wallet, sum all emergency wallets
+        // If no specific wallet, sum all emergency wallets (scoped to the
+        // wallet group when walletIds is provided)
         const allWallets = await prisma.wallet.findMany({
-          where: { userId },
+          where: { userId, ...(walletIds && walletIds.length > 0 ? { id: { in: walletIds } } : {}) },
         })
 
         // Filter wallets with emergency-related names (case-insensitive)
@@ -170,7 +193,7 @@ async function calculateEmergencyFundScore(
       date: {
         gte: periodStartDate,
       },
-      ...(walletId && { walletId }),
+      ...walletScope(walletId, walletIds),
     },
     _sum: {
       amount: true,
@@ -242,7 +265,8 @@ async function calculateEmergencyFundScore(
 async function calculateSavingsRateScore(
   userId: string,
   walletId?: string,
-  period: number = 3
+  period: number = 3,
+  walletIds?: string[]
 ): Promise<ScoreComponent> {
   const periodStartDate = new Date()
   periodStartDate.setMonth(periodStartDate.getMonth() - period)
@@ -269,7 +293,7 @@ async function calculateSavingsRateScore(
         userId,
         type: { in: ['income', 'INCOME'] },
         date: { gte: periodStartDate },
-        ...(walletId && { walletId }),
+        ...walletScope(walletId, walletIds),
       },
       _sum: { amount: true },
     }),
@@ -280,7 +304,7 @@ async function calculateSavingsRateScore(
         date: { gte: periodStartDate },
         // Exclude savings/investment categories from expenses
         categoryId: { notIn: savingsCategoryIds.length > 0 ? savingsCategoryIds : undefined },
-        ...(walletId && { walletId }),
+        ...walletScope(walletId, walletIds),
       },
       _sum: { amount: true },
     }),
@@ -343,7 +367,8 @@ async function calculateSavingsRateScore(
  */
 async function calculateBudgetAdherenceScore(
   userId: string,
-  walletId?: string
+  walletId?: string,
+  walletIds?: string[]
 ): Promise<ScoreComponent> {
   const activeBudgets = await prisma.budget.findMany({
     where: {
@@ -351,7 +376,7 @@ async function calculateBudgetAdherenceScore(
       endDate: {
         gte: new Date(),
       },
-      ...(walletId && { walletId }),
+      ...walletScope(walletId, walletIds),
     },
   })
 
@@ -433,7 +458,7 @@ async function calculateBudgetAdherenceScore(
  * Calculate Debt Ratio Score (0-100)
  * For now, we'll use a placeholder since debt tracking isn't fully implemented
  */
-async function calculateDebtRatioScore(userId: string, walletId?: string): Promise<ScoreComponent> {
+async function calculateDebtRatioScore(userId: string, walletId?: string, walletIds?: string[]): Promise<ScoreComponent> {
   // Future: Calculate actual debt ratio
   // For now, assume no debt = perfect score
   return {
@@ -454,7 +479,8 @@ async function calculateDebtRatioScore(userId: string, walletId?: string): Promi
 async function calculateSpendingConsistencyScore(
   userId: string,
   walletId?: string,
-  period: number = 3
+  period: number = 3,
+  walletIds?: string[]
 ): Promise<ScoreComponent> {
   // Use period parameter for consistency calculation (min 2 months for meaningful variance)
   const consistencyPeriod = Math.max(period, 2)
@@ -468,7 +494,7 @@ async function calculateSpendingConsistencyScore(
       date: {
         gte: periodStartDate,
       },
-      ...(walletId && { walletId }),
+      ...walletScope(walletId, walletIds),
     },
   })
 
@@ -540,15 +566,16 @@ async function calculateSpendingConsistencyScore(
 export async function calculateFinancialHealthScore(
   userId: string,
   walletId?: string,
-  period: number = 3
+  period: number = 3,
+  walletIds?: string[]
 ): Promise<FinancialHealthScore> {
   const [emergencyFund, savingsRate, budgetAdherence, debtRatio, spendingConsistency] =
     await Promise.all([
-      calculateEmergencyFundScore(userId, walletId, period),
-      calculateSavingsRateScore(userId, walletId, period),
-      calculateBudgetAdherenceScore(userId, walletId),
-      calculateDebtRatioScore(userId, walletId),
-      calculateSpendingConsistencyScore(userId, walletId, period),
+      calculateEmergencyFundScore(userId, walletId, period, walletIds),
+      calculateSavingsRateScore(userId, walletId, period, walletIds),
+      calculateBudgetAdherenceScore(userId, walletId, walletIds),
+      calculateDebtRatioScore(userId, walletId, walletIds),
+      calculateSpendingConsistencyScore(userId, walletId, period, walletIds),
     ])
 
   const components = {
