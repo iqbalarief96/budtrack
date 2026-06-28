@@ -14,6 +14,7 @@ import { Pie, Bar } from 'react-chartjs-2'
 import TransactionModal from '@/app/components/TransactionModal'
 import { useRouter } from 'next/navigation'
 import CustomizableTabContent from '../components/dashboard/CustomizableTabContent'
+import WalletContributionChart from '@/app/components/dashboard/WalletContributionChart'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
@@ -952,6 +953,20 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                 )}
               </div>
             </div>
+
+            {/* Wallet Group only: per-wallet contribution per category */}
+            {isGroupSelected && groupDashboardData?.spendingByCategory?.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <h3 className="font-medium text-gray-700 mb-1">Kontribusi per Dompet</h3>
+                <p className="text-xs text-gray-400 mb-3">
+                  Pengeluaran tiap kategori dipecah berdasarkan dompet dalam grup ini
+                </p>
+                <WalletContributionChart
+                  spendingByCategory={groupDashboardData.spendingByCategory}
+                  currencyCode={groupDashboardData.currencyCode || 'IDR'}
+                />
+              </div>
+            )}
             
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <h3 className="font-medium text-gray-700 mb-3">Kategori Pengeluaran Terbesar</h3>
