@@ -13,6 +13,16 @@ type Category = {
   color: string
 }
 
+type ReceiptAttachmentDraft = {
+  fileName: string
+  mimeType: string
+  size: number
+  source?: string
+  storageUrl?: string
+  extractedText?: string
+  metadata?: Record<string, unknown>
+}
+
 type TransactionModalProps = {
   isOpen: boolean
   onClose: () => void
@@ -41,6 +51,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
   const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
   const [suggestedCategorySource, setSuggestedCategorySource] = useState<'ai' | 'fallback' | 'none' | null>(null)
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false)
+  const [receiptAttachment, setReceiptAttachment] = useState<ReceiptAttachmentDraft | null>(null)
   const suggestionControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -49,6 +60,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     setSuggestedCategory(null)
     setSuggestedCategorySource(null)
     setIsSuggestingCategory(false)
+    setReceiptAttachment(null)
 
     if (initialData?.id) {
       console.log('Initializing form with data:', initialData);
@@ -210,7 +222,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
     }
   }, [isOpen, initialData]);
 
-  const handleScanSuccess = (data: { amount: number; date: string; merchant: string; categoryId: string | null }) => {
+  const handleScanSuccess = (data: { amount: number; date: string; merchant: string; categoryId: string | null; receiptAttachment?: ReceiptAttachmentDraft }) => {
     setFormData(prev => ({
       ...prev,
       amount: data.amount.toString(),
@@ -219,6 +231,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
       categoryId: data.categoryId || prev.categoryId,
       type: 'EXPENSE', // Receipts are typically expenses
     }));
+    setReceiptAttachment(data.receiptAttachment ?? null)
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -248,7 +261,8 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         body: JSON.stringify({
           ...formData,
           amount,
-          id: initialData?.id // ID included directly in the body for PUT
+          id: initialData?.id, // ID included directly in the body for PUT
+          receiptAttachment: !initialData?.id ? receiptAttachment ?? undefined : undefined,
         }),
       })
 
@@ -302,6 +316,7 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
         window.dispatchEvent(refreshEvent);
       }
 
+      setReceiptAttachment(null)
       onSave(savedTransaction)
       onClose()
     } catch (err) {
@@ -336,6 +351,15 @@ const TransactionModal = ({ isOpen, onClose, onSave, initialData, isQuickAction 
             <ScanReceiptButton onScanSuccess={handleScanSuccess} />
           )}
         </div>
+
+        {receiptAttachment && !isEditing && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <div className="font-medium">Struk terlampir</div>
+            <div className="truncate text-blue-700">
+              {receiptAttachment.fileName} · {(receiptAttachment.size / 1024).toFixed(1)} KB
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Transaction Type */}

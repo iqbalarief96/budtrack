@@ -1,415 +1,306 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { parse } from 'csv-parse/sync';
-import prisma from '@/lib/prisma';
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { parse } from 'csv-parse/sync'
+import { createHash } from 'crypto'
+import { Prisma } from '@prisma/client'
+import { authOptions } from '@/lib/auth'
+import prisma from '@/lib/prisma'
+import { createAutoSavingsTransfer } from '@/lib/savings/auto-route'
+
+export const dynamic = 'force-dynamic'
+
+type CsvRow = Record<string, string>
+
+type NormalizedRow = {
+  rowNumber: number
+  date: Date
+  description: string
+  amount: number
+  type: 'INCOME' | 'EXPENSE'
+  categoryName?: string
+  rawRow: CsvRow
+  rowHash: string
+}
+
+const FIELD_ALIASES = {
+  date: ['date', 'tanggal', 'transaction_date', 'posted_date', 'posting date', 'tgl'],
+  description: ['description', 'desc', 'keterangan', 'memo', 'merchant', 'details', 'narration', 'uraian'],
+  amount: ['amount', 'nominal', 'jumlah', 'value', 'transaction amount', 'mutasi'],
+  debit: ['debit', 'withdrawal', 'out', 'keluar', 'pengeluaran'],
+  credit: ['credit', 'deposit', 'in', 'masuk', 'pemasukan'],
+  type: ['type', 'jenis', 'direction'],
+  category: ['category', 'kategori'],
+}
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[\s_\-.]+/g, ' ').trim()
+}
+
+function valueFor(row: CsvRow, aliases: string[]) {
+  const normalizedAliases = new Set(aliases.map(normalizeKey))
+  for (const [key, value] of Object.entries(row)) {
+    if (normalizedAliases.has(normalizeKey(key))) {
+      return value?.trim()
+    }
+  }
+  return undefined
+}
+
+function parseAmount(value?: string) {
+  if (!value) return null
+  const raw = value.replace(/[^0-9,.-]/g, '')
+  if (!raw) return null
+
+  const hasComma = raw.includes(',')
+  const hasDot = raw.includes('.')
+  let normalized = raw
+
+  if (hasComma && hasDot) {
+    const lastComma = raw.lastIndexOf(',')
+    const lastDot = raw.lastIndexOf('.')
+    normalized = lastComma > lastDot ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '')
+  } else if (hasComma) {
+    const parts = raw.split(',')
+    normalized = parts.at(-1)?.length === 2 ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '')
+  } else if (hasDot) {
+    const parts = raw.split('.')
+    normalized = parts.at(-1)?.length === 2 ? raw.replace(/,/g, '') : raw.replace(/\./g, '')
+  }
+
+  const amount = Number(normalized)
+  return Number.isFinite(amount) ? amount : null
+}
+
+function parseDate(value?: string) {
+  if (!value) return null
+  const trimmed = value.trim()
+  const direct = new Date(trimmed)
+  if (!Number.isNaN(direct.getTime())) return direct
+
+  const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/)
+  if (!match) return null
+
+  const [, dd, mm, yyyy] = match
+  const year = yyyy.length === 2 ? Number(`20${yyyy}`) : Number(yyyy)
+  const date = new Date(Date.UTC(year, Number(mm) - 1, Number(dd)))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function detectType(row: CsvRow, signedAmount: number): 'INCOME' | 'EXPENSE' {
+  const explicitType = valueFor(row, FIELD_ALIASES.type)?.toUpperCase()
+  if (explicitType) {
+    if (['INCOME', 'CREDIT', 'CR', 'MASUK', 'PEMASUKAN'].includes(explicitType)) return 'INCOME'
+    if (['EXPENSE', 'DEBIT', 'DR', 'KELUAR', 'PENGELUARAN'].includes(explicitType)) return 'EXPENSE'
+  }
+  if (valueFor(row, FIELD_ALIASES.credit)) return 'INCOME'
+  if (valueFor(row, FIELD_ALIASES.debit)) return 'EXPENSE'
+  return signedAmount < 0 ? 'EXPENSE' : 'INCOME'
+}
+
+function normalizeRow(row: CsvRow, rowNumber: number): NormalizedRow {
+  const date = parseDate(valueFor(row, FIELD_ALIASES.date))
+  if (!date) throw new Error('Invalid or missing date')
+
+  const debit = parseAmount(valueFor(row, FIELD_ALIASES.debit))
+  const credit = parseAmount(valueFor(row, FIELD_ALIASES.credit))
+  const genericAmount = parseAmount(valueFor(row, FIELD_ALIASES.amount))
+  const signedAmount = credit ?? (debit != null ? -Math.abs(debit) : genericAmount)
+
+  if (signedAmount == null || signedAmount === 0) throw new Error('Invalid or missing amount')
+
+  const type = detectType(row, signedAmount)
+  const description = valueFor(row, FIELD_ALIASES.description) || `Bank import row ${rowNumber}`
+  const amount = Math.abs(signedAmount)
+  const categoryName = valueFor(row, FIELD_ALIASES.category)
+  const rawRow = Object.fromEntries(
+    Object.entries(row).map(([key, value]: [string, string]) => [key, String(value ?? '')])
+  )
+  const rowHash = createHash('sha256')
+    .update(JSON.stringify({ date: date.toISOString().slice(0, 10), description, amount, type, rawRow }))
+    .digest('hex')
+
+  return { rowNumber, date, description, amount, type, categoryName, rawRow, rowHash }
+}
+
+async function findCategory(userId: string, type: 'INCOME' | 'EXPENSE', categoryName?: string) {
+  if (categoryName) {
+    const categories = await prisma.category.findMany({
+      where: { userId },
+      select: { id: true, name: true },
+    })
+    const exact = categories.find((category) => category.name.toLowerCase() === categoryName.toLowerCase())
+    if (exact) return exact.id
+  }
+
+  const fallback = await prisma.category.findFirst({
+    where: { userId, type },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+    select: { id: true },
+  })
+  return fallback?.id ?? null
+}
 
 export async function POST(request: NextRequest) {
-  console.log('Import API called');
-  
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const userId = session.user.id
+  const formData = await request.formData()
+  const file = formData.get('file') as File | null
+  const walletId = formData.get('walletId')?.toString()
+
+  if (!file) return NextResponse.json({ error: 'File is required' }, { status: 400 })
+  if (!walletId) return NextResponse.json({ error: 'Wallet ID is required' }, { status: 400 })
+
+  const wallet = await prisma.wallet.findFirst({ where: { id: walletId, userId } })
+  if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
+
+  const csvContent = await file.text()
+  if (!csvContent.trim()) return NextResponse.json({ error: 'CSV file is empty' }, { status: 400 })
+
+  let rows: CsvRow[]
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const userId = session.user.id;
-    
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const walletId = formData.get('walletId') as string;
-    
-    if (!file) {
-      return NextResponse.json({ error: 'File is required' }, { status: 400 });
-    }
-    
-    if (!walletId) {
-      return NextResponse.json({ error: 'Wallet ID is required' }, { status: 400 });
-    }
-    
-    // Check if the wallet belongs to the user
-    const wallet = await prisma.wallet.findUnique({
-      where: {
-        id: walletId,
-        userId,
-      },
-    });
-    
-    if (!wallet) {
-      return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
-    }
-    
-    const csvContent = await file.text();
-    console.log('Raw CSV content:', csvContent);
-    
-    if (!csvContent.trim()) {
-      return NextResponse.json({ error: 'CSV file is empty' }, { status: 400 });
-    }
-    
-    // Parse CSV with headers matching the export format
-    const records = parse(csvContent, {
-      columns: false, // We'll handle the columns manually since there are no headers
+    rows = parse(csvContent, {
+      columns: true,
+      bom: true,
       skip_empty_lines: true,
-      trim: true
-    });
-    
-    console.log('Parsed records:', JSON.stringify(records, null, 2));
-    
-    if (!Array.isArray(records) || records.length === 0) {
-      return NextResponse.json({ error: 'No valid records found in CSV' }, { status: 400 });
-    }
-    
-    // Process each record
-    const created = [];
-    const errors = [];
+      trim: true,
+      relax_column_count: true,
+    }) as CsvRow[]
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to parse CSV', details: error instanceof Error ? error.message : 'Unknown parser error' },
+      { status: 400 }
+    )
+  }
 
-    // Mapping dari old category ID ke nama kategori
-    const oldCategoryIdMapping: Record<string, string> = {
-      // Shopping related
-      "1f01ec36-8575-48fe-af94-a974e7e3f800": "Belanja", // Shopping
-      "862c5203-c992-445a-ac7a-a611f18acd3a": "Belanja", // Shopping
-      "04eedec2-574d-4f73-9d44-d7bdd188568e": "Shopee",  // Shopee
-      "4832c182-2cb1-43a3-93e5-67b01c406460": "Belanja", // Tokopedia
-      "29492758-4d8a-4a66-a09f-a3617eb8d11e": "Belanja", // Lazada
-      
-      // Food related
-      "76ff2941-ab71-431b-8984-c3bf045c183e": "Makanan", // Food
-      "89cf41c1-b100-452f-a187-2bd79d3953c0": "Makanan", // Food
-      "2386315f-53dc-48de-af0d-e5a1781c70f3": "Makanan", // Food
-      "a04b57f3-31e3-43b8-aae8-e44a72871643": "Makanan", // Food
-      "a1a540a0-cee4-471d-b922-56d6b47b53c9": "Makanan", // Food
-      "f30d6716-90f1-4633-accc-071ed4c98c60": "Makanan", // Food
-      
-      // Transportation
-      "0f61579b-429c-439f-af7d-d36a34162217": "Transportasi", // Transportation
-      "183bec28-9f97-4949-be2f-60ac53f8bb3a": "Transportasi", // Transportation
-      
-      // Entertainment
-      "1d49aef8-06fe-49a1-b5ca-4bd7f2bcb13f": "Hiburan", // Entertainment
-      
-      // Dating
-      "2b342c5e-8d04-4057-922d-a9394a41ade8": "Dating", // Dating
-      
-      // Utilities
-      "75f8ed61-ad01-470d-8b2c-67d27ce0975a": "Kuota", // Kuota
-      "b960b2f9-0aef-4a6f-bc13-798ff93bb408": "Kebutuhan", // Kebutuhan Rumah
-      
-      // Investment/Savings
-      "284c6de3-9e21-46c3-bce7-1fc8b725ee26": "Investment", // Investment
-      "ce5515db-1688-40b0-818a-1072d79cfb5a": "Savings", // Savings
-      "de5d8b07-bb99-4756-92c6-e07c2db995da": "Savings", // Savings
-      
-      // Income related
-      "4e04ae0b-c712-49fb-828f-9f1798944ad2": "Pendapatan Lain", // Income
-      "a4566463-1c32-4b15-bfcf-4c06cf99e3b9": "Pendapatan Lain", // Income
-      "9cc53b4a-74ad-46f1-b462-22e20b94d1b1": "Gaji", // Salary
-      "80dd03bb-cc82-4084-b99d-753566bbf1f6": "Bonus", // Bonus
+  if (!rows.length) return NextResponse.json({ error: 'No records found in CSV' }, { status: 400 })
 
-      // Housing
-      "f5264634-1df8-41e2-bc5c-9788bb4dddd2": "Kebutuhan", // Housing
-      
-      // Others
-      "12e3a6d5-a3a7-45e8-8418-aa219a190f76": "Others", // Others
-      "87fcbd5b-edb6-4952-921a-69d9411b9aa4": "Belanja", // Tarik Tunai
-      "8acaaeec-3b1a-4b71-a6a1-aab5a02c4471": "Kebutuhan", // Health
-      "2da1a568-6c5c-46e1-aa25-acf2847a1977": "Hiburan", // Sports
-      "b67587a7-47df-479d-ab56-324749c7d1ac": "Belanja", // Gopay
-    };
+  const created: Array<{ transactionId: string; importRecordId: string; rowNumber: number }> = []
+  const skipped: Array<{ rowNumber: number; reason: string }> = []
+  const failed: Array<{ rowNumber: number; error: string }> = []
 
-    // Mapping deskripsi ke kategori yang umum jika tidak ada category ID
-    const descriptionMapping: Record<string, string> = {
-      // Food related
-      "Makan": "Makanan",
-      "Makan Ramen": "Makanan",
-      "Makan Crisbar": "Makanan", 
-      "Makan Iga": "Makanan", 
-      "Makan Sky Pasta": "Makanan", 
-      "Makan keluarga": "Makanan",
-      "Makan Gacoan": "Makanan",
-      "Ramen Ichiyo": "Makanan",
-      "Bebek Mas Wanto": "Makanan",
+  for (const [index, row] of rows.entries()) {
+    const rowNumber = index + 2
+    try {
+      const normalized = normalizeRow(row, rowNumber)
+      const categoryId = await findCategory(userId, normalized.type, normalized.categoryName)
 
-      "Transport": "Transportasi",
-      
-      // Entertainment
-      "Popcorn": "Hiburan", 
-      "Nonton": "Hiburan", 
-      "AYCE": "Hiburan",
-      
-      // Shopping related
-      "Beli Sendal": "Belanja",
-      "Beli Tumbler": "Belanja",
-      "Beli Celana": "Belanja",
-      "Belanja Superindo": "Belanja",
-      "Belanja Borma": "Belanja",
-      
-      // Shopee related  
-      "Shopee": "Shopee",
-      "Akun di Shopee": "Shopee",
-      
-      // WiFi related
-      "Wifi Rumah": "Listrik & WiFi",
-      "WiFi Rumah": "Listrik & WiFi",
-      
-      // Bills
-      "CC": "Tagihan",
-      "Subscribe web": "Tagihan",
-      
-      // Income
-      "Gaji": "Gaji",
-      "THR": "Bonus",
-      
-      // Savings
-      "Tabungan": "Savings",
-      "Tabungan Emas": "Savings",
-      "Tabungan BTC": "Savings",
-      "Tabungan Bank Bandung": "Savings",
-      "Emergency Funds": "Savings",
-      "ngendap di mandiri": "Savings",
-      
-      // Investment
-      "Dari Bibit": "Investment",
-      "Dari Rekening": "Investment",
-      "Jual Bibit": "Investment"
-    };
+      const result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.importRecord.findUnique({
+          where: { userId_walletId_rowHash: { userId, walletId, rowHash: normalized.rowHash } },
+          select: { id: true },
+        })
+        if (existing) {
+          const linkedTransaction = await tx.transaction.findFirst({
+            where: { importRecordId: existing.id },
+            select: { id: true },
+          })
+          if (linkedTransaction) return { duplicate: true as const }
 
-    // Default category names for different types
-    const defaultCategoryNames = {
-      EXPENSE: "Others", 
-      INCOME: "Pendapatan Lain"     
-    };
-
-    for (const record of records) {
-      try {
-        // Log the record format before processing
-        console.log('Processing record:', JSON.stringify(record, null, 2));
-        const trimmedRecord = record.map((value) => (typeof value === 'string' ? value.trim() : value));
-
-        // Skip header rows if present
-        if (
-          trimmedRecord.length >= 2 &&
-          trimmedRecord[0]?.toLowerCase?.() === 'date' &&
-          trimmedRecord[1]?.toLowerCase?.() === 'type'
-        ) {
-          console.log('Skipping header row');
-          continue;
-        }
-
-        let rawAmount: string | undefined;
-        let transactionTypeRaw: string | undefined;
-        let description: string | undefined;
-        let dateStr: string | undefined;
-        let categoryNameFromRecord: string | undefined;
-        let oldCategoryId: string | undefined;
-
-        if (trimmedRecord.length === 6) {
-          // New export format: Date,Type,Amount,Description,Category,Wallet
-          const [dateValue, typeValue, amountValue, descriptionValue, categoryValue, walletValue] = trimmedRecord;
-
-          dateStr = dateValue;
-          transactionTypeRaw = typeValue;
-          rawAmount = amountValue;
-          description = descriptionValue;
-          categoryNameFromRecord = categoryValue;
-
-          console.log('Detected new export format:', {
-            dateStr,
-            transactionTypeRaw,
-            rawAmount,
-            description,
-            categoryNameFromRecord,
-            walletValue,
-          });
-        } else {
-          // Legacy format: user_id,wallet_id,category_id,amount,type,description,date
-          const [oldUserId, oldWalletId, legacyCategoryId, amountValue, typeValue, descriptionValue, legacyDate] =
-            trimmedRecord;
-
-          rawAmount = amountValue;
-          transactionTypeRaw = typeValue;
-          description = descriptionValue;
-          dateStr = legacyDate;
-          oldCategoryId = legacyCategoryId;
-
-          console.log('Extracted legacy data:', {
-            oldUserId,
-            oldWalletId,
-            oldCategoryId,
-            rawAmount,
-            transactionTypeRaw,
-            description,
-            dateStr,
-          });
-        }
-
-        if (!rawAmount) {
-          throw new Error('Amount is required');
-        }
-
-        // Clean and parse amount - handle both .00 and , formats
-        const cleanAmount = rawAmount.replace(/[^\d.,-]/g, '').replace(/\.(?=.*\.)/g, '').replace(',', '.');
-        const amount = parseFloat(cleanAmount);
-        
-        if (isNaN(amount)) {
-          console.error('Amount parsing failed:', {
-            original: rawAmount,
-            cleaned: cleanAmount,
-            parsed: amount
-          });
-          throw new Error('Invalid amount');
-        }
-        
-        // Parse date - handle multiple formats
-        if (!dateStr) {
-          throw new Error('Date is required');
-        }
-
-        let date;
-        try {
-          // Try parsing as ISO date first
-          date = new Date(dateStr);
-          console.log('Date parsing - ISO attempt:', {
-            dateStr,
-            parsedDate: date,
-            isValid: !isNaN(date.getTime())
-          });
-          
-          if (isNaN(date.getTime())) {
-            // If ISO fails, try DD/MM/YYYY format
-            const [day, month, year] = dateStr.split('/');
-            date = new Date(`${year}-${month}-${day}`);
-            console.log('Date parsing - DD/MM/YYYY attempt:', {
-              dateStr,
-              day, month, year,
-              parsedDate: date,
-              isValid: !isNaN(date.getTime())
-            });
-          }
-        } catch (e) {
-          console.error('Date parsing failed:', dateStr, e);
-          throw new Error('Invalid date format');
-        }
-
-        if (isNaN(date.getTime())) {
-          throw new Error('Invalid date format');
-        }
-
-        // Get transaction type
-        if (!transactionTypeRaw) {
-          throw new Error('Transaction type is required');
-        }
-        const transactionType = transactionTypeRaw.toUpperCase() as 'INCOME' | 'EXPENSE';
-        
-        // Try to find a category match
-        // 1. First try using the original category ID mapping
-        // 2. If not found, try mapping based on description
-        // 3. If all fails, use default category for the transaction type
-        let categoryName = categoryNameFromRecord || (oldCategoryId ? oldCategoryIdMapping[oldCategoryId] : undefined);
-        
-        if (!categoryName) {
-          categoryName = descriptionMapping[description];
-        }
-        
-        if (!categoryName) {
-          categoryName = defaultCategoryNames[transactionType];
-        }
-        
-        console.log(`Looking for category with name: "${categoryName}" (from old category ID: "${oldCategoryId}" or description: "${description}")`);
-        
-        // Try to find existing category by name for this user
-        let category = await prisma.category.findFirst({
-          where: {
-            name: categoryName,
-            userId: session.user.id
-          }
-        });
-        
-        if (!category) {
-          console.log(`Category "${categoryName}" not found, creating new category`);
-          // Create new category
-          const categoryType = transactionType === 'INCOME' ? 'INCOME' : 'EXPENSE';
-          
-          category = await prisma.category.create({
+          const repairedTransaction = await tx.transaction.create({
             data: {
-              name: categoryName,
-              type: categoryType,
-              userId: session.user.id,
+              amount: normalized.amount,
+              description: normalized.description,
+              date: normalized.date,
+              type: normalized.type,
+              userId,
+              walletId,
+              categoryId,
+              importRecordId: existing.id,
             },
-          });
-          
-          console.log(`Created new category with ID: ${category.id}`);
-        } else {
-          console.log(`Found existing category "${categoryName}" with ID: ${category.id}`);
+            select: { id: true },
+          })
+
+          await tx.wallet.update({
+            where: { id: walletId },
+            data: {
+              balance: {
+                increment: normalized.type === 'INCOME' ? normalized.amount : -normalized.amount,
+              },
+            },
+          })
+
+          return { duplicate: false as const, transactionId: repairedTransaction.id, importRecordId: existing.id, repaired: true as const }
         }
-        
-        console.log('Creating transaction with data:', {
-          amount,
-          description,
-          date: date.toISOString(),
-          type: transactionType,
-          userId: session.user.id,
-          walletId: wallet.id,
-          categoryId: category.id
-        });
-        
-        const transaction = await prisma.transaction.create({
+
+        const importRecord = await tx.importRecord.create({
           data: {
-            amount,
-            description: description || '',
-            date,
-            type: transactionType,
-            user: {
-              connect: {
-                id: session.user.id,
-              },
-            },
-            wallet: {
-              connect: {
-                id: wallet.id,
-              },
-            },
-            category: {
-              connect: {
-                id: category.id,
-              },
+            userId,
+            walletId,
+            source: 'bank_csv',
+            fileName: file.name,
+            rowHash: normalized.rowHash,
+            rawRow: JSON.stringify(normalized.rawRow),
+            parsedDate: normalized.date,
+            parsedAmount: normalized.amount,
+            parsedType: normalized.type,
+            status: 'IMPORTED',
+          },
+          select: { id: true },
+        })
+
+        const transaction = await tx.transaction.create({
+          data: {
+            amount: normalized.amount,
+            description: normalized.description,
+            date: normalized.date,
+            type: normalized.type,
+            userId,
+            walletId,
+            categoryId,
+            importRecordId: importRecord.id,
+          },
+          select: { id: true },
+        })
+
+        await tx.wallet.update({
+          where: { id: walletId },
+          data: {
+            balance: {
+              increment: normalized.type === 'INCOME' ? normalized.amount : -normalized.amount,
             },
           },
-        });
-        
-        console.log(`Transaction created with ID: ${transaction.id}`);
-        created.push(transaction);
-      } catch (error: any) {
-        console.error('Error importing record:', error);
-        errors.push({
-          record,
-          error: error.message,
-        });
-      }
-    }
-    
-    const message =
-      errors.length > 0
-        ? `Import selesai: ${created.length} baris berhasil, ${errors.length} baris gagal.`
-        : 'Import selesai.';
+        })
 
-    return NextResponse.json({
-      success: true,
-      message,
-      count: created.length,
-      created: created.length,
-      errors: errors.length,
-      errorDetails: errors,
-    });
-  } catch (error: any) {
-    console.error('Import error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-        message: error.message,
-      },
-      { status: 500 }
-    );
+        return { duplicate: false as const, transactionId: transaction.id, importRecordId: importRecord.id, repaired: false as const }
+      })
+
+      if (result.duplicate) {
+        skipped.push({ rowNumber, reason: 'Duplicate import row' })
+      } else if ('transactionId' in result) {
+        if (normalized.type === 'EXPENSE') {
+          await createAutoSavingsTransfer({
+            userId,
+            sourceTransactionId: result.transactionId,
+            sourceWalletId: walletId,
+            categoryId,
+            amount: normalized.amount,
+            date: normalized.date,
+            description: normalized.description,
+            categoryName: normalized.categoryName,
+          })
+        }
+        created.push({ rowNumber, transactionId: result.transactionId, importRecordId: result.importRecordId })
+      }
+    } catch (error) {
+      const message = error instanceof Prisma.PrismaClientKnownRequestError ? error.message : error instanceof Error ? error.message : 'Unknown import error'
+      failed.push({ rowNumber, error: message })
+    }
   }
+
+  return NextResponse.json({
+    message: `Imported ${created.length} transaction(s)`,
+    summary: {
+      totalRows: rows.length,
+      created: created.length,
+      skipped: skipped.length,
+      failed: failed.length,
+    },
+    created,
+    skipped,
+    failed,
+  })
 }
