@@ -13,14 +13,27 @@ import { useWallet } from '@/app/providers/WalletProvider';
 interface AggregatedGoal {
   id: string;
   name: string;
+  target: number;
+  current: number;
+  type: string;
+  description?: string | null;
+  status: string;
   targetAmount: number;
   currentAmount: number;
   deadline?: string;
+  targetDate?: string;
   progress: number;
-  walletId: string;
+  walletContributions: Array<{
+    walletId: string;
+    walletName: string;
+    walletColor?: string | null;
+    contributionAmount: number;
+    transactionCount: number;
+  }>;
+  walletId?: string;
   walletName?: string;
-  walletColor?: string;
-  category?: { id: string; name: string };
+  walletColor?: string | null;
+  category?: string | null;
 }
 
 // Transform API response to match expected format
@@ -31,14 +44,21 @@ function transformGoalApiResponse(goal: any): AggregatedGoal {
   return {
     id: goal.id,
     name: goal.name,
+    target: goal.targetAmount,
+    current: goal.currentAmount,
+    type: goal.category || 'OTHER',
+    description: goal.description,
+    status: goal.status || 'ONGOING',
     targetAmount: goal.targetAmount,
     currentAmount: goal.currentAmount,
     deadline: goal.targetDate || goal.deadline,
+    targetDate: goal.targetDate || goal.deadline,
     progress: goal.progress,
-    walletId: firstContribution?.walletId || '',
+    walletContributions: goal.walletContributions || [],
+    walletId: firstContribution?.walletId,
     walletName: firstContribution?.walletName,
     walletColor: firstContribution?.walletColor,
-    category: goal.category ? { id: goal.category, name: goal.category } : undefined,
+    category: goal.category,
   };
 }
 
@@ -52,6 +72,19 @@ export function GoalsContent() {
   const [isLoadingGroupGoals, setIsLoadingGroupGoals] = useState(false);
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [goalToEdit, setGoalToEdit] = useState<any>(null);
+  const [starterPrefill, setStarterPrefill] = useState<any>(null);
+
+  const goalStarters = [
+    { name: 'Dana Darurat 3 Bulan', category: 'EMERGENCY_FUND', icon: '🛡️', hint: 'Bantalan 3x pengeluaran bulanan' },
+    { name: 'Lunasi Utang', category: 'DEBT', icon: '💸', hint: 'Beresin saldo negatif / cicilan' },
+    { name: 'Target Nabung Bulanan', category: 'SAVINGS', icon: '📈', hint: 'Konsisten tiap bulan' },
+    { name: 'Liburan / Beli Besar', category: 'OTHER', icon: '✈️', hint: 'Rencana pengeluaran besar' },
+  ];
+
+  const openStarter = (starter: typeof goalStarters[number]) => {
+    setStarterPrefill({ name: starter.name, category: starter.category });
+    setIsAddingGoal(true);
+  };
 
   useEffect(() => {
     if (!isGroupSelected) {
@@ -266,7 +299,10 @@ export function GoalsContent() {
             </div>
           </div>
           {!isGroupSelected && (
-            <Dialog open={isAddingGoal} onOpenChange={setIsAddingGoal}>
+            <Dialog open={isAddingGoal} onOpenChange={(open) => {
+              setIsAddingGoal(open);
+              if (!open) setStarterPrefill(null);
+            }}>
               <DialogTrigger asChild>
                 <Button className="bg-white text-blue-600 hover:bg-blue-50 flex items-center gap-1">
                   <FiPlus className="h-4 w-4" />
@@ -277,7 +313,7 @@ export function GoalsContent() {
                 <DialogHeader>
                   <DialogTitle>Create New Goal</DialogTitle>
                 </DialogHeader>
-                <GoalForm onSubmit={handleCreateGoal} />
+                <GoalForm onSubmit={handleCreateGoal} initialData={starterPrefill || undefined} />
               </DialogContent>
             </Dialog>
           )}
@@ -311,13 +347,29 @@ export function GoalsContent() {
               : 'Set financial goals to track your progress and stay motivated on your financial journey.'}
           </p>
           {!isGroupSelected && (
-            <Button
-              className="mt-6 bg-blue-600 hover:bg-blue-700"
-              onClick={() => setIsAddingGoal(true)}
-            >
-              <FiPlus className="mr-2 h-4 w-4" />
-              Create Your First Goal
-            </Button>
+            <>
+              <Button
+                className="mt-6 bg-blue-600 hover:bg-blue-700"
+                onClick={() => { setStarterPrefill(null); setIsAddingGoal(true); }}
+              >
+                <FiPlus className="mr-2 h-4 w-4" />
+                Create Your First Goal
+              </Button>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2 max-w-xl mx-auto text-left">
+                {goalStarters.map((starter) => (
+                  <button
+                    key={starter.name}
+                    type="button"
+                    onClick={() => openStarter(starter)}
+                    className="rounded-2xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/50 hover:shadow-sm"
+                  >
+                    <span className="text-2xl">{starter.icon}</span>
+                    <p className="mt-2 font-medium text-gray-900">{starter.name}</p>
+                    <p className="text-xs text-gray-500">{starter.hint}</p>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       ) : (

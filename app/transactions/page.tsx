@@ -1292,8 +1292,18 @@ const TransactionsPage = () => {
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center h-24 sm:h-32 text-gray-500">
-              <p className="text-xs sm:text-sm text-center px-4">Not enough transaction data for insights yet.</p>
+            <div className="flex flex-col items-center justify-center gap-2 px-4 py-6 text-center">
+              <p className="text-xs sm:text-sm text-gray-600">
+                {transactions.length === 0
+                  ? 'Belum ada transaksi. Tambah transaksi pertama buat mulai insight.'
+                  : `Baru ${transactions.length} transaksi. Butuh 5+ buat trend yang akurat.`}
+              </p>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
+              >
+                + Tambah transaksi
+              </button>
             </div>
           )}
         </div>

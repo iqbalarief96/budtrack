@@ -141,27 +141,40 @@ const WalletsPage = () => {
     [filteredWallets]
   )
 
+  const negativeWallets = useMemo(
+    () => filteredWallets.filter((wallet) => wallet.balance < 0),
+    [filteredWallets]
+  )
+
+  const positiveTotalBalance = useMemo(
+    () => filteredWallets.reduce((sum, wallet) => sum + Math.max(wallet.balance, 0), 0),
+    [filteredWallets]
+  )
+
   const walletShares = useMemo(() => {
-    if (totalBalance <= 0) {
-      return filteredWallets.map((wallet) => ({
+    return filteredWallets
+      .filter((wallet) => wallet.balance > 0)
+      .map((wallet) => ({
         id: wallet.id,
         name: wallet.name,
         balance: wallet.balance,
-        percentage: 0,
+        percentage: positiveTotalBalance > 0 ? Math.round((wallet.balance / positiveTotalBalance) * 100) : 0,
         color: wallet.color,
         currencyCode: wallet.currencyCode
       }))
-    }
+  }, [filteredWallets, positiveTotalBalance])
 
-    return filteredWallets.map((wallet) => ({
-      id: wallet.id,
-      name: wallet.name,
-      balance: wallet.balance,
-      percentage: Math.round((wallet.balance / totalBalance) * 100),
-      color: wallet.color,
-      currencyCode: wallet.currencyCode
-    }))
-  }, [filteredWallets, totalBalance])
+  const totalNegativeBalance = useMemo(
+    () => negativeWallets.reduce((sum, wallet) => sum + Math.abs(wallet.balance), 0),
+    [negativeWallets]
+  )
+
+  const largestNegativeWallet = useMemo(
+    () => negativeWallets.slice().sort((a, b) => a.balance - b.balance)[0] || null,
+    [negativeWallets]
+  )
+
+  const walletScopeLabel = filteredWallets.length === wallets.length ? 'Semua dompet aktif' : `${filteredWallets.length} dompet terfilter`;
 
   const emergencyTargetAmount = emergencyFundData?.targetAmount ?? 0
   const emergencyCurrentAmount = emergencyFundData?.currentAmount ?? 0
@@ -528,8 +541,16 @@ const WalletsPage = () => {
 
       {/* Total Balance */}
       <div className="card">
-        <h2 className="text-lg font-medium text-gray-700 mb-1">Total Saldo</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-medium text-gray-700">Total Saldo</h2>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{walletScopeLabel}</span>
+        </div>
         <p className="text-3xl font-bold">{formatCurrency(totalBalance)}</p>
+        {totalNegativeBalance > 0 && (
+          <p className="mt-1 text-xs text-red-500">
+            Termasuk saldo negatif {formatCurrency(totalNegativeBalance)} dari {negativeWallets.length} dompet
+          </p>
+        )}
       </div>
 
       {/* Quick stats */}
@@ -628,11 +649,11 @@ const WalletsPage = () => {
           </div>
         )}
 
-        {walletShares.length > 0 && (
+        {(walletShares.length > 0 || negativeWallets.length > 0) && (
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-medium text-gray-700">Distribusi Saldo</h2>
-              <span className="text-xs text-gray-400">Persentase dari total saldo</span>
+              <span className="text-xs text-gray-400">Saldo positif saja</span>
             </div>
             <div className="space-y-4">
               {walletShares.map((walletShare) => (
@@ -645,7 +666,7 @@ const WalletsPage = () => {
                     <div
                       className="h-2 rounded-full transition-all"
                       style={{
-                        width: `${walletShare.percentage}%`,
+                        width: `${Math.min(walletShare.percentage, 100)}%`,
                         backgroundColor: walletShare.color || '#2563EB'
                       }}
                     />
@@ -655,6 +676,18 @@ const WalletsPage = () => {
                   </p>
                 </div>
               ))}
+
+              {negativeWallets.length > 0 && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 p-3">
+                  <p className="text-sm font-semibold text-red-700">Saldo negatif perlu diberesin</p>
+                  <p className="mt-1 text-xs text-red-600">
+                    {largestNegativeWallet?.name} lagi negatif {largestNegativeWallet ? formatCurrency(Math.abs(largestNegativeWallet.balance), largestNegativeWallet.currencyCode) : ''}. Total owed {formatCurrency(totalNegativeBalance)}.
+                  </p>
+                  <button type="button" onClick={() => router.push('/transactions')} className="mt-3 text-xs font-medium text-red-700 underline underline-offset-2">
+                    Cek transaksi penyebabnya
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

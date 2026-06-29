@@ -1,743 +1,474 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Send, RefreshCw, Bot, User, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, Copy, Download, MoreHorizontal, RefreshCw, RotateCcw, Save, Send, Sparkles, User, WalletCards } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useWallet } from '@/app/providers/WalletProvider';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import ReactMarkdown from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
-interface SuggestedQuestion {
-  text: string;
-  category: 'budget' | 'transaction' | 'general' | 'savings' | 'investment';
-  icon?: string;
-}
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { AnswerCards } from './chatbot/AnswerCards';
+import { InsightRail } from './chatbot/InsightRail';
+import { parseAssistantAnswer } from './chatbot/answer-parser';
+import { formatCompactCurrency, formatCurrency } from './chatbot/format';
+import { getContextPrompts } from './chatbot/prompts';
+import { useChatbotSummary } from './chatbot/useChatbotSummary';
+import type { ChatMessage } from './chatbot/types';
 
 interface ChatHistoryItem {
   role: 'user' | 'assistant';
   content: string;
 }
 
-const suggestedQuestions: SuggestedQuestion[] = [
-  { 
-    text: 'Berapa total pengeluaran saya bulan ini?', 
-    category: 'transaction',
-    icon: '💰'
-  },
-  { 
-    text: 'Apakah saya masih dalam budget yang tepat?', 
-    category: 'budget',
-    icon: '📊'
-  },
-  { 
-    text: 'Kategori apa yang paling banyak saya keluarkan uang bulan ini?', 
-    category: 'transaction',
-    icon: '📈'
-  },
-  { 
-    text: 'Berapa dana darurat yang sebaiknya saya sisihkan?', 
-    category: 'savings',
-    icon: '🛡️'
-  },
-  { 
-    text: 'Bagaimana cara mengatur budget lebih efektif?', 
-    category: 'general',
-    icon: '💡'
-  },
-  { 
-    text: 'Produk investasi apa yang cocok untuk saya?', 
-    category: 'investment',
-    icon: '📈'
-  },
-  { 
-    text: 'Apakah saya bisa mencapai target keuangan saya?', 
-    category: 'general', 
-    icon: '🎯'
-  },
-  { 
-    text: 'Bisakah kamu analisis pengeluaran saya selama 3 bulan terakhir?', 
-    category: 'transaction',
-    icon: '🔍'
-  }
-];
-
-// Custom styles untuk membuat markdown lebih compact
-const markdownStyles = {
-  wrapper: "prose prose-sm prose-slate max-w-none overflow-visible [&>*]:!my-0 [&>*]:!py-0 [&>*]:!mt-0 [&>*]:!mb-0 [&>h3]:!m-0 [&>h2]:!m-0 leading-tight",
+const welcomeMessage: ChatMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Halo! Gw siap bantu baca kondisi keuangan lo: budget, spending, saving, goal, sampai pola transaksi.',
+  timestamp: new Date(),
+  status: 'done',
 };
 
-// Simplified function to preprocess markdown - just for emoji headings
-const preprocessMarkdown = (content: string): string => {
-  // Make sure emoji headings and tables are tightly packed
-  let processed = content.replace(/(📊.*|🔥.*)\s*\n+\s*(\|)/g, '$1\n$2');
-  
-  return processed;
+const cleanAssistantText = (text: string) => text
+  .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+  .replace(/<think>[\s\S]*?<\/think>/gi, '')
+  .trim();
+
+const formatTime = (timestamp: Date | string) => {
+  const date = new Date(timestamp);
+  return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
 };
 
-// Custom CSS untuk menghilangkan spacing di list items
-const customListStyles = {
-  container: {
-    lineHeight: '1',
-  },
-  listItemContent: {
-    display: 'inline',
-    lineHeight: '1',
-  }
-};
-
-// Fix table spacing by manually processing the content
-const fixTableSpacing = (content: string): string => {
-  // Handle emoji heading + table case
-  let fixedContent = content.replace(/(📊.*|🔥.*)\s*\n+\s*(\|.*\|.*\n\|[-:\s]+\|)/g, 
-    '<div style="margin:0; padding:0;">\n<h3 style="margin:0; padding:0; font-size:14px; font-weight:600;">$1</h3>\n$2</div>');
-  
-  return fixedContent;
-};
-
-// Super robust table renderer that handles all edge cases
-const SuperTableRenderer = ({ content }: { content: string }) => {
-  // Pre-process the content to remove stray ** markers
-  content = content.replace(/^\*\*\s*/m, ''); // Remove ** at start of any line
-  content = content.replace(/\s*\*\*$/m, ''); // Remove ** at end of any line
-  content = content.replace(/\*\*(\s*\n)/g, '$1'); // Remove ** before line breaks
-  
-  // Step 1: Check if table has an emoji header
-  const emojiHeaderMatch = content.match(/^(📊[\s\S]*?|🔥[\s\S]*?)(?=\n\s*\|)/);
-  const hasEmojiHeader = !!emojiHeaderMatch;
-  
-  // Step 2: Extract header if present
-  let header = '';
-  let tableContent = content;
-  
-  if (hasEmojiHeader && emojiHeaderMatch) {
-    header = emojiHeaderMatch[0].trim();
-    // Clean up any lingering ** in the header
-    header = header.replace(/^\*\*\s*/, '').replace(/\s*\*\*$/, '');
-    tableContent = content.substring(emojiHeaderMatch[0].length).trim();
-  }
-  
-  // Step 3: Parse the table
-  // Split into rows - every line starting with |
-  const tableRows = tableContent
-    .split('\n')
-    .map(row => row.trim())
-    .filter(row => row.startsWith('|') && row.endsWith('|'));
-  
-  if (tableRows.length < 2) {
-    // Not a valid table, render as normal text
-    return <div>{content}</div>;
-  }
-  
-  // Step 4: Extract header row and data rows
-  const headerRow = tableRows[0];
-  // Skip separator row (row 2)
-  const dataRows = tableRows.slice(2);
-  
-  // Step 5: Process cells
-  const headerCells = headerRow
-    .split('|')
-    .filter(cell => cell.trim() !== '')
-    .map(cell => cell.trim());
-  
-  const tableDataRows = dataRows.map(row => 
-    row
-      .split('|')
-      .filter(cell => cell.trim() !== '')
-      .map(cell => cell.trim())
-  );
-  
-  // Step 6: Generate the table HTML manually
+function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div style={{ margin: 0, padding: 0 }}>
-      {/* Render emoji header if present */}
-      {hasEmojiHeader && (
-        <h3 className="text-sm font-semibold my-0" style={{ margin: 0, padding: 0, marginBottom: '2px' }}>
-          <ReactMarkdown 
-            remarkPlugins={[remarkGfm]} 
-            rehypePlugins={[rehypeRaw]}
-            components={{
-              p: ({node, children, ...props}) => <span {...props}>{children}</span>,
-              strong: ({node, ...props}) => <span className="font-bold" {...props} />,
-              em: ({node, ...props}) => <span className="italic" {...props} />,
-              code: ({node, ...props}) => <code className="bg-gray-200 px-0.5 py-0 rounded text-xs text-blue-700 font-medium" {...props} />
-            }}
-          >
-            {header}
-          </ReactMarkdown>
-        </h3>
-      )}
-      
-      {/* Render the table */}
-      <table className="border-collapse w-full text-xs" style={{ margin: 0, padding: 0, border: '1px solid #e5e7eb' }}>
-        <thead className="bg-gray-100">
-          <tr>
-            {headerCells.map((cell, i) => (
-              <th 
-                key={i} 
-                className="text-left border border-gray-300" 
-                style={{ padding: '2px 6px', margin: 0, fontSize: '11px', fontWeight: 500 }}
-              >
-                {cell}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {tableDataRows.map((row, i) => (
-            <tr key={i} className="border-b border-gray-200" style={{ padding: 0, margin: 0 }}>
-              {row.map((cell, j) => {
-                // Handle formatting in cells
-                let formattedCell = cell;
-                
-                // Process simple formatting
-                // Bold: *text*
-                formattedCell = formattedCell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                formattedCell = formattedCell.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
-                
-                // Italic: _text_
-                formattedCell = formattedCell.replace(/_(.*?)_/g, '<em>$1</em>');
-                
-                // Code: `text`
-                formattedCell = formattedCell.replace(/`(.*?)`/g, '<code style="background-color:#f1f1f1;padding:0 2px;border-radius:2px;font-size:10px;">$1</code>');
-                
-                // Detect if cell contains Markdown that needs ReactMarkdown
-                const needsReactMarkdown = cell.includes('**') || cell.includes('_') || cell.includes('`') || 
-                                           cell.includes('[') || cell.includes('![');
-                
-                return (
-                  <td 
-                    key={j} 
-                    className="border border-gray-200 text-gray-800" 
-                    style={{ padding: '2px 6px', margin: 0, fontSize: '11px' }}
-                  >
-                    {needsReactMarkdown ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                        {cell}
-                      </ReactMarkdown>
-                    ) : (
-                      <span dangerouslySetInnerHTML={{ __html: formattedCell }} />
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-4 last:mb-0 leading-7">{children}</p>,
+        h1: ({ children }) => <h1 className="mb-3 mt-5 text-xl font-semibold first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="mb-3 mt-5 text-lg font-semibold first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold first:mt-0">{children}</h3>,
+        ul: ({ children }) => <ul className="mb-4 ml-5 list-disc space-y-1.5">{children}</ul>,
+        ol: ({ children }) => <ol className="mb-4 ml-5 list-decimal space-y-1.5">{children}</ol>,
+        li: ({ children }) => <li className="pl-1 leading-7">{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold text-slate-950">{children}</strong>,
+        a: ({ children, href }) => <a className="text-blue-600 underline underline-offset-2" href={href} target="_blank" rel="noreferrer">{children}</a>,
+        code: ({ children, className }) => className
+          ? <code className={`${className} block overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-50`}>{children}</code>
+          : <code className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[0.85em] font-medium text-slate-800">{children}</code>,
+        pre: ({ children }) => <pre className="mb-4 overflow-x-auto rounded-xl bg-slate-950 p-0">{children}</pre>,
+        table: ({ children }) => <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full border-collapse text-sm">{children}</table></div>,
+        th: ({ children }) => <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold">{children}</th>,
+        td: ({ children }) => <td className="border-b border-slate-100 px-3 py-2 align-top">{children}</td>,
+        blockquote: ({ children }) => <blockquote className="mb-4 border-l-4 border-blue-200 pl-4 text-slate-600">{children}</blockquote>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
-};
-
-// Custom Markdown Renderer with special handling for tables
-const CustomMarkdownRenderer = ({ content }: { content: string }) => {
-  // First, handle tables specifically by extracting them completely from the content
-  let processedContent = content;
-  const extractedTables: {start: number, end: number, content: string}[] = [];
-  
-  // Function to find tables in content
-  const findTables = () => {
-    // Reset extracted tables
-    extractedTables.length = 0;
-    
-    // Multiple patterns to catch different table formats
-    // Pattern 1: Tables with emoji headers
-    const emojiHeaderTableRegex = /(📊[\s\S]*?|🔥[\s\S]*?)(\n\s*\|[\s\S]*?\|\s*\n\s*\|[-:| ]+\|[\s\S]*?(?=\n\s*\n|\n\s*[^|]|$))/g;
-    // Pattern 2: Standalone tables
-    const standaloneTableRegex = /(?:^|\n\s*)\|[\s\S]*?\|\s*\n\s*\|[-:| ]+\|[\s\S]*?(?=\n\s*\n|\n\s*[^|]|$)/g;
-    
-    // Find tables with emoji headers
-    let match;
-    while ((match = emojiHeaderTableRegex.exec(content)) !== null) {
-      const fullMatch = match[0];
-      const start = match.index;
-      const end = start + fullMatch.length;
-      
-      extractedTables.push({
-        start,
-        end,
-        content: fullMatch
-      });
-    }
-    
-    // Find standalone tables
-    while ((match = standaloneTableRegex.exec(content)) !== null) {
-      const fullMatch = match[0];
-      const start = match.index;
-      const end = start + fullMatch.length;
-      
-      // Check if this table is already part of a table with header
-      const alreadyCaptured = extractedTables.some(
-        table => start >= table.start && end <= table.end
-      );
-      
-      if (!alreadyCaptured) {
-        extractedTables.push({
-          start,
-          end,
-          content: fullMatch
-        });
-      }
-    }
-    
-    // Sort tables by start position
-    extractedTables.sort((a, b) => a.start - b.start);
-  };
-  
-  // Extract all tables
-  findTables();
-  
-  // Replace tables with placeholders
-  for (let i = extractedTables.length - 1; i >= 0; i--) {
-    const table = extractedTables[i];
-    processedContent = 
-      processedContent.substring(0, table.start) + 
-      `__TABLE_PLACEHOLDER_${i}__` + 
-      processedContent.substring(table.end);
-  }
-  
-  // Additional cleanup for asterisks at the beginning of the content
-  processedContent = processedContent.replace(/^\*\*\s*/, '');
-  processedContent = processedContent.replace(/\n\*\*\s*/g, '\n');
-  processedContent = processedContent.replace(/\*\*\s*$/g, '');
-  
-  // Split content by table placeholders
-  const parts = processedContent.split(/(__TABLE_PLACEHOLDER_\d+__)/);
-  
-  return (
-    <>
-      {parts.map((part, idx) => {
-        // Check if this is a table placeholder
-        const tablePlaceholderMatch = part.match(/__TABLE_PLACEHOLDER_(\d+)__/);
-        
-        if (tablePlaceholderMatch) {
-          // Render table
-          const tableIndex = parseInt(tablePlaceholderMatch[1]);
-          const tableContent = extractedTables[tableIndex].content;
-          return <SuperTableRenderer key={`table-${tableIndex}`} content={tableContent} />;
-        } else if (part.trim()) {
-          // Render normal markdown
-          return (
-            <ReactMarkdown
-              key={`markdown-${idx}`}
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeRaw]} 
-              components={{
-                // All the component overrides for non-table content
-                p: ({node, children, ...props}) => {
-                  // Check if paragraph is empty or just whitespace
-                  const content = React.Children.toArray(children).map(child => 
-                    typeof child === 'string' ? child.trim() : child
-                  ).filter(Boolean);
-                  
-                  if (content.length === 0) {
-                    return null; // Don't render empty paragraphs
-                  }
-                  return <p className="my-0 mb-0 leading-tight text-sm" {...props}>{children}</p>;
-                },
-                h1: ({node, ...props}) => <h1 className="text-lg font-bold !my-0" style={{ margin: 0 }} {...props} />,
-                h2: ({node, ...props}) => <h2 className="text-base font-semibold !my-0" style={{ margin: 0 }} {...props} />,
-                h3: ({node, ...props}) => <h3 className="text-sm font-semibold !my-0" style={{ margin: 0 }} {...props} />,
-                ul: ({node, ...props}) => (
-                  <div style={{ margin: 0, padding: 0 }}>
-                    <ul className="list-disc ml-4 mt-0 mb-0 py-0 space-y-0" style={customListStyles.container} {...props} />
-                  </div>
-                ),
-                ol: ({node, ...props}) => (
-                  <div style={{ margin: 0, padding: 0 }}>
-                    <ol className="list-decimal ml-5 mt-0 mb-0 py-0 space-y-0" style={customListStyles.container} {...props} />
-                  </div>
-                ),
-                li: ({node, children, ...props}) => (
-                  <li 
-                    className="m-0 p-0 marker:text-gray-500 text-sm"
-                    style={{ lineHeight: '1', marginTop: '-2px', marginBottom: '-2px' }}
-                    {...props}
-                  >
-                    <span style={customListStyles.listItemContent}>{children}</span>
-                  </li>
-                ),
-                strong: ({node, ...props}) => <span className="font-bold" {...props} />,
-                em: ({node, ...props}) => <span className="italic" {...props} />,
-                a: ({node, ...props}) => <a className="text-blue-600 hover:underline" {...props} />,
-                blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-gray-300 pl-2 py-0 my-0 text-gray-700 italic" {...props} />,
-                hr: ({node, ...props}) => <hr className="my-0.5 border-gray-300" {...props} />,
-                pre: ({node, ...props}) => <pre className="bg-gray-100 rounded p-0.5 my-0 overflow-visible text-sm" {...props} />,
-                code: ({node, children, className, ...props}: any) => {
-                  const match = /language-(\w+)/.exec(className || '');
-                  return className?.includes('language-') ? (
-                    <code className={className + " block p-0.5 text-sm"} {...props}>
-                      {children}
-                    </code>
-                  ) : (
-                    <code className="bg-gray-200 px-0.5 py-0 rounded text-xs text-blue-700 font-medium" {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-              }}
-            >
-              {part}
-            </ReactMarkdown>
-          );
-        }
-        return null;
-      })}
-    </>
-  );
-};
+}
 
 export default function FinanceChatbot() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Halo! Saya asisten keuangan pribadi kamu. Apa yang ingin kamu ketahui tentang keuangan kamu hari ini?',
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // Avoid SSR/client hydration mismatch on time labels (React #418/#425)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const router = useRouter();
   const { data: session } = useSession();
   const { selectedWallet } = useWallet();
   const { toast } = useToast();
-  const [showWelcome, setShowWelcome] = useState(true);
-  
-  // Scroll to bottom when messages update
+  const summary = useChatbotSummary(selectedWallet?.id);
+
+  const storageKey = useMemo(
+    () => selectedWallet ? `chat-history-${selectedWallet.id}` : null,
+    [selectedWallet]
+  );
+  const promptChips = useMemo(() => getContextPrompts(summary.data), [summary.data]);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-  
-  // Load chat history from localStorage when component mounts
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, isLoading]);
+
   useEffect(() => {
-    if (session && selectedWallet) {
-      try {
-        const storageKey = `chat-history-${selectedWallet.id}`;
-        const savedChat = localStorage.getItem(storageKey);
-        
-        if (savedChat) {
-          const savedMessages = JSON.parse(savedChat) as Message[];
-          setMessages(savedMessages);
-          
-          // Build chat history for context
-          const history = savedMessages
-            .filter((msg: Message) => msg.id !== '1') // Skip welcome message
-            .map((msg: Message) => ({ 
-              role: msg.role, 
-              content: msg.content 
-            }));
-          
-          setChatHistory(history);
-        }
-      } catch (err) {
-        console.error('Error loading chat history:', err);
+    if (!session || !storageKey) return;
+
+    try {
+      const savedChat = localStorage.getItem(storageKey);
+      if (!savedChat) {
+        setMessages([welcomeMessage]);
+        setChatHistory([]);
+        return;
       }
+
+      const savedMessages = JSON.parse(savedChat) as ChatMessage[];
+      setMessages(savedMessages.length ? savedMessages : [welcomeMessage]);
+      setChatHistory(savedMessages
+        .filter((msg) => msg.id !== 'welcome')
+        .map((msg) => ({ role: msg.role, content: msg.content }))
+        .slice(-10));
+    } catch (err) {
+      console.error('Error loading chat history:', err);
     }
-  }, [session, selectedWallet]);
-  
-  // Save messages to localStorage
-  const saveMessages = (msgs: Message[]) => {
-    if (session && selectedWallet) {
-      try {
-        const storageKey = `chat-history-${selectedWallet.id}`;
-        localStorage.setItem(storageKey, JSON.stringify(msgs));
-      } catch (err) {
-        console.error('Error saving chat history:', err);
-      }
+  }, [session, storageKey]);
+
+  const saveMessages = (nextMessages: ChatMessage[]) => {
+    if (!session || !storageKey) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(nextMessages));
+    } catch (err) {
+      console.error('Error saving chat history:', err);
     }
   };
-  
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    
-    if (!inputMessage.trim()) return;
-    if (!session) {
-      toast({
-        title: 'Please sign in',
-        description: 'You need to be signed in to use the chatbot',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!selectedWallet) {
-      toast({
-        title: 'Select a wallet',
-        description: 'Please select a wallet to get personalized responses',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (isLoading) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
+  const animateAssistantMessage = async (baseMessages: ChatMessage[], fullReply: string) => {
+    const id = crypto.randomUUID();
+    const placeholder: ChatMessage = { id, role: 'assistant', content: '', timestamp: new Date(), status: 'streaming' };
+    setMessages([...baseMessages, placeholder]);
+
+    const step = Math.max(16, Math.ceil(fullReply.length / 80));
+    let current = '';
+    for (let index = 0; index < fullReply.length; index += step) {
+      current = fullReply.slice(0, index + step);
+      setMessages([...baseMessages, { ...placeholder, content: current }]);
+      await new Promise((resolve) => setTimeout(resolve, 12));
+    }
+
+    const finalMessage = { ...placeholder, content: fullReply, status: 'done' as const };
+    const finalMessages = [...baseMessages, finalMessage];
+    setMessages(finalMessages);
+    saveMessages(finalMessages);
+    return finalMessage;
+  };
+
+  const sendMessage = async (messageText = inputMessage, options?: { appendUser?: boolean }) => {
+    const text = messageText.trim();
+    if (!text || isLoading) return;
+
+    if (!session) {
+      toast({ title: 'Login dulu', description: 'Chatbot butuh akun aktif.', variant: 'destructive' });
+      return;
+    }
+
+    if (!selectedWallet) {
+      toast({ title: 'Pilih wallet dulu', description: 'Biar jawaban bisa pakai data wallet lo.', variant: 'destructive' });
+      return;
+    }
+
+    const shouldAppendUser = options?.appendUser !== false;
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
       role: 'user',
-      content: inputMessage,
+      content: text,
       timestamp: new Date(),
+      status: 'done',
     };
-    
-    // Update messages and clear input
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+
+    const baseMessages = shouldAppendUser ? [...messages, userMessage] : messages.filter((msg) => msg.status !== 'streaming');
+    const nextHistory = [
+      ...chatHistory,
+      ...(shouldAppendUser ? [{ role: 'user' as const, content: text }] : []),
+    ].slice(-10);
+
+    setMessages(baseMessages);
+    setChatHistory(nextHistory);
     setInputMessage('');
     setIsLoading(true);
-    setShowWelcome(false);
-    saveMessages(newMessages);
-    
-    // Update chat history for context
-    const updatedHistory: ChatHistoryItem[] = [
-      ...chatHistory,
-      { role: 'user', content: inputMessage }
-    ];
-    const trimmedHistory = updatedHistory.slice(-10);
-    setChatHistory(trimmedHistory);
-    
+    saveMessages(baseMessages);
+
     try {
-      // Call API to get assistant response
       const response = await fetch('/api/ai/chatbot', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: inputMessage,
-          walletId: selectedWallet.id,
-          history: trimmedHistory
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text, walletId: selectedWallet.id, history: nextHistory, stream: false }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        const errorMessage =
-          (errorData && typeof errorData === 'object' && 'error' in errorData && typeof errorData.error === 'string')
-            ? errorData.error
-            : 'Failed to get chatbot response';
-        throw new Error(errorMessage);
+        throw new Error(typeof errorData?.error === 'string' ? errorData.error : 'Failed to get chatbot response');
       }
 
       const data = await response.json();
-      const assistantReply =
-        typeof data?.response === 'string' && data.response.trim().length > 0
-          ? data.response.trim()
-          : null;
+      const reply = typeof data?.response === 'string' ? cleanAssistantText(data.response) : '';
+      if (!reply) throw new Error('Chatbot returned an empty response');
 
-      if (!assistantReply) {
-        throw new Error('Chatbot returned an empty response');
-      }
-      
-      // Add assistant response to messages
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: assistantReply,
-        timestamp: new Date(),
-      };
-      
-      const updatedMessages = [...newMessages, assistantMessage];
-      setMessages(updatedMessages);
-      
-      // Update chat history with assistant response
-      const assistantHistory = [...trimmedHistory, { role: 'assistant', content: assistantReply }].slice(-10);
-      setChatHistory(assistantHistory);
-      
-      // Save chat history to localStorage
-      saveMessages(updatedMessages);
-      
+      const assistantMessage = await animateAssistantMessage(baseMessages, reply);
+      const finalHistory = [...nextHistory, { role: 'assistant' as const, content: assistantMessage.content }].slice(-10);
+      setChatHistory(finalHistory);
+      summary.refresh();
     } catch (error) {
       console.error('Error getting chatbot response:', error);
-      
-      // Add error message
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Maaf, saya tidak bisa menjawab sekarang. Coba lagi nanti ya!',
+        content: 'Gw belum bisa jawab sekarang. Coba ulang sebentar lagi, atau cek API key/model di Settings.',
         timestamp: new Date(),
+        status: 'error',
       };
-      
-      setMessages([...newMessages, errorMessage]);
-      saveMessages([...newMessages, errorMessage]);
-      setChatHistory(trimmedHistory);
-      
+      const finalMessages = [...baseMessages, errorMessage];
+      setMessages(finalMessages);
+      saveMessages(finalMessages);
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to get chatbot response. Please try again.',
+        title: 'Chatbot error',
+        description: error instanceof Error ? error.message : 'Failed to get chatbot response.',
         variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
+      inputRef.current?.focus();
     }
   };
-  
-  const handleQuestionClick = (question: string) => {
-    setInputMessage(question);
-    setShowWelcome(false);
-  };
-  
+
   const clearChat = () => {
-    if (session && selectedWallet) {
-      // Reset to just the welcome message
-      const initialMessages = [{
-        id: '1',
-        role: 'assistant' as const,
-        content: 'Halo! Saya asisten keuangan pribadi kamu. Apa yang ingin kamu ketahui tentang keuangan kamu hari ini?',
-        timestamp: new Date(),
-      }];
-      
-      setMessages(initialMessages);
-      setChatHistory([]);
-      
-      // Clear localStorage
-      const storageKey = `chat-history-${selectedWallet.id}`;
-      localStorage.removeItem(storageKey);
-      
-      toast({
-        title: 'Chat history cleared',
-        description: 'Your chat history has been reset',
-      });
-      
-      setShowWelcome(true);
-    }
+    setMessages([welcomeMessage]);
+    setChatHistory([]);
+    if (storageKey) localStorage.removeItem(storageKey);
+    toast({ title: 'Chat reset', description: 'Riwayat chat wallet ini dibersihkan.' });
   };
-  
-  const formatTime = (timestamp: Date | string) => {
-    const date = new Date(timestamp);
-    // Use explicit format instead of locale-dependent formatting
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
+
+  const copyMessage = async (content: string) => {
+    await navigator.clipboard.writeText(content);
+    toast({ title: 'Copied', description: 'Jawaban disalin ke clipboard.' });
   };
-  
+
+  const saveInsight = async (content: string) => {
+    await copyMessage(content);
+    toast({ title: 'Insight copied', description: 'Persistent insight save belum aktif. Gw salin dulu ke clipboard.' });
+  };
+
+  const exportChat = () => {
+    const markdown = messages.map((message) => `## ${message.role}\n\n${message.content}`).join('\n\n');
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `budtrack-chat-${new Date().toISOString().slice(0, 10)}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const regenerateLatest = () => {
+    const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUser) return;
+    const lastUserIndex = messages.findIndex((message) => message.id === lastUser.id);
+    setMessages(messages.slice(0, lastUserIndex + 1));
+    sendMessage(lastUser.content, { appendUser: false });
+  };
+
+  const disabled = isLoading || !session || !selectedWallet;
+  const hasOnlyWelcome = messages.length === 1 && messages[0].id === 'welcome';
+
   return (
-    <div className="relative" style={{ height: 'calc(100vh - 200px)' }}>
-      <Card className="w-full flex flex-col h-full">
-        <CardHeader className="border-b px-6 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-              <div className="bg-blue-600 w-8 h-8 rounded-full flex items-center justify-center">
-                <Bot className="w-5 h-5 text-white" />
-              </div>
-              <CardTitle className="text-lg font-medium">Finance Assistant</CardTitle>
+    <section className="relative h-[calc(100vh-9rem)] min-h-[680px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-br from-blue-50 via-cyan-50 to-white" />
+
+      <div className="relative flex h-full flex-col">
+        <header className="flex items-center justify-between gap-4 border-b border-slate-200/70 bg-white/80 px-5 py-4 backdrop-blur-xl md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+              <Bot className="h-6 w-6" />
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="text-gray-500 hover:text-gray-700"
-              onClick={clearChat}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Reset
-            </Button>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-lg font-semibold text-slate-950">Finance Assistant</h2>
+                <Badge variant="secondary" className="rounded-full bg-emerald-50 text-emerald-700">AI</Badge>
+                {summary.data && <Badge variant="outline" className="rounded-full">{summary.data.monthLabel}</Badge>}
+              </div>
+              <p className="truncate text-sm text-slate-500">
+                {summary.data
+                  ? `${summary.data.walletName} • spent ${formatCompactCurrency(summary.data.totalExpense)} • balance ${formatCompactCurrency(summary.data.balance)}`
+                  : selectedWallet ? `Context: ${selectedWallet.name}` : 'Pilih wallet buat jawaban personal'}
+              </p>
+            </div>
           </div>
-        </CardHeader>
-        
-        <CardContent className="flex-grow overflow-auto p-1">
-          <div className="flex flex-col gap-0">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap break-words overflow-visible">
-                    {message.role === 'assistant' ? (
-                      <div className={markdownStyles.wrapper}>
-                        {/* Replace ReactMarkdown with our custom renderer */}
-                        <CustomMarkdownRenderer content={message.content} />
-                      </div>
-                    ) : (
-                      message.content
-                    )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="shrink-0 rounded-full" aria-label="Chat actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={regenerateLatest} disabled={isLoading || !messages.some((msg) => msg.role === 'user')}>
+                <RotateCcw className="mr-2 h-4 w-4" /> Regenerate
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportChat}>
+                <Download className="mr-2 h-4 w-4" /> Export chat
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={clearChat} className="text-red-600 focus:text-red-600">
+                <RefreshCw className="mr-2 h-4 w-4" /> Reset chat
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+
+        <main className="grid flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_330px]">
+          <div className="overflow-y-auto px-4 py-5 md:px-6">
+            {hasOnlyWelcome && (
+              <div className="mb-6 max-w-5xl rounded-3xl border border-blue-100 bg-white/85 p-5 shadow-sm backdrop-blur md:p-6">
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                    <Sparkles className="h-5 w-5" />
                   </div>
-                  <div 
-                    className={`text-xs mt-1 ${
-                      message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
-                    }`}
-                  >
-                    {formatTime(message.timestamp)}
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100 text-gray-800">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"></div>
-                    <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse delay-100"></div>
-                    <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse delay-200"></div>
+                  <div>
+                    <h3 className="font-semibold text-slate-950">Tanya finansial pake data wallet lo</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Bisa minta rangkuman, audit spending, safe-to-spend, dana darurat, goal check, atau rekomendasi budget.
+                    </p>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* Welcome section with suggested questions */}
-            {showWelcome && messages.length <= 2 && !isLoading && (
-              <div className="mt-6 mb-2">
-                <div className="text-sm font-medium text-gray-500 mb-2">Pertanyaan yang bisa kamu tanyakan:</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {suggestedQuestions.map((q, i) => (
-                    <Button
-                      key={i}
-                      variant="outline"
-                      className="justify-start text-left h-auto py-2 font-normal hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      onClick={() => handleQuestionClick(q.text)}
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {promptChips.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => sendMessage(item.prompt)}
+                      disabled={disabled}
+                      className="group rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <div className="mr-2">{q.icon}</div>
-                      {q.text}
-                    </Button>
+                      <span className="text-xl">{item.icon}</span>
+                      <span className="mt-2 block text-sm font-medium text-slate-900 group-hover:text-blue-700">{item.label}</span>
+                    </button>
                   ))}
                 </div>
               </div>
             )}
-            
-            <div ref={messagesEndRef} />
-          </div>
-        </CardContent>
-        
-        <CardFooter className="border-t p-3">
-          <form onSubmit={handleSendMessage} className="flex w-full space-x-2">
-            <Input
-              placeholder="Tanyakan tentang keuangan kamu..."
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              className="flex-grow"
-              disabled={isLoading || !session || !selectedWallet}
-            />
-            <Button 
-              type="submit" 
-              disabled={!inputMessage.trim() || isLoading || !session || !selectedWallet}
-            >
-              {isLoading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
+
+            <div className="flex max-w-none flex-col gap-4">
+              {messages.map((message) => {
+                const isUser = message.role === 'user';
+                const clean = cleanAssistantText(message.content);
+                const parsed = parseAssistantAnswer(clean);
+                return (
+                  <article key={message.id} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    {!isUser && (
+                      <div className="mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 sm:flex">
+                        <Bot className="h-5 w-5" />
+                      </div>
+                    )}
+
+                    <div className={`group max-w-[92%] ${isUser ? 'order-first md:max-w-[68%]' : 'md:max-w-[88%] xl:max-w-[92%]'}`}>
+                      <div className={isUser
+                        ? 'rounded-3xl rounded-br-lg bg-blue-600 px-4 py-3 text-white shadow-sm'
+                        : `rounded-3xl rounded-bl-lg border px-4 py-3 text-slate-800 shadow-sm ${message.status === 'error' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'}`}
+                      >
+                        {isUser ? (
+                          <p className="whitespace-pre-wrap break-words leading-7">{message.content}</p>
+                        ) : (
+                          <div className="break-words text-sm md:text-[15px]">
+                            {message.id !== 'welcome' && message.status !== 'streaming' && (
+                              <AnswerCards parsed={parsed} onPrompt={sendMessage} onNavigate={router.push} onCopy={copyMessage} />
+                            )}
+                            {message.status === 'streaming' && !clean && <span className="inline-flex h-5 w-16 animate-pulse rounded-full bg-slate-100" />}
+                            {clean && <MarkdownMessage content={clean} />}
+                            {message.status === 'error' && (
+                              <button type="button" onClick={() => router.push('/settings')} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-red-700 underline underline-offset-2">
+                                Buka Settings → AI &amp; Integrations
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className={`mt-1 flex items-center gap-2 text-xs text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                        <span suppressHydrationWarning>{message.status === 'streaming' ? 'typing…' : (mounted ? formatTime(message.timestamp) : '')}</span>
+                        {!isUser && message.id !== 'welcome' && message.status !== 'streaming' && (
+                          <>
+                            <button type="button" onClick={() => copyMessage(message.content)} className="opacity-0 transition hover:text-slate-700 group-hover:opacity-100" aria-label="Copy assistant response">
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" onClick={() => saveInsight(message.content)} className="opacity-0 transition hover:text-slate-700 group-hover:opacity-100" aria-label="Save insight">
+                              <Save className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {isUser && (
+                      <div className="mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 sm:flex">
+                        <User className="h-5 w-5" />
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+
+              {isLoading && !messages.some((message) => message.status === 'streaming') && (
+                <div className="flex items-center gap-3">
+                  <div className="hidden h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 sm:flex">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                  <div className="rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Lagi baca data wallet...
+                    </div>
+                  </div>
+                </div>
               )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          <InsightRail summary={summary.data} isLoading={summary.isLoading} onAsk={sendMessage} onRefresh={summary.refresh} />
+        </main>
+
+        <footer className="border-t border-slate-200 bg-white/90 p-3 backdrop-blur-xl md:p-4">
+          {!selectedWallet && (
+            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <WalletCards className="h-4 w-4" />
+              Pilih wallet dulu buat aktifin chatbot.
+            </div>
+          )}
+
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendMessage();
+            }}
+            className="flex items-end gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 shadow-inner"
+          >
+            <Textarea
+              ref={inputRef}
+              placeholder="Tanya: 'safe to spend bulan ini berapa?'"
+              value={inputMessage}
+              onChange={(event) => setInputMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  sendMessage();
+                }
+              }}
+              rows={1}
+              disabled={disabled}
+              className="max-h-36 min-h-11 resize-none border-0 bg-transparent px-3 py-3 shadow-none focus-visible:ring-0"
+            />
+            <Button type="submit" disabled={!inputMessage.trim() || disabled} className="h-11 w-11 shrink-0 rounded-2xl p-0" aria-label="Send message">
+              {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
-        </CardFooter>
-      </Card>
-    </div>
+          <p className="mt-2 px-2 text-xs text-slate-400">
+            Enter kirim, Shift+Enter baris baru. Jawaban AI bisa salah — cek angka penting sebelum dipakai.
+          </p>
+        </footer>
+      </div>
+    </section>
   );
-} 
+}

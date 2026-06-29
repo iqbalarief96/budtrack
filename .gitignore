@@ -47,3 +47,9 @@ backups/
 *-env-backup
 cookies.txt
 tsconfig.tsbuildinfo
+
+# Playwright QA artifacts
+test-results/
+playwright-report/
+# DB backups
+*.db.bak-*
