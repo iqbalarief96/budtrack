@@ -53,3 +53,4 @@ test-results/
 playwright-report/
 # DB backups
 *.db.bak-*
+prisma/dev.db
