@@ -19,6 +19,7 @@ export default function SavingsRulesPanel() {
   const [rules, setRules] = useState<Rule[]>([])
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [form, setForm] = useState({ name: '', pattern: '', destinationWalletId: '', priority: 100, isRegex: false })
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const looksLikeRegex = (pattern: string) => /\\b|\||\(|\)|\[|\]|\^|\$|\+|\*|\?/.test(pattern)
 
@@ -27,27 +28,51 @@ export default function SavingsRulesPanel() {
   }
 
   const load = async () => {
-    const [rulesRes, migrationRes] = await Promise.all([
-      fetch('/api/savings/rules'),
-      fetch('/api/savings/migrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: true }) })
-    ])
+    const rulesRes = await fetch('/api/savings/rules')
     if (rulesRes.ok) setRules((await rulesRes.json()).rules ?? [])
+
+    const migrationRes = await fetch('/api/savings/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun: true, mappings: [] })
+    })
     if (migrationRes.ok) setWallets((await migrationRes.json()).data?.summary?.savingsWallets ?? [])
   }
 
   useEffect(() => { load() }, [])
 
   const createRule = async () => {
-    const res = await fetch('/api/savings/rules', {
-      method: 'POST',
+    const isEdit = editingId !== null
+    const url = isEdit ? `/api/savings/rules/${editingId}` : '/api/savings/rules'
+    const method = isEdit ? 'PATCH' : 'POST'
+
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
     const data = await res.json()
-    if (!res.ok) return toast.error(data.error || 'Gagal bikin rule')
-    toast.success('Savings rule dibuat')
+    if (!res.ok) return toast.error(data.error || `Gagal ${isEdit ? 'update' : 'bikin'} rule`)
+    toast.success(`Savings rule ${isEdit ? 'diupdate' : 'dibuat'}`)
     setForm({ name: '', pattern: '', destinationWalletId: '', priority: 100, isRegex: false })
+    setEditingId(null)
     load()
+  }
+
+  const startEdit = (rule: Rule) => {
+    setEditingId(rule.id)
+    setForm({
+      name: rule.name,
+      pattern: rule.pattern,
+      destinationWalletId: rule.destinationWalletId,
+      priority: rule.priority,
+      isRegex: rule.isRegex
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setForm({ name: '', pattern: '', destinationWalletId: '', priority: 100, isRegex: false })
   }
 
   const toggleRule = async (rule: Rule) => {
@@ -83,16 +108,20 @@ export default function SavingsRulesPanel() {
           <label htmlFor="savings-rule-regex" className="select-none">Regex</label>
         </div>
         <input className="rounded border px-3 py-2 text-sm" type="number" aria-label="Priority" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} />
-        <button onClick={createRule} disabled={!form.name || !form.pattern || !form.destinationWalletId} className="rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">Tambah Rule</button>
+        <div className="flex gap-2">
+          <button onClick={createRule} disabled={!form.name || !form.pattern || !form.destinationWalletId} className="rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50 flex-1">{editingId ? 'Simpan' : 'Tambah Rule'}</button>
+          {editingId && <button onClick={cancelEdit} className="rounded bg-gray-200 px-3 py-2 text-sm text-gray-700">Batal</button>}
+        </div>
       </div>
       <div className="space-y-2">
         {rules.map((rule) => (
-          <div key={rule.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+          <div key={rule.id} className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${editingId === rule.id ? 'bg-blue-50 border-blue-300' : ''}`}>
             <div>
               <div className="font-medium">{rule.name} → {rule.destinationWallet?.name || rule.destinationWalletId}</div>
               <div className="text-gray-500">Pattern: {rule.pattern} • Regex {rule.isRegex ? 'ON' : 'OFF'} • Priority {rule.priority} • {rule.isActive ? 'Active' : 'Inactive'}</div>
             </div>
             <div className="flex gap-2">
+              <button onClick={() => startEdit(rule)} className="rounded bg-blue-100 px-2 py-1 text-blue-700">Edit</button>
               <button onClick={() => toggleRule(rule)} className="rounded bg-gray-100 px-2 py-1">{rule.isActive ? 'Disable' : 'Enable'}</button>
               <button onClick={() => deleteRule(rule)} className="rounded bg-red-100 px-2 py-1 text-red-700">Delete</button>
             </div>

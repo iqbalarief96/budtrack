@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, CreditCard, MoreHorizontal, Edit, Trash2 } from 'lucide-react'
 import WalletSavingsDetail from '@/app/components/wallet/WalletSavingsDetail'
+import CategoryCombobox from '@/app/components/CategoryCombobox'
 
 // Function untuk format currency
 const formatCurrency = (amount: number, currencyCode = 'IDR') => {
@@ -576,21 +577,11 @@ export default function WalletDetailPage({ params }: { params: { walletId: strin
 
               <div>
                 <label className="block text-sm font-medium mb-1">Category</label>
-                <select
-                  className="w-full px-4 py-2 border rounded-lg"
+                <CategoryCombobox
+                  categories={categories.filter(category => category.type === transactionFormData.type)}
                   value={transactionFormData.categoryId}
-                  onChange={e => setTransactionFormData({...transactionFormData, categoryId: e.target.value})}
-                >
-                  <option value="">Select a category</option>
-                  {categories
-                    .filter(category => category.type === transactionFormData.type)
-                    .map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))
-                  }
-                </select>
+                  onChange={categoryId => setTransactionFormData({...transactionFormData, categoryId})}
+                />
               </div>
 
               <div>
@@ -685,21 +676,11 @@ export default function WalletDetailPage({ params }: { params: { walletId: strin
 
               <div>
                 <label className="block text-sm font-medium mb-1">Category</label>
-                <select
-                  className="w-full px-4 py-2 border rounded-lg"
+                <CategoryCombobox
+                  categories={categories.filter(category => category.type === transactionFormData.type)}
                   value={transactionFormData.categoryId}
-                  onChange={e => setTransactionFormData({...transactionFormData, categoryId: e.target.value})}
-                >
-                  <option value="">Select a category</option>
-                  {categories
-                    .filter(category => category.type === transactionFormData.type)
-                    .map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))
-                  }
-                </select>
+                  onChange={categoryId => setTransactionFormData({...transactionFormData, categoryId})}
+                />
               </div>
 
               <div>

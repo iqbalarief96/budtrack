@@ -99,7 +99,8 @@ const WalletsPage = () => {
     name: '',
     color: '#1976D2',
     isDefault: false,
-    icon: 'FiCreditCard'
+    icon: 'FiCreditCard',
+    type: 'MAIN'
   })
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -198,20 +199,23 @@ const WalletsPage = () => {
       name: '',
       color: '#1976D2',
       isDefault: false,
-      icon: 'FiCreditCard'
+      icon: 'FiCreditCard',
+      type: 'MAIN'
     })
+    setIsAddModalOpen(false)
     setEditingWallet(null)
     setError('')
   }
 
-  // Handle edit wallet
-  const handleEditWallet = (wallet: Wallet) => {
+  // Open edit modal
+  const handleEditWallet = (wallet: any) => {
     setEditingWallet(wallet)
     setFormData({
       name: wallet.name,
       color: wallet.color || '#1976D2',
       isDefault: wallet.isDefault,
-      icon: wallet.icon || 'FiCreditCard'
+      icon: wallet.icon || 'FiCreditCard',
+      type: wallet.type || 'MAIN'
     })
     setIsAddModalOpen(true)
   }
@@ -890,6 +894,26 @@ const WalletsPage = () => {
                   placeholder="Contoh: Dompet Utama"
                   required
                 />
+              </div>
+
+              {/* Wallet Type */}
+              <div>
+                <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipe Dompet
+                </label>
+                <select
+                  id="type"
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="MAIN">Dompet Utama</option>
+                  <option value="SAVINGS">Tabungan</option>
+                  <option value="INVESTMENT">Investasi</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Pilih Tabungan supaya bisa dipakai sebagai tujuan Auto-rules Tabungan.
+                </p>
               </div>
 
               {/* Wallet Icon */}

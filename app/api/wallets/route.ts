@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     const body = await request.json()
 
     // Validate input with Zod
-    const { name, color, icon, balance } = WalletSchema.parse(body)
+    const { name, color, icon, balance, type } = WalletSchema.parse(body) as any
 
     // First check if user exists
     const user = await prisma.user.findUnique({
@@ -124,7 +124,8 @@ export async function POST(request: Request) {
         balance: parseFloat(balance.toString()),
         userId: session.user.id,
         color,
-        icon
+        icon,
+        type: type || 'MAIN'
       }
     })
 
@@ -155,7 +156,7 @@ export async function PUT(request: Request) {
     }
 
     // Validate input with Zod (partial allows optional fields for updates)
-    const { name, color, icon, isDefault } = WalletSchema.partial().parse(updateFields)
+    const { name, color, icon, isDefault, type } = WalletSchema.partial().parse(updateFields) as any
 
     // Check if wallet exists and belongs to user
     const wallet = await prisma.wallet.findUnique({
@@ -206,6 +207,7 @@ export async function PUT(request: Request) {
         name,
         color,
         icon,
+        type: type ?? wallet.type,
         isDefault: isDefault ?? wallet.isDefault
       }
     })

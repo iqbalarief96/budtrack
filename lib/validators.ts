@@ -68,7 +68,7 @@ export type BudgetInput = z.infer<typeof BudgetSchema>
  */
 export const WalletSchema = z.object({
   name: z.string().min(1, 'Wallet name is required'),
-  type: z.enum(['BANK', 'CASH', 'CARD', 'EWALLET'], {
+  type: z.enum(['MAIN', 'SAVINGS', 'INVESTMENT'], {
     errorMap: () => ({ message: 'Invalid wallet type' })
   }).optional(),
   balance: z.union([
