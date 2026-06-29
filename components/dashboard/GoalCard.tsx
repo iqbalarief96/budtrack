@@ -20,6 +20,13 @@ interface GoalCardProps {
     estimatedMonths?: number | null;
     averageMonthly?: number;
     status: string;
+    walletContributions?: Array<{
+      walletId: string;
+      walletName: string;
+      walletColor?: string | null;
+      contributionAmount: number;
+      transactionCount: number;
+    }>;
   };
   onUpdate?: (id: string, data: any) => void;
   onDelete?: (id: string) => void;
@@ -29,7 +36,7 @@ interface GoalCardProps {
 export function GoalCard({ goal, onUpdate, onDelete, onEdit }: GoalCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
-  const progress = (goal.current / goal.target) * 100;
+  const progress = goal.target > 0 ? Math.min((goal.current / goal.target) * 100, 100) : 0;
   const remaining = goal.target - goal.current;
   
   // Parse and validate the target date
@@ -192,7 +199,30 @@ export function GoalCard({ goal, onUpdate, onDelete, onEdit }: GoalCardProps) {
                 </div>
               </div>
             )}
-            
+
+            {goal.walletContributions && goal.walletContributions.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-gray-100 p-4">
+                <p className="text-sm font-medium text-gray-700">Wallet Contributions</p>
+                <div className="space-y-2">
+                  {goal.walletContributions.map((contribution) => (
+                    <div key={contribution.walletId} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: contribution.walletColor || '#6366f1' }}
+                        />
+                        <span>{contribution.walletName}</span>
+                        <span className="text-xs text-gray-400">({contribution.transactionCount} tx)</span>
+                      </div>
+                      <span className="font-medium text-gray-900">
+                        {formatCurrency(contribution.contributionAmount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={(e) => {
                 e.preventDefault(); // Prevent the Link from being triggered
@@ -202,13 +232,17 @@ export function GoalCard({ goal, onUpdate, onDelete, onEdit }: GoalCardProps) {
                 View Details
               </Button>
 
-              <Button variant="outline" className="w-auto" onClick={handleEdit}>
-                <FiEdit className="h-4 w-4" />
-              </Button>
+              {onEdit && (
+                <Button variant="outline" className="w-auto" onClick={handleEdit}>
+                  <FiEdit className="h-4 w-4" />
+                </Button>
+              )}
 
-              <Button variant="destructive" className="w-auto" onClick={handleDelete} disabled={isDeleting}>
-                <FiTrash2 className="h-4 w-4" />
-              </Button>
+              {onDelete && (
+                <Button variant="destructive" className="w-auto" onClick={handleDelete} disabled={isDeleting}>
+                  <FiTrash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>

@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { provider, apiKey, selectedModel, type = 'chatbot' } = body
+    const { provider, apiKey, selectedModel, customEndpoint, type = 'chatbot' } = body
 
     if (!apiKey) {
       return NextResponse.json(
@@ -68,9 +68,16 @@ export async function POST(request: Request) {
       }
 
       // Validate provider
-      if (!['deepseek', 'openrouter'].includes(provider)) {
+      if (!['deepseek', 'openrouter', 'custom'].includes(provider)) {
         return NextResponse.json(
           { error: 'Invalid provider' },
+          { status: 400 }
+        )
+      }
+
+      if (provider === 'custom' && !customEndpoint) {
+        return NextResponse.json(
+          { error: 'Custom endpoint is required' },
           { status: 400 }
         )
       }
@@ -82,7 +89,8 @@ export async function POST(request: Request) {
         message: 'Chatbot API key verified successfully',
         data: {
           provider,
-          selectedModel
+          selectedModel,
+          customEndpoint
         }
       })
     }

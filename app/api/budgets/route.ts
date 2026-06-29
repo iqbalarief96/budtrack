@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Use ACTUAL budget dates instead of current month
-    const budgetsWithSpending: BudgetWithRelations[] = await Promise.all(
+    const budgetsWithSpending = await Promise.all(
       budgets.map(async (budget) => {
         const { spent, percentage, remaining } = await calculateBudgetDetails({
           id: budget.id,
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       
       if (!selectedCategory) {
         console.warn("Selected category not found, will use default instead");
-        categoryId = null; // Reset to null so we'll use the default
+        categoryId = undefined; // Reset so we'll use the default
       }
     }
     

@@ -8,11 +8,13 @@ import {
 import { useSession } from 'next-auth/react'
 import { useTheme } from '../providers/ThemeProvider'
 import MigrateSavingsButton from '@/components/MigrateSavingsButton'
+import SavingsRulesPanel from '@/components/savings/SavingsRulesPanel'
 
 interface AISettings {
-  provider: 'deepseek' | 'openrouter'
+  provider: 'deepseek' | 'openrouter' | 'custom'
   apiKey: string
   selectedModel: string
+  customEndpoint?: string
   openaiApiKey?: string
   geminiApiKey?: string
   googleVisionCredentials?: string
@@ -21,7 +23,12 @@ interface AISettings {
 type TabType = 'profile' | 'appearance' | 'notifications' | 'ai' | 'security'
 
 const models = {
-  deepseek: ['deepseek-chat', 'deepseek-coder'],
+  deepseek: [
+    'deepseek-v4-pro',
+    'deepseek-v4-flash',
+    'deepseek-chat',
+    'deepseek-reasoner',
+  ],
   openrouter: [
     'google/gemini-2.0-flash-thinking-exp:free',
     'google/gemini-2.0-flash-thinking-exp-1219:free',
@@ -40,6 +47,13 @@ const models = {
     'meta-llama/llama-2-70b-chat',
     'mistral-ai/mistral-large',
   ],
+  custom: [],
+}
+
+const providerLabels = {
+  deepseek: 'DeepSeek',
+  openrouter: 'OpenRouter',
+  custom: 'Custom Endpoint',
 }
 
 const SettingsPage = () => {
@@ -55,6 +69,7 @@ const SettingsPage = () => {
     provider: 'deepseek',
     apiKey: '',
     selectedModel: models.deepseek[0],
+    customEndpoint: '',
     openaiApiKey: '',
     geminiApiKey: '',
     googleVisionCredentials: '',
@@ -66,6 +81,9 @@ const SettingsPage = () => {
   const [verifyingGemini, setVerifyingGemini] = useState(false)
   const [verifiedGemini, setVerifiedGemini] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>(models.deepseek)
+  const [modelSearch, setModelSearch] = useState('')
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false)
+  const [fetchingModels, setFetchingModels] = useState(false)
   const [uploadingVision, setUploadingVision] = useState(false)
   const [visionFileName, setVisionFileName] = useState<string | null>(null)
 
@@ -87,7 +105,9 @@ const SettingsPage = () => {
   }, [session])
 
   useEffect(() => {
-    setAvailableModels(models[aiSettings.provider])
+    const defaults = models[aiSettings.provider]
+    setAvailableModels((prev) => aiSettings.provider === 'custom' ? prev : defaults)
+    setModelSearch('')
   }, [aiSettings.provider])
 
   const fetchSettings = async () => {
@@ -97,11 +117,13 @@ const SettingsPage = () => {
       const data = await response.json()
 
       if (data.provider && data.apiKey) {
-        const defaultModel = models[data.provider as 'deepseek' | 'openrouter'][0]
+        const provider = (data.provider || 'deepseek') as AISettings['provider']
+        const defaultModel = models[provider]?.[0] || ''
         setAiSettings({
-          provider: data.provider,
+          provider,
           apiKey: data.apiKey,
           selectedModel: data.selectedModel || defaultModel,
+          customEndpoint: data.customEndpoint || '',
           openaiApiKey: data.openaiApiKey || '',
           geminiApiKey: data.geminiApiKey || '',
           googleVisionCredentials: data.googleVisionCredentials || '',
@@ -139,6 +161,7 @@ const SettingsPage = () => {
                 ? aiSettings.openaiApiKey
                 : aiSettings.geminiApiKey,
           selectedModel: aiSettings.selectedModel,
+          customEndpoint: aiSettings.customEndpoint,
           type,
         }),
       })
@@ -163,6 +186,36 @@ const SettingsPage = () => {
     }
   }
 
+  const fetchProviderModels = async () => {
+    setFetchingModels(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/settings/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiSettings.provider,
+          apiKey: aiSettings.apiKey,
+          customEndpoint: aiSettings.customEndpoint,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch models')
+      const fetched = data.models || []
+      setAvailableModels(fetched)
+      setModelSearch('')
+      setModelDropdownOpen(true)
+      if (!fetched.includes(aiSettings.selectedModel)) {
+        setAiSettings((prev) => ({ ...prev, selectedModel: fetched[0] || prev.selectedModel }))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch models')
+    } finally {
+      setFetchingModels(false)
+    }
+  }
+
   const saveSettings = async () => {
     setLoading(true)
     setError(null)
@@ -176,6 +229,7 @@ const SettingsPage = () => {
           provider: aiSettings.provider,
           apiKey: aiSettings.apiKey,
           selectedModel: aiSettings.selectedModel,
+          customEndpoint: aiSettings.customEndpoint,
           openaiApiKey: aiSettings.openaiApiKey,
           geminiApiKey: aiSettings.geminiApiKey,
           googleVisionCredentials: aiSettings.googleVisionCredentials,
@@ -207,6 +261,11 @@ const SettingsPage = () => {
     { id: 'ai' as TabType, label: 'AI & Integrations', icon: <FiCpu size={18} /> },
     { id: 'security' as TabType, label: 'Security', icon: <FiShield size={18} /> },
   ]
+
+  const filteredModels = availableModels.filter((model) =>
+    model.toLowerCase().includes(modelSearch.toLowerCase())
+  )
+  const visibleModels = filteredModels.slice(0, 80)
 
   if (!session) {
     return (
@@ -470,27 +529,41 @@ const SettingsPage = () => {
                   {/* Provider Selection */}
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {(['deepseek', 'openrouter'] as const).map((provider) => (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {(['deepseek', 'openrouter', 'custom'] as const).map((provider) => (
                         <button
                           key={provider}
-                          onClick={() => setAiSettings((prev) => ({ ...prev, provider, selectedModel: models[provider][0] }))}
+                          onClick={() => setAiSettings((prev) => ({ ...prev, provider, selectedModel: models[provider][0] || prev.selectedModel }))}
                           className={`p-4 border-2 rounded-lg transition-all ${
                             aiSettings.provider === provider
                               ? 'border-blue-600 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <p className="font-medium capitalize">{provider}</p>
+                          <p className="font-medium">{providerLabels[provider]}</p>
                         </button>
                       ))}
                     </div>
                   </div>
 
+                  {aiSettings.provider === 'custom' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Custom endpoint base URL</label>
+                      <input
+                        type="url"
+                        value={aiSettings.customEndpoint || ''}
+                        onChange={(e) => setAiSettings((prev) => ({ ...prev, customEndpoint: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="https://example.com/v1"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">OpenAI-compatible base URL. Models fetched from <code>/models</code>.</p>
+                    </div>
+                  )}
+
                   {/* Main API Key */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {aiSettings.provider === 'deepseek' ? 'DeepSeek' : 'OpenRouter'} API Key
+                      {providerLabels[aiSettings.provider]} API Key
                     </label>
                     <input
                       type="password"
@@ -518,18 +591,84 @@ const SettingsPage = () => {
 
                   {/* Model Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
-                    <select
-                      value={aiSettings.selectedModel}
-                      onChange={(e) => setAiSettings((prev) => ({ ...prev, selectedModel: e.target.value }))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      {availableModels.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">Model</label>
+                      <button
+                        type="button"
+                        onClick={fetchProviderModels}
+                        disabled={fetchingModels || !aiSettings.apiKey || (aiSettings.provider === 'custom' && !aiSettings.customEndpoint)}
+                        className="inline-flex items-center px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {fetchingModels ? <FiRefreshCw className="animate-spin mr-2" size={14} /> : null}
+                        Fetch /models
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={aiSettings.selectedModel}
+                        onFocus={() => setModelDropdownOpen(true)}
+                        onChange={(e) => setAiSettings((prev) => ({ ...prev, selectedModel: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Type model id manually"
+                      />
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="search"
+                          value={modelSearch}
+                          onFocus={() => setModelDropdownOpen(true)}
+                          onChange={(e) => {
+                            setModelSearch(e.target.value)
+                            setModelDropdownOpen(true)
+                          }}
+                          className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Search models..."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setModelDropdownOpen((open) => !open)}
+                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50"
+                        >
+                          {modelDropdownOpen ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+
+                      {modelDropdownOpen && (
+                        <div className="mt-2 w-full max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                          <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                            <span>{filteredModels.length} models found</span>
+                            {filteredModels.length > visibleModels.length && <span>showing first {visibleModels.length}</span>}
+                          </div>
+                          {visibleModels.length > 0 ? (
+                            visibleModels.map((model) => (
+                              <button
+                                key={model}
+                                type="button"
+                                onClick={() => {
+                                  setAiSettings((prev) => ({ ...prev, selectedModel: model }))
+                                  setModelDropdownOpen(false)
+                                }}
+                                className={`block w-full px-3 py-2 text-left text-sm hover:bg-blue-50 ${
+                                  aiSettings.selectedModel === model ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                                }`}
+                              >
+                                {model}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-6 text-center text-sm text-gray-500">
+                              No models found. Type model id manually above.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="mt-1 text-xs text-gray-500">
+                      Selected: <code>{aiSettings.selectedModel || 'none'}</code>. Manual typing still allowed.
+                    </p>
                   </div>
 
                   {/* Optional Keys */}
@@ -708,6 +847,8 @@ const SettingsPage = () => {
                   <div>
                     <MigrateSavingsButton />
                   </div>
+
+                  <SavingsRulesPanel />
 
                   {/* Delete Account */}
                   <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200">

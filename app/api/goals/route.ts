@@ -21,9 +21,15 @@ export async function GET(request: NextRequest) {
       isArchived: false
     };
     
-    // Add walletId filter if provided
+    // Goals are not directly linked to wallets in the schema. When a wallet is
+    // selected, show goals backed by real transactions from that wallet.
     if (walletId) {
-      whereClause.walletId = walletId;
+      whereClause.transactions = {
+        some: {
+          walletId,
+          userId: session.user.id,
+        },
+      };
     }
     
     const goals = await prisma.goal.findMany({

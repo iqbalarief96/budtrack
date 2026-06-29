@@ -23,6 +23,15 @@ export const TransactionSchema = z.object({
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
   goalId: z.string().optional(),
+  receiptAttachment: z.object({
+    fileName: z.string().min(1, 'Receipt file name is required'),
+    mimeType: z.string().min(1, 'Receipt MIME type is required'),
+    size: z.number().int().nonnegative('Receipt file size must be non-negative'),
+    source: z.string().optional(),
+    storageUrl: z.string().url().optional(),
+    extractedText: z.string().optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }).optional(),
 })
 
 export type TransactionInput = z.infer<typeof TransactionSchema>

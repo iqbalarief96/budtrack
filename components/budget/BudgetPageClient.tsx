@@ -36,6 +36,12 @@ interface AggregatedBudget {
 export default function BudgetPageClient({ initialBudgets, categories, wallets }: Props) {
   const { selectedWallet, selectedGroup, isGroupSelected } = useWallet();
   const [groupBudgets, setGroupBudgets] = useState<AggregatedBudget[]>([]);
+  const [groupBudgetSummary, setGroupBudgetSummary] = useState({
+    totalBudgeted: 0,
+    totalSpent: 0,
+    totalRemaining: 0,
+    overallUtilization: 0,
+  });
   const [isLoadingGroupBudgets, setIsLoadingGroupBudgets] = useState(false);
 
   // Filter budgets for selected wallet
@@ -48,6 +54,7 @@ export default function BudgetPageClient({ initialBudgets, categories, wallets }
     const fetchGroupBudgets = async () => {
       if (!isGroupSelected || !selectedGroup) {
         setGroupBudgets([]);
+        setGroupBudgetSummary({ totalBudgeted: 0, totalSpent: 0, totalRemaining: 0, overallUtilization: 0 });
         return;
       }
 
@@ -58,7 +65,14 @@ export default function BudgetPageClient({ initialBudgets, categories, wallets }
           const responseData = await response.json();
           // API returns { success: true, data: {...} } format
           const data = responseData.data || responseData;
-          setGroupBudgets(data.budgets || data || []);
+          const budgets = data.budgets || data || [];
+          setGroupBudgets(budgets);
+          setGroupBudgetSummary({
+            totalBudgeted: data.totalBudgeted || budgets.reduce((sum: number, budget: AggregatedBudget) => sum + budget.budgetAmount, 0),
+            totalSpent: data.totalSpent || budgets.reduce((sum: number, budget: AggregatedBudget) => sum + budget.spentAmount, 0),
+            totalRemaining: data.totalRemaining ?? budgets.reduce((sum: number, budget: AggregatedBudget) => sum + budget.remainingAmount, 0),
+            overallUtilization: data.overallUtilization || 0,
+          });
         }
       } catch (error) {
         console.error('Error fetching group budgets:', error);
@@ -104,9 +118,29 @@ export default function BudgetPageClient({ initialBudgets, categories, wallets }
       {/* Group Budget View */}
       {isGroupSelected && selectedGroup ? (
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold">
-            Aggregated Budgets - {selectedGroup.name}
-          </h2>
+          <div className="flex flex-col gap-3">
+            <h2 className="text-xl font-semibold">
+              Aggregated Budgets - {selectedGroup.name}
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="bg-white rounded-lg border p-4">
+                <p className="text-xs text-gray-500">Group Budgeted</p>
+                <p className="text-lg font-semibold text-gray-900">{formatCurrency(groupBudgetSummary.totalBudgeted)}</p>
+              </div>
+              <div className="bg-white rounded-lg border p-4">
+                <p className="text-xs text-gray-500">Group Spent</p>
+                <p className="text-lg font-semibold text-red-600">{formatCurrency(groupBudgetSummary.totalSpent)}</p>
+              </div>
+              <div className="bg-white rounded-lg border p-4">
+                <p className="text-xs text-gray-500">Remaining</p>
+                <p className={groupBudgetSummary.totalRemaining >= 0 ? 'text-lg font-semibold text-green-600' : 'text-lg font-semibold text-red-600'}>{formatCurrency(groupBudgetSummary.totalRemaining)}</p>
+              </div>
+              <div className="bg-white rounded-lg border p-4">
+                <p className="text-xs text-gray-500">Utilization</p>
+                <p className="text-lg font-semibold text-gray-900">{groupBudgetSummary.overallUtilization.toFixed(0)}%</p>
+              </div>
+            </div>
+          </div>
           
           {isLoadingGroupBudgets ? (
             <div className="text-center py-8">
