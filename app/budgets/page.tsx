@@ -3,37 +3,9 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import BudgetPageClient from "@/components/budget/BudgetPageClient";
-
-// Define proper types if not imported
-interface Budget {
-  id: string;
-  amount: number;
-  startDate: Date;
-  endDate: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-  walletId: string;
-  categoryId: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  type: "INCOME" | "EXPENSE" | "BOTH";
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-}
-
-interface Wallet {
-  id: string;
-  name: string;
-  balance: number;
-  createdAt: Date;
-  updatedAt: Date;
-  userId: string;
-}
+import type { Budget } from "@/app/types/budget";
+import type { Category } from "@/app/types/category";
+import type { Wallet } from "@/app/types/wallet";
 
 interface BudgetWithRelations extends Budget {
   category: Category;

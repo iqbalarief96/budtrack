@@ -68,14 +68,26 @@ export async function getAggregatedBudgets(
     }
   }
 
-  // Get all active budgets for wallets in the group
+  // Get budgets for wallets in the group. Without an explicit date range,
+  // use currently-active budgets. With a date range, include budgets that
+  // overlap that range so reports can inspect historical periods.
   const now = new Date()
+  const budgetWhere = dateRange?.startDate || dateRange?.endDate
+    ? {
+        walletId: { in: walletIds },
+        userId,
+        ...(dateRange.startDate ? { endDate: { gte: dateRange.startDate } } : {}),
+        ...(dateRange.endDate ? { startDate: { lte: dateRange.endDate } } : {}),
+      }
+    : {
+        walletId: { in: walletIds },
+        userId,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      }
+
   const budgets = await prisma.budget.findMany({
-    where: {
-      walletId: { in: walletIds },
-      userId,
-      endDate: { gte: now },
-    },
+    where: budgetWhere,
     include: {
       category: {
         select: {
@@ -92,9 +104,12 @@ export async function getAggregatedBudgets(
         },
       },
     },
+    orderBy: [{ category: { name: 'asc' } }, { startDate: 'desc' }],
   })
 
-  // Group budgets by category and aggregate
+  // Group budgets by category and keep every wallet budget period. This avoids
+  // the old current-month shortcut and calculates spending from real
+  // transactions inside each budget's actual start/end dates.
   const categoryBudgetMap = new Map<string, {
     categoryId: string
     categoryName: string
@@ -102,7 +117,13 @@ export async function getAggregatedBudgets(
     categoryColor: string | null
     totalBudget: number
     budgetIds: string[]
-    walletBudgets: Map<string, { walletId: string; walletName: string; budgetAmount: number }>
+    budgetPeriods: Array<{
+      walletId: string
+      walletName: string
+      budgetAmount: number
+      startDate: Date
+      endDate: Date
+    }>
   }>()
 
   for (const budget of budgets) {
@@ -117,43 +138,48 @@ export async function getAggregatedBudgets(
         categoryColor: budget.category.color,
         totalBudget: 0,
         budgetIds: [],
-        walletBudgets: new Map(),
+        budgetPeriods: [],
       })
     }
 
     const categoryData = categoryBudgetMap.get(categoryId)!
     categoryData.totalBudget += budget.amount
     categoryData.budgetIds.push(budget.id)
-    categoryData.walletBudgets.set(budget.wallet.id, {
+    categoryData.budgetPeriods.push({
       walletId: budget.wallet.id,
       walletName: budget.wallet.name,
       budgetAmount: budget.amount,
+      startDate: budget.startDate,
+      endDate: budget.endDate,
     })
   }
 
-  // Calculate spending for each category across all wallets
+  // Calculate spending for each budget period and aggregate by category/wallet.
   const aggregatedBudgets: AggregatedBudget[] = []
   let totalBudgeted = 0
   let totalSpent = 0
 
   for (const [categoryId, categoryData] of categoryBudgetMap) {
-    // Get spending for this category from all wallets in the group
-    const walletContributions: WalletBudgetContribution[] = []
+    const contributionMap = new Map<string, WalletBudgetContribution>()
     let categorySpent = 0
 
-    for (const member of group.wallets) {
+    for (const period of categoryData.budgetPeriods) {
+      const effectiveStart = dateRange?.startDate && dateRange.startDate > period.startDate
+        ? dateRange.startDate
+        : period.startDate
+      const effectiveEnd = dateRange?.endDate && dateRange.endDate < period.endDate
+        ? dateRange.endDate
+        : period.endDate
+
       const walletSpending = await prisma.transaction.aggregate({
         where: {
-          walletId: member.walletId,
+          walletId: period.walletId,
           userId,
           categoryId,
           type: { in: ['expense', 'EXPENSE'] },
-          date: dateRange ? {
-            gte: dateRange.startDate,
-            lte: dateRange.endDate,
-          } : {
-            gte: new Date(now.getFullYear(), now.getMonth(), 1), // Current month start
-            lte: now,
+          date: {
+            gte: effectiveStart,
+            lte: effectiveEnd,
           },
         },
         _sum: { amount: true },
@@ -162,20 +188,26 @@ export async function getAggregatedBudgets(
       const spent = walletSpending._sum.amount || 0
       categorySpent += spent
 
-      walletContributions.push({
-        walletId: member.walletId,
-        walletName: member.wallet.name,
-        spent,
-      })
+      const existing = contributionMap.get(period.walletId)
+      if (existing) {
+        existing.spent += spent
+      } else {
+        contributionMap.set(period.walletId, {
+          walletId: period.walletId,
+          walletName: period.walletName,
+          spent,
+        })
+      }
     }
 
+    const walletContributions = Array.from(contributionMap.values())
     const remainingAmount = categoryData.totalBudget - categorySpent
     const percentage = categoryData.totalBudget > 0 
       ? (categorySpent / categoryData.totalBudget) * 100 
       : 0
 
     aggregatedBudgets.push({
-      budgetId: categoryData.budgetIds[0], // Use first budget ID as reference
+      budgetId: categoryData.budgetIds[0],
       categoryId,
       categoryName: categoryData.categoryName,
       categoryIcon: categoryData.categoryIcon,

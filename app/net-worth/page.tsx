@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import {
   NetWorthCard,
   NetWorthBreakdown,
@@ -20,7 +21,47 @@ import type {
   CreateGoalInput,
   UpdateGoalInput,
 } from '@/app/types/net-worth'
-import { FiDollarSign, FiRefreshCw, FiPlus, FiCamera } from 'react-icons/fi'
+import { FiDollarSign, FiRefreshCw, FiPlus, FiCamera, FiHome, FiMap, FiTrendingUp } from 'react-icons/fi'
+
+type NetWorthAggregation = {
+  walletAssets: number
+  debtLiabilities: number
+  creditCardLiabilities: number
+  availableCash: number
+  investmentAssets: number
+}
+
+type HouseholdSummary = {
+  groups: Array<{
+    id: string
+    name: string
+    walletCount: number
+    totalAssets: number
+    netWorthShare: number
+  }>
+  totalGroupedAssets: number
+}
+
+type RoadmapItem = {
+  id: string
+  title: string
+  description: string
+  priority: 'high' | 'medium' | 'low'
+  impact: number
+}
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(amount || 0)
+
+const priorityVariant = (priority: RoadmapItem['priority']) => {
+  if (priority === 'high') return 'destructive'
+  if (priority === 'medium') return 'default'
+  return 'secondary'
+}
 
 /**
  * Net Worth Tracker Page
@@ -33,6 +74,9 @@ export default function NetWorthPage() {
   const [calculation, setCalculation] = useState<NetWorthCalculation | null>(null)
   const [change, setChange] = useState<PercentageChange | null>(null)
   const [previousNetWorth, setPreviousNetWorth] = useState<number | null>(null)
+  const [aggregation, setAggregation] = useState<NetWorthAggregation | null>(null)
+  const [household, setHousehold] = useState<HouseholdSummary | null>(null)
+  const [roadmap, setRoadmap] = useState<RoadmapItem[]>([])
   
   // State for history
   const [snapshots, setSnapshots] = useState<NetWorthSnapshot[]>([])
@@ -62,6 +106,9 @@ export default function NetWorthPage() {
       setCalculation(data.calculation)
       setChange(data.change)
       setPreviousNetWorth(data.previousNetWorth)
+      setAggregation(data.aggregation || null)
+      setHousehold(data.household || null)
+      setRoadmap(data.roadmap || [])
     } catch (error) {
       console.error('Error fetching net worth:', error)
     } finally {
@@ -247,6 +294,73 @@ export default function NetWorthPage() {
             isLoading={isLoadingNetWorth}
           />
 
+          {/* Aggregation */}
+          {aggregation && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Wallet Assets</CardDescription>
+                  <CardTitle className="text-xl text-emerald-600">{formatCurrency(aggregation.walletAssets)}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Cash: {formatCurrency(aggregation.availableCash)}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Total Liabilities</CardDescription>
+                  <CardTitle className="text-xl text-red-600">
+                    {formatCurrency(aggregation.debtLiabilities + aggregation.creditCardLiabilities)}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Credit cards: {formatCurrency(aggregation.creditCardLiabilities)}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Investable Assets</CardDescription>
+                  <CardTitle className="text-xl text-blue-600">{formatCurrency(aggregation.investmentAssets)}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Real aggregation from wallets, debts, and credit cards
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Roadmap */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FiMap className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <CardTitle>Net Worth Roadmap</CardTitle>
+                  <CardDescription>Prioritas otomatis berdasarkan aset, utang, kartu kredit, dan cash buffer</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {roadmap.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Roadmap akan muncul setelah data net worth selesai dimuat.</p>
+              ) : (
+                roadmap.map((item) => (
+                  <div key={item.id} className="rounded-lg border p-4 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">{item.title}</h3>
+                      <Badge variant={priorityVariant(item.priority)}>{item.priority}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{item.description}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <FiTrendingUp className="h-3 w-3" />
+                      Potential impact: {formatCurrency(item.impact)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
           {/* History Chart */}
           <NetWorthChart
             snapshots={snapshots}
@@ -265,6 +379,42 @@ export default function NetWorthPage() {
 
         {/* Right Column - Goals */}
         <div className="space-y-6">
+          {/* Household Summary */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FiHome className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <CardTitle className="text-lg">Household Summary</CardTitle>
+                  <CardDescription>Ringkasan aset per wallet group</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!household || household.groups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada wallet group. Buat group untuk melihat ringkasan household.</p>
+              ) : (
+                <>
+                  <div className="rounded-lg bg-emerald-50 p-3 text-sm">
+                    <div className="text-muted-foreground">Grouped assets</div>
+                    <div className="font-semibold text-emerald-700">{formatCurrency(household.totalGroupedAssets)}</div>
+                  </div>
+                  {household.groups.map((group) => (
+                    <div key={group.id} className="rounded-lg border p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium">{group.name}</div>
+                        <Badge variant="outline">{group.walletCount} wallets</Badge>
+                      </div>
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        {formatCurrency(group.totalAssets)} · {group.netWorthShare.toFixed(1)}% of assets
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Goals Header */}
           <Card>
             <CardHeader>

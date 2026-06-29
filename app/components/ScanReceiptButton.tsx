@@ -4,8 +4,16 @@ import React, { useState, useRef } from 'react';
 import { FiCamera, FiUpload, FiLoader } from 'react-icons/fi';
 import { toast } from 'sonner';
 
+type ReceiptAttachmentDraft = {
+    fileName: string;
+    mimeType: string;
+    size: number;
+    source: string;
+    metadata: Record<string, unknown>;
+};
+
 interface ScanReceiptButtonProps {
-    onScanSuccess: (data: { amount: number; date: string; merchant: string; categoryId: string | null }) => void;
+    onScanSuccess: (data: { amount: number; date: string; merchant: string; categoryId: string | null; receiptAttachment?: ReceiptAttachmentDraft }) => void;
     className?: string;
 }
 
@@ -50,6 +58,18 @@ export default function ScanReceiptButton({ onScanSuccess, className = '' }: Sca
                 date: data.date,
                 merchant: data.merchant,
                 categoryId: data.categoryId,
+                receiptAttachment: {
+                    fileName: file.name,
+                    mimeType: file.type || 'application/octet-stream',
+                    size: file.size,
+                    source: 'receipt_scan',
+                    metadata: {
+                        lastModified: file.lastModified,
+                        scannedAt: new Date().toISOString(),
+                        parser: 'scan-receipt',
+                        extracted: data,
+                    },
+                },
             });
         } catch (error) {
             console.error('[ScanReceipt] Error:', error);

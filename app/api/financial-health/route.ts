@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { calculateFinancialHealthScore } from '@/lib/financialHealthScore'
+import prisma from '@/lib/prisma'
 
 /**
  * GET /api/financial-health
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
     // Get query parameters
     const { searchParams } = new URL(req.url)
     const walletId = searchParams.get('walletId') || undefined
+    const walletGroupId = searchParams.get('walletGroupId') || undefined
     const periodStr = searchParams.get('period')
     const period = periodStr ? parseInt(periodStr, 10) : 3
 
@@ -39,7 +41,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid period. Must be 1, 3, 6, or 12' }, { status: 400 })
     }
 
-    const healthScore = await calculateFinancialHealthScore(userId, walletId, period)
+    // Optional: scope to a personal Wallet Group (Wallet Linking). Resolve the
+    // group's linked wallet IDs and aggregate the score across them.
+    let walletIds: string[] | undefined
+    if (walletGroupId) {
+      const group = await prisma.walletGroup.findFirst({
+        where: { id: walletGroupId, userId },
+        include: { wallets: { select: { walletId: true } } },
+      })
+      if (!group) {
+        return NextResponse.json({ error: 'Wallet group not found' }, { status: 404 })
+      }
+      walletIds = group.wallets.map((w) => w.walletId)
+    }
+
+    const healthScore = await calculateFinancialHealthScore(userId, walletId, period, walletIds)
 
     return NextResponse.json(healthScore)
   } catch (error: any) {

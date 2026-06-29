@@ -1,0 +1,17 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@/app/api/auth/[...nextauth]/route",
+            "importNames": ["authOptions"],
+            "message": "Import authOptions from '@/lib/auth' instead. The [...nextauth]/route module only exports the GET/POST handler, NOT authOptions — importing it from here resolves to undefined and breaks getServerSession (401 errors)."
+          }
+        ]
+      }
+    ]
+  }
+}

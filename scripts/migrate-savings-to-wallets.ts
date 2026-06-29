@@ -1,79 +1,27 @@
-/**
- * Migration Script: Convert Savings Transactions to Savings Wallets
- * 
- * This script migrates the old system where savings were tracked as EXPENSE transactions
- * with SAVINGS category to the new system where each savings type has its own wallet.
- * 
- * What it does:
- * 1. Find all EXPENSE transactions with SAVINGS category
- * 2. Group them by savings type (Crypto, Properti, etc)
- * 3. Create SAVINGS wallets for each type
- * 4. Calculate total balance for each savings type
- * 5. Mark old transactions as migrated (add note)
- */
-
+import crypto from 'crypto'
 import prisma from '@/lib/prisma'
+import { detectSavingsBucket } from '@/lib/savings/savings-detection'
+import { findSavingsRuleDestination } from '@/lib/savings/savings-rules'
 
-const SAVINGS_KEYWORD_MAPPINGS = [
-  { label: 'Tabungan Darurat', keywords: ['darurat', 'emergency'], icon: '🚨', color: '#ef4444' },
-  { label: 'Tabungan Pendidikan', keywords: ['pendidikan', 'school', 'kuliah', 'education'], icon: '🎓', color: '#3b82f6' },
-  { label: 'Tabungan Liburan', keywords: ['liburan', 'travel', 'traveling', 'vacation', 'holiday', 'umroh', 'haji'], icon: '✈️', color: '#10b981' },
-  { label: 'Tabungan Pensiun', keywords: ['pensiun', 'retirement'], icon: '👴', color: '#8b5cf6' },
-  { label: 'Tabungan Properti', keywords: ['rumah', 'properti', 'property', 'kpr', 'house', 'apartemen', 'apartment'], icon: '🏠', color: '#f59e0b' },
-  { label: 'Tabungan Kendaraan', keywords: ['kendaraan', 'mobil', 'motor', 'car', 'bike'], icon: '🚗', color: '#06b6d4' },
-  { label: 'Tabungan Bank', keywords: ['bank', 'rekening', 'account'], icon: '🏦', color: '#6366f1' },
-  { label: 'Tabungan Emas', keywords: ['emas', 'gold', 'logam mulia'], icon: '🥇', color: '#eab308' },
-  { label: 'Tabungan Crypto', keywords: ['crypto', 'kripto', 'btc', 'bitcoin', 'eth', 'ethereum'], icon: '₿', color: '#f97316' },
-  { label: 'Tabungan Investasi', keywords: ['investasi', 'investment', 'reksa', 'reksadana', 'saham', 'stock', 'obligasi', 'bond'], icon: '📈', color: '#14b8a6' },
-  { label: 'Tabungan Deposito', keywords: ['deposito', 'deposit', 'term deposit'], icon: '💰', color: '#84cc16' },
-]
-
-const DEFAULT_SAVINGS = { label: 'Tabungan Lainnya', icon: '💵', color: '#64748b' }
-
-function determineSavingsType(description: string, categoryName: string): { label: string; icon: string; color: string } {
-  const searchText = `${description} ${categoryName}`.toLowerCase()
-  
-  const mapping = SAVINGS_KEYWORD_MAPPINGS.find(m => 
-    m.keywords.some(keyword => searchText.includes(keyword))
-  )
-  
-  if (mapping) {
-    return mapping
-  }
-  
-  // Try to extract from "Tabungan XXX" pattern
-  const match = searchText.match(/tabungan\s+([a-z0-9\s]+)/i)
-  if (match && match[1]) {
-    const extracted = match[1].trim()
-    return {
-      label: `Tabungan ${extracted.charAt(0).toUpperCase() + extracted.slice(1)}`,
-      icon: '💵',
-      color: '#64748b'
-    }
-  }
-  
-  return DEFAULT_SAVINGS
+type MigrationMapping = {
+  sourceTransactionId: string
+  destinationWalletId?: string
+  createWalletName?: string
+  icon?: string
+  color?: string
 }
 
-async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
-  const logs: string[] = []
-  const log = (message: string) => {
-    console.log(message)
-    logs.push(message)
-  }
+type SavingsTx = Awaited<ReturnType<typeof getSavingsTransactions>>[number]
 
-  log(`\n${'='.repeat(60)}`)
-  log(`Migration: Savings Transactions → Savings Wallets`)
-  log(`Mode: ${dryRun ? 'DRY RUN (no changes)' : 'LIVE (will make changes)'}`)
-  log(`User ID: ${userId}`)
-  log(`${'='.repeat(60)}\n`)
+function migratedDescription(tx: { description: string | null }) {
+  return `${tx.description || ''} (migrated from main wallet)`
+}
 
-  // 1. Find all savings transactions
-  // Note: We filter by category NAME containing "Savings" or "Tabungan"
-  // because the category type is "EXPENSE", not "SAVINGS"
-  const savingsTransactions = await prisma.transaction.findMany({
+async function getSavingsTransactions(userId: string, ids?: string[]) {
+  return prisma.transaction.findMany({
     where: {
       userId,
+      ...(ids?.length ? { id: { in: ids } } : {}),
       type: 'EXPENSE',
       category: {
         OR: [
@@ -81,234 +29,272 @@ async function migrateSavingsToWallets(userId: string, dryRun: boolean = true) {
           { name: { contains: 'savings' } },
           { name: { contains: 'Tabungan' } },
           { name: { contains: 'tabungan' } },
-          { type: { in: ['SAVINGS', 'Savings', 'savings'] } } // Fallback for proper setup
-        ]
-      }
+          { type: { in: ['SAVINGS', 'Savings', 'savings'] } },
+        ],
+      },
     },
-    include: {
-      category: true,
-      wallet: true
+    include: { category: true, wallet: true },
+    orderBy: { date: 'asc' },
+  })
+}
+
+async function findExistingMigrated(userId: string, tx: SavingsTx, walletId: string) {
+  const linked = await prisma.transaction.findFirst({
+    where: { userId, walletId, type: 'INCOME', migrationSourceTransactionId: tx.id },
+    select: { id: true, amount: true },
+  })
+  if (linked) return linked
+
+  const legacy = await prisma.transaction.findFirst({
+    where: {
+      userId,
+      walletId,
+      type: 'INCOME',
+      amount: tx.amount,
+      date: tx.date,
+      description: migratedDescription(tx),
     },
-    orderBy: {
-      date: 'asc'
-    }
+    select: { id: true, amount: true },
   })
 
-  log(`Found ${savingsTransactions.length} savings transactions\n`)
-
-  if (savingsTransactions.length === 0) {
-    log('No savings transactions found. Nothing to migrate.')
-    return { logs, summary: { total: 0, groups: 0 } }
-  }
-
-  // 2. Group by savings type
-  const savingsByType = new Map<string, {
-    label: string
-    icon: string
-    color: string
-    transactions: typeof savingsTransactions
-    totalAmount: number
-  }>()
-
-  for (const tx of savingsTransactions) {
-    const savingsType = determineSavingsType(
-      tx.description || '',
-      tx.category?.name || ''
-    )
-    
-    const key = savingsType.label
-    
-    if (!savingsByType.has(key)) {
-      savingsByType.set(key, {
-        label: savingsType.label,
-        icon: savingsType.icon,
-        color: savingsType.color,
-        transactions: [],
-        totalAmount: 0
-      })
-    }
-    
-    const group = savingsByType.get(key)!
-    group.transactions.push(tx)
-    group.totalAmount += tx.amount
-  }
-
-  log(`Grouped into ${savingsByType.size} savings types:\n`)
-  
-  // 3. Display summary
-  const groupSummary = []
-  for (const [label, data] of savingsByType) {
-    log(`${data.icon} ${label}`)
-    log(`   Transactions: ${data.transactions.length}`)
-    log(`   Total Amount: Rp ${data.totalAmount.toLocaleString('id-ID')}`)
-    log(`   Color: ${data.color}`)
-    log('')
-    
-    groupSummary.push({
-      label: data.label,
-      icon: data.icon,
-      transactionCount: data.transactions.length,
-      totalAmount: data.totalAmount,
-      color: data.color
+  if (legacy) {
+    await prisma.transaction.update({
+      where: { id: legacy.id },
+      data: { migrationSourceTransactionId: tx.id, transferPairId: tx.transferPairId || crypto.randomUUID() },
     })
   }
+
+  return legacy
+}
+
+async function resolveDetection(userId: string, tx: SavingsTx) {
+  const text = `${tx.description || ''} ${tx.category?.name || ''}`
+  const rule = await findSavingsRuleDestination(userId, text)
+  if (rule) {
+    return {
+      label: rule.destinationWallet.name,
+      icon: rule.destinationWallet.icon || '💵',
+      color: rule.destinationWallet.color || '#64748b',
+      confidence: 'high' as const,
+      routingSource: 'rule' as const,
+      matchedRuleId: rule.id,
+      matchedRuleName: rule.name,
+      suggestedWalletId: rule.destinationWalletId,
+      suggestedWalletName: rule.destinationWallet.name,
+    }
+  }
+
+  const detected = detectSavingsBucket(tx.description || '', tx.category?.name || '')
+  const existingWallet = await prisma.wallet.findFirst({
+    where: { userId, name: detected.label, type: 'SAVINGS' },
+    select: { id: true, name: true },
+  })
+
+  return {
+    ...detected,
+    routingSource: detected.confidence === 'low' ? 'fallback' as const : 'heuristic' as const,
+    matchedRuleId: undefined,
+    matchedRuleName: undefined,
+    suggestedWalletId: existingWallet?.id ?? null,
+    suggestedWalletName: existingWallet?.name ?? detected.label,
+  }
+}
+
+async function buildPreviewRows(userId: string, transactions: SavingsTx[]) {
+  const rows = []
+  for (const tx of transactions) {
+    const detection = await resolveDetection(userId, tx)
+    const walletId = detection.suggestedWalletId
+    const alreadyMigrated = walletId ? Boolean(await findExistingMigrated(userId, tx, walletId)) : false
+
+    rows.push({
+      sourceTransactionId: tx.id,
+      date: tx.date.toISOString(),
+      description: tx.description || '',
+      amount: tx.amount,
+      sourceWalletId: tx.walletId,
+      sourceWalletName: tx.wallet?.name || '',
+      categoryId: tx.categoryId,
+      categoryName: tx.category?.name || null,
+      detectedLabel: detection.label,
+      detectedIcon: detection.icon,
+      detectedColor: detection.color,
+      confidence: detection.confidence,
+      routingSource: detection.routingSource,
+      matchedRuleId: detection.matchedRuleId,
+      matchedRuleName: detection.matchedRuleName,
+      suggestedWalletId: detection.suggestedWalletId,
+      suggestedWalletName: detection.suggestedWalletName,
+      alreadyMigrated,
+    })
+  }
+  return rows
+}
+
+function summarizeRows(rows: Awaited<ReturnType<typeof buildPreviewRows>>) {
+  const byLabel = new Map<string, any>()
+  for (const row of rows) {
+    const group = byLabel.get(row.detectedLabel) ?? {
+      label: row.detectedLabel,
+      icon: row.detectedIcon,
+      color: row.detectedColor,
+      transactionCount: 0,
+      alreadyMigrated: 0,
+      pendingCount: 0,
+      totalAmount: 0,
+      pendingAmount: 0,
+    }
+    group.transactionCount += 1
+    group.totalAmount += row.amount
+    if (row.alreadyMigrated) group.alreadyMigrated += 1
+    else {
+      group.pendingCount += 1
+      group.pendingAmount += row.amount
+    }
+    byLabel.set(row.detectedLabel, group)
+  }
+  return [...byLabel.values()]
+}
+
+async function getOrCreateDestinationWallet(userId: string, tx: SavingsTx, mapping?: MigrationMapping) {
+  if (mapping?.destinationWalletId) {
+    const wallet = await prisma.wallet.findFirst({
+      where: { id: mapping.destinationWalletId, userId, type: 'SAVINGS' },
+    })
+    if (!wallet) throw new Error(`Invalid destination wallet for ${tx.id}`)
+    return wallet
+  }
+
+  const detection = await resolveDetection(userId, tx)
+  const walletName = mapping?.createWalletName?.trim() || detection.suggestedWalletName || detection.label
+  const existing = await prisma.wallet.findFirst({ where: { userId, name: walletName, type: 'SAVINGS' } })
+  if (existing) return existing
+
+  return prisma.wallet.create({
+    data: {
+      userId,
+      name: walletName,
+      type: 'SAVINGS',
+      balance: 0,
+      icon: mapping?.icon || detection.icon,
+      color: mapping?.color || detection.color,
+      isDefault: false,
+    },
+  })
+}
+
+async function migrateOne(userId: string, tx: SavingsTx, mapping?: MigrationMapping, migrationBatchId = crypto.randomUUID()) {
+  const wallet = await getOrCreateDestinationWallet(userId, tx, mapping)
+  const existing = await findExistingMigrated(userId, tx, wallet.id)
+  if (existing) return { created: 0, skippedExisting: 1, amount: 0, wallet }
+
+  const transferPairId = tx.transferPairId || crypto.randomUUID()
+  if (!tx.transferPairId) {
+    await prisma.transaction.update({ where: { id: tx.id }, data: { transferPairId } })
+  }
+
+  await prisma.transaction.create({
+    data: {
+      userId,
+      walletId: wallet.id,
+      categoryId: tx.categoryId,
+      amount: tx.amount,
+      type: 'INCOME',
+      description: migratedDescription(tx),
+      date: tx.date,
+      migrationSourceTransactionId: tx.id,
+      migrationBatchId,
+      transferPairId,
+    },
+  })
+
+  const updatedWallet = await prisma.wallet.update({
+    where: { id: wallet.id },
+    data: { balance: wallet.balance + tx.amount },
+  })
+
+  return { created: 1, skippedExisting: 0, amount: tx.amount, wallet: updatedWallet }
+}
+
+export async function migrateSavingsToWallets(userId: string, dryRun = true, mappings: MigrationMapping[] = []) {
+  const logs: string[] = []
+  const log = (message: string) => {
+    console.log(message)
+    logs.push(message)
+  }
+
+  const mappedIds = mappings.map((m) => m.sourceTransactionId)
+  const savingsTransactions = await getSavingsTransactions(userId, mappedIds.length ? mappedIds : undefined)
+  const rows = await buildPreviewRows(userId, savingsTransactions)
+  const groupDetails = summarizeRows(rows)
+  const savingsWallets = await prisma.wallet.findMany({
+    where: { userId, type: 'SAVINGS' },
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, icon: true, color: true, balance: true },
+  })
+
+  log(`Found ${savingsTransactions.length} savings transactions`)
 
   if (dryRun) {
-    log('\n⚠️  DRY RUN MODE - No changes made')
-    log('Run with dryRun=false to apply changes\n')
-    return { 
-      logs, 
+    return {
+      logs,
       summary: {
         total: savingsTransactions.length,
-        groups: savingsByType.size,
-        groupDetails: groupSummary
-      }
+        groups: groupDetails.length,
+        groupDetails,
+        rows,
+        savingsWallets,
+      },
     }
   }
 
-  // 4. Create wallets and migrate
-  log('\n🚀 Starting migration...\n')
-  
+  const mappingById = new Map(mappings.map((mapping) => [mapping.sourceTransactionId, mapping]))
+  const migrationBatchId = crypto.randomUUID()
   const results = []
-  
-  for (const [label, data] of savingsByType) {
-    try {
-      // Check if wallet already exists
-      const existingWallet = await prisma.wallet.findFirst({
-        where: {
-          userId,
-          name: data.label,
-          type: 'SAVINGS'
-        }
-      })
 
-      let wallet
-      
-      if (existingWallet) {
-        log(`✓ Wallet "${data.label}" already exists, updating balance...`)
-        wallet = await prisma.wallet.update({
-          where: { id: existingWallet.id },
-          data: {
-            balance: existingWallet.balance + data.totalAmount
-          }
-        })
-      } else {
-        log(`✓ Creating wallet "${data.label}"...`)
-        wallet = await prisma.wallet.create({
-          data: {
-            userId,
-            name: data.label,
-            type: 'SAVINGS',
-            balance: data.totalAmount,
-            icon: data.icon,
-            color: data.color,
-            isDefault: false
-          }
-        })
-      }
-
-      // Create new INCOME transactions in savings wallet
-      // Keep original EXPENSE transactions in main wallet (they represent money leaving main wallet)
-      const newTransactions = []
-      for (const tx of data.transactions) {
-        const newTx = await prisma.transaction.create({
-          data: {
-            userId,
-            walletId: wallet.id,
-            categoryId: tx.categoryId,
-            amount: tx.amount,
-            type: 'INCOME', // Money coming INTO savings wallet
-            description: tx.description + ' (migrated from main wallet)',
-            date: tx.date
-          }
-        })
-        newTransactions.push(newTx)
-      }
-      
-      log(`  ✓ Created ${newTransactions.length} INCOME transactions in ${wallet.name}`)
-      log(`  ✓ Original EXPENSE transactions kept in main wallet (represents transfer out)`)
-      log(`  ⚠️  WARNING: Do NOT delete the savings wallets after migration!`)
-
-      results.push({
-        label: data.label,
-        walletId: wallet.id,
-        transactionCount: data.transactions.length,
-        amount: data.totalAmount,
-        status: 'success'
-      })
-
-      log(`  ✓ Wallet balance: Rp ${wallet.balance.toLocaleString('id-ID')}\n`)
-      
-    } catch (error) {
-      console.error(`  ✗ Error migrating "${data.label}":`, error)
-      results.push({
-        label: data.label,
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
-
-  // 5. Summary
-  log(`\n${'='.repeat(60)}`)
-  log('Migration Summary')
-  log(`${'='.repeat(60)}\n`)
-  
-  const successful = results.filter(r => r.status === 'success')
-  const failed = results.filter(r => r.status === 'error')
-  
-  log(`✓ Successful: ${successful.length}`)
-  log(`✗ Failed: ${failed.length}`)
-  log(`\nTotal transactions migrated: ${successful.reduce((sum, r) => sum + (r.transactionCount || 0), 0)}`)
-  log(`Total amount: Rp ${successful.reduce((sum, r) => sum + (r.amount || 0), 0).toLocaleString('id-ID')}`)
-  
-  if (failed.length > 0) {
-    log('\n❌ Failed migrations:')
-    failed.forEach(f => {
-      log(`  - ${f.label}: ${f.error}`)
+  for (const tx of savingsTransactions) {
+    const mapping = mappingById.get(tx.id)
+    if (mappings.length && !mapping) continue
+    const result = await migrateOne(userId, tx, mapping, migrationBatchId)
+    results.push({
+      sourceTransactionId: tx.id,
+      walletId: result.wallet.id,
+      walletName: result.wallet.name,
+      created: result.created,
+      skippedExisting: result.skippedExisting,
+      amount: result.amount,
+      status: 'success',
     })
   }
-  
-  log('')
-  
+
   return {
     logs,
     summary: {
       total: savingsTransactions.length,
-      successful: successful.length,
-      failed: failed.length,
-      results
-    }
+      successful: results.length,
+      failed: 0,
+      created: results.reduce((sum, r) => sum + r.created, 0),
+      skippedExisting: results.reduce((sum, r) => sum + r.skippedExisting, 0),
+      amount: results.reduce((sum, r) => sum + r.amount, 0),
+      migrationBatchId,
+      results,
+    },
   }
 }
 
-// CLI usage
 async function main() {
   const args = process.argv.slice(2)
   const userId = args[0]
   const dryRun = !args.includes('--apply')
-
   if (!userId) {
     console.error('Usage: npx tsx scripts/migrate-savings-to-wallets.ts <userId> [--apply]')
-    console.error('\nExample:')
-    console.error('  npx tsx scripts/migrate-savings-to-wallets.ts clxxx123 --apply')
-    console.error('\nWithout --apply flag, it will run in dry-run mode (no changes)')
     process.exit(1)
   }
-
   try {
     await migrateSavingsToWallets(userId, dryRun)
-  } catch (error) {
-    console.error('Migration failed:', error)
-    process.exit(1)
   } finally {
     await prisma.$disconnect()
   }
 }
 
-// Run if called directly
-if (require.main === module) {
-  main()
-}
-
-export { migrateSavingsToWallets }
+if (require.main === module) main()

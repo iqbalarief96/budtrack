@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
       provider: user.settings.provider,
       apiKey: user.settings.apiKey,
       model: user.settings.selectedModel,
+      customEndpoint: user.settings.customEndpoint,
       context,
       history: safeHistory,
     });

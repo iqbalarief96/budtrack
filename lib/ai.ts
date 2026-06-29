@@ -1,8 +1,19 @@
+type ChatRole = 'system' | 'user' | 'assistant'
+
+type ChatMessage = {
+  role: ChatRole
+  content: string | Array<Record<string, unknown>>
+}
+
 interface AIRequestParams {
   prompt: string
   provider: string
   apiKey: string
   model: string
+  customEndpoint?: string | null
+  timeoutMs?: number
+  maxTokens?: number
+  temperature?: number
 }
 
 interface ChatbotParams extends AIRequestParams {
@@ -10,148 +21,192 @@ interface ChatbotParams extends AIRequestParams {
   history?: Array<{ role: 'user' | 'assistant', content: string }>
 }
 
-async function generateDeepseekResponse(params: AIRequestParams) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+type ProviderConfig = {
+  name: string
+  baseUrls: string[]
+  headers?: Record<string, string>
+  timeoutMs: number
+}
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${params.apiKey}`
-      },
-      body: JSON.stringify({
-        model: params.model,
-        messages: [
-          {
-            role: "user",
-            content: params.prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
-      }),
-      signal: controller.signal
-    })
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      const errorMessage = errorData?.error?.message || `HTTP error ${response.status}`;
-      throw new Error(`Failed to generate DeepSeek response: ${errorMessage}`);
-    }
-
-    const data = await response.json();
-    const choice = data.choices?.[0];
-    const message = choice?.message?.content;
-
-    if (!message) {
-      throw new Error('Invalid response format from DeepSeek API');
-    }
-
-    if (choice?.finish_reason === 'length') {
-      console.warn('DeepSeek response truncated because max_tokens was hit. Consider increasing the limit.');
-    }
-
-    return message;
-  } catch (error: unknown) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Request to DeepSeek API timed out after 30 seconds');
-    }
-    throw error;
+class AIProviderError extends Error {
+  constructor(message: string, public status?: number, public url?: string) {
+    super(message)
+    this.name = 'AIProviderError'
   }
 }
 
-async function generateOpenRouterResponse(params: AIRequestParams) {
+function compactModel(provider: string, model: string): string {
+  if (provider === 'deepseek') return model.replace(/^deepseek\//, '')
+  return model
+}
+
+function normalizeBaseUrl(endpoint?: string | null): string {
+  const base = endpoint?.trim().replace(/\/+$/, '')
+  if (!base) throw new Error('Custom endpoint is required')
+  return base
+}
+
+function providerConfig(params: AIRequestParams): ProviderConfig {
+  const provider = params.provider.toLowerCase()
+  const timeoutMs = params.timeoutMs ?? (params.prompt.includes('all time period') ? 60000 : 30000)
+
+  if (provider === 'deepseek') {
+    return {
+      name: 'DeepSeek',
+      baseUrls: ['https://api.deepseek.com/v1'],
+      timeoutMs,
+    }
+  }
+
+  if (provider === 'openrouter') {
+    return {
+      name: 'OpenRouter',
+      baseUrls: ['https://openrouter.ai/api/v1'],
+      timeoutMs,
+      headers: {
+        'HTTP-Referer': 'https://budtrack.iqbalarif.me',
+        'X-Title': 'BudTrack',
+      },
+    }
+  }
+
+  if (provider === 'custom') {
+    const base = normalizeBaseUrl(params.customEndpoint)
+    return {
+      name: 'Custom provider',
+      baseUrls: [base, ...(base.endsWith('/v1') ? [] : [`${base}/v1`])],
+      timeoutMs,
+    }
+  }
+
+  throw new Error(`Unsupported AI provider: ${params.provider}`)
+}
+
+function chatCompletionUrls(baseUrls: string[]): string[] {
+  return baseUrls.map((base) => `${base}/chat/completions`)
+}
+
+function safeJson(text: string): any | null {
   try {
-    // Increase timeout for 'all' timeframe
-    const isAllTimeframe = params.prompt.includes('all time period');
-    const timeoutDuration = isAllTimeframe ? 60000 : 30000; // 60 seconds for all timeframe, 30 for others
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+function extractMessage(payload: any): string {
+  const choice = payload?.choices?.[0]
+  const content = choice?.message?.content ?? choice?.text
+  if (Array.isArray(content)) {
+    return content.map((part) => part?.text ?? '').join('').trim()
+  }
+  return typeof content === 'string' ? content.trim() : ''
+}
 
-    // Simplify the prompt if it's too large (> 4000 chars)
-    let promptToUse = params.prompt;
-    if (promptToUse.length > 4000) {
-      console.log(`Original prompt length: ${promptToUse.length} chars, trimming...`);
-      // Keep essential parts and trim the data
-      const promptParts = promptToUse.split('Current Spending Patterns:');
-      if (promptParts.length > 1) {
-        // Take only top 10 spending patterns
-        const patterns = promptParts[1].split('-').slice(0, 11);
-        promptToUse = promptParts[0] + 'Current Spending Patterns:\nShowing top 10 categories only.\n' + patterns.join('-');
-        console.log(`Trimmed prompt length: ${promptToUse.length} chars`);
+function extractSseMessage(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .filter((line) => line && line !== '[DONE]')
+    .map((line) => {
+      const payload = safeJson(line)
+      const choice = payload?.choices?.[0]
+      const content = choice?.delta?.content ?? choice?.message?.content ?? choice?.text ?? ''
+      if (Array.isArray(content)) return content.map((part) => part?.text ?? '').join('')
+      return typeof content === 'string' ? content : ''
+    })
+    .join('')
+    .trim()
+}
+
+function stripReasoning(text: string): string {
+  return text
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^\s*(?:The user is asking|We need answer|I should|I need to)[\s\S]*?(?=\n\n|OK|#{1,3}\s|\*\*)/i, '')
+    .trim()
+}
+
+function parseChatResponse(text: string): string {
+  const json = safeJson(text)
+  const direct = json ? stripReasoning(extractMessage(json)) : ''
+  if (direct) return direct
+
+  const streamed = stripReasoning(extractSseMessage(text))
+  if (streamed) return streamed
+
+  throw new Error('Invalid AI response format')
+}
+
+function errorMessageFromBody(text: string): string {
+  const json = safeJson(text)
+  return json?.error?.message || json?.message || text.slice(0, 500) || 'Empty response body'
+}
+
+async function postChatCompletion(params: AIRequestParams, messages: ChatMessage[]): Promise<string> {
+  const cfg = providerConfig(params)
+  const urls = chatCompletionUrls(cfg.baseUrls)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), cfg.timeoutMs)
+  const failures: string[] = []
+
+  try {
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream',
+            'Authorization': `Bearer ${params.apiKey}`,
+            ...cfg.headers,
+          },
+          body: JSON.stringify({
+            model: compactModel(params.provider.toLowerCase(), params.model),
+            messages,
+            temperature: params.temperature ?? 0.7,
+            max_tokens: params.maxTokens ?? 2000,
+            stream: false,
+          }),
+          signal: controller.signal,
+        })
+
+        const text = await response.text()
+        if (!response.ok) {
+          failures.push(`${url} -> ${response.status}: ${errorMessageFromBody(text)}`)
+          continue
+        }
+
+        return parseChatResponse(text)
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error(`${cfg.name} request timed out after ${Math.round(cfg.timeoutMs / 1000)}s`)
+        }
+        failures.push(`${url} -> ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${params.apiKey}`,
-        'HTTP-Referer': 'https://budtrack.vercel.app',
-        'X-Title': 'Budtrack'
-      },
-      body: JSON.stringify({
-        model: params.model,
-        messages: [
-          {
-            role: "user",
-            content: promptToUse
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
-      }),
-      signal: controller.signal
-    })
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      const errorMessage = errorData?.error?.message || `HTTP error ${response.status}`;
-      throw new Error(`Failed to generate OpenRouter response: ${errorMessage}`);
-    }
-
-    const data = await response.json();
-    const choice = data.choices?.[0];
-    const message = choice?.message?.content;
-
-    if (!message) {
-      throw new Error('Invalid response format from OpenRouter API');
-    }
-
-    if (choice?.finish_reason === 'length') {
-      console.warn('OpenRouter response truncated because max_tokens was hit. Consider increasing the limit or reducing prompt size.');
-    }
-
-    return message;
-  } catch (error: unknown) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Request to OpenRouter API timed out. For "All Time" data, try using a more specific timeframe like Month, Quarter, or Year.');
-    }
-    throw error;
+  } finally {
+    clearTimeout(timeoutId)
   }
+
+  throw new AIProviderError(`${cfg.name} failed: ${failures.join('; ')}`)
 }
 
 export async function generateAIResponse(params: AIRequestParams): Promise<string> {
   try {
-    switch (params.provider.toLowerCase()) {
-      case 'deepseek':
-        return await generateDeepseekResponse(params)
-      case 'openrouter':
-        return await generateOpenRouterResponse(params)
-      default:
-        throw new Error(`Unsupported AI provider: ${params.provider}`)
-    }
+    return await postChatCompletion(params, [{ role: 'user', content: params.prompt }])
   } catch (error) {
     console.error('Error generating AI response:', error)
     throw error
   }
+}
+
+export const __aiTest = {
+  safeJson,
+  extractSseMessage,
+  parseChatResponse,
+  chatCompletionUrls,
 }
 
 /**
@@ -162,7 +217,7 @@ export async function generateAIResponse(params: AIRequestParams): Promise<strin
  */
 export async function generateChatbotResponse(params: ChatbotParams): Promise<string> {
   try {
-    const { prompt, provider, apiKey, model, context, history } = params;
+    const { prompt, provider, apiKey, model, customEndpoint, context, history } = params;
 
     // Build complete prompt with context and history
     let fullPrompt = "You are a helpful financial assistant for BudTrack, a personal finance app. ";
@@ -171,7 +226,8 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
     fullPrompt += "Don't recommend specific financial products or services by name unless explicitly asked. ";
     fullPrompt += "Keep answers brief, friendly, and easy to understand.\n\n";
     fullPrompt += "Use Markdown formatting in your responses: **bold** for emphasis, *italics* for secondary emphasis, ";
-    fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n\n";
+    fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n";
+    fullPrompt += "Never expose reasoning, chain-of-thought, <thinking>, <think>, analysis, or meta commentary. Return final user-facing answer only.\n\n";
 
     // Add user context if available
     if (context) {
@@ -195,7 +251,8 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
       prompt: fullPrompt,
       provider,
       apiKey,
-      model
+      model,
+      customEndpoint
     });
 
   } catch (error) {
@@ -223,7 +280,7 @@ export async function detectUnusualSpending(
   recommendation?: string
 }> {
   try {
-    const { recentTransactions, historicalData, provider, apiKey, model } = params;
+    const { recentTransactions, historicalData, provider, apiKey, model, customEndpoint } = params;
 
     // Create a prompt for analyzing unusual spending
     let prompt = "Analyze the following recent transactions and detect any unusual spending patterns ";
@@ -251,7 +308,8 @@ export async function detectUnusualSpending(
       prompt,
       provider,
       apiKey,
-      model
+      model,
+      customEndpoint
     });
 
     // Parse the JSON response

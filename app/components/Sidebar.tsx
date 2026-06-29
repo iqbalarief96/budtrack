@@ -45,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       defaultOpen: true,
       items: [
         { path: '/dashboard', icon: <FiHome size={20} />, label: 'Dashboard' },
+        { path: '/household', icon: <FiUsers size={20} />, label: 'Household' },
       ]
     },
     {
@@ -53,7 +54,11 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       items: [
         { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
         { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
+        { path: '/savings', icon: <FiTrendingUp size={20} />, label: 'Tabungan' },
+        { path: '/credit-cards', icon: <CreditCard size={20} />, label: 'Credit Cards' },
         { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring' },
+        { path: '/subscriptions', icon: <CreditCard size={20} />, label: 'Subscriptions' },
+        { path: '/shared-bills', icon: <FiUsers size={20} />, label: 'Shared Bills' },
         { path: '/bills', icon: <FiBell size={20} />, label: 'Bills & Tagihan' },
       ]
     },
@@ -80,6 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       defaultOpen: false,
       items: [
         { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insights' },
+        { path: '/monthly-review', icon: <FiFileText size={20} />, label: 'Monthly Review' },
         { path: '/spending-insights', icon: <FiZap size={20} />, label: 'Spending Insights' },
         { path: '/net-worth', icon: <FiBriefcase size={20} />, label: 'Net Worth' },
         { path: '/goals-timeline', icon: <FiTarget size={20} />, label: 'Goals Timeline' },
@@ -92,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       items: [
         { path: '/categories', icon: <FiPieChart size={20} />, label: 'Kategori' },
         { path: '/investments', icon: <FiBriefcase size={20} />, label: 'Investasi' },
-        { path: '/groups', icon: <FiUsers size={20} />, label: 'Group Budget' },
+        { path: '/groups', icon: <FiUsers size={20} />, label: 'Grup Bersama' },
         { path: '/alerts', icon: <FiBell size={20} />, label: 'Alerts' },
       ]
     },
@@ -282,7 +288,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
                 {(!isCollapsed || isMobile) && (
                   <button
                     onClick={() => toggleGroup(group.label)}
-                    className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors"
+                    className="flex items-center justify-between w-full px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
                   >
                     <span>{group.label}</span>
                     {openGroups.has(group.label) ? (

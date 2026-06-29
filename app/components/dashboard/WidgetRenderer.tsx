@@ -402,79 +402,26 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
 
     case 'quick-actions':
       return (
-        <div className="bg-gray-50 rounded-lg border border-gray-100 p-4">
-          <h3 className="font-medium text-gray-700 mb-3">Aksi Cepat</h3>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+          <h3 className="font-medium text-gray-700 mb-2 text-sm">Aksi Cepat</h3>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => openTransactionModal({ quick: true })}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm hover:border-blue-400 hover:bg-blue-50 transition"
             >
-              <div className="flex flex-col items-center">
-                <FiZap className="h-6 w-6 text-blue-500 mb-1" />
-                <span className="text-sm">Transaksi Cepat</span>
-              </div>
+              <FiZap className="h-4 w-4 text-blue-500" /> Tambah Transaksi
             </button>
             <button
-              onClick={() => openTransactionModal('EXPENSE')}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
+              onClick={() => router.push('/transactions')}
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm hover:border-green-400 hover:bg-green-50 transition"
             >
-              <div className="flex flex-col items-center">
-                <FiArrowUpRight className="h-6 w-6 text-red-500 mb-1" />
-                <span className="text-sm">Tambah Pengeluaran</span>
-              </div>
+              <FiArrowDownLeft className="h-4 w-4 text-green-500" /> Import
             </button>
             <button
-              onClick={() => openTransactionModal('INCOME')}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
+              onClick={() => router.push('/chatbot')}
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm hover:border-purple-400 hover:bg-purple-50 transition"
             >
-              <div className="flex flex-col items-center">
-                <FiArrowDownLeft className="h-6 w-6 text-green-500 mb-1" />
-                <span className="text-sm">Tambah Pemasukan</span>
-              </div>
-            </button>
-            <button
-              onClick={() => router.push('/budgets')}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
-            >
-              <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="h-6 w-6 text-blue-500 mb-1">
-                  <line x1="12" y1="20" x2="12" y2="10"></line>
-                  <line x1="18" y1="20" x2="18" y2="4"></line>
-                  <line x1="6" y1="20" x2="6" y2="16"></line>
-                </svg>
-                <span className="text-sm">Atur Budget</span>
-              </div>
-            </button>
-            <button
-              onClick={() => router.push('/budgets')}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
-            >
-              <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="h-6 w-6 text-purple-500 mb-1">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span className="text-sm">Kelola Goals</span>
-              </div>
-            </button>
-            <button
-              onClick={() => router.push('/wedding-planner')}
-              className="bg-white p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-gray-50 text-center transition duration-200"
-            >
-              <div className="flex flex-col items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="h-6 w-6 text-pink-500 mb-1">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-                </svg>
-                <span className="text-sm">Wedding Planner</span>
-              </div>
+              <FiZap className="h-4 w-4 text-purple-500" /> Chatbot
             </button>
           </div>
         </div>

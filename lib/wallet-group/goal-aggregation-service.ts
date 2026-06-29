@@ -137,10 +137,11 @@ export async function getAggregatedGoals(
     orderBy: { createdAt: 'desc' },
   })
 
-  // Filter to only goals that have transactions from group wallets OR are linked to group wallets
-  const relevantGoals = allUserGoals.filter(goal => 
-    goal.transactions.length > 0 || goalIds.includes(goal.id)
-  )
+  // Include all active user goals in group context. Wallet-level contribution
+  // details still come only from real transactions on wallets linked to the
+  // group, so goals with no group transactions are shown with zero wallet
+  // contributions instead of disappearing from the household view.
+  const relevantGoals = allUserGoals
 
   // Initialize wallet summaries
   const walletSummaryMap = new Map<string, WalletGoalSummary>()

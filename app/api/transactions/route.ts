@@ -16,6 +16,7 @@ import { TRANSACTION_THRESHOLDS } from '@/lib/constants'
 import { parsePaginationParams } from '@/lib/pagination'
 import { paginatedResponse, successResponse } from '@/lib/api-response'
 import { revalidatePath } from 'next/cache'
+import { createAutoSavingsTransfer } from '@/lib/savings/auto-route'
 
 type BudgetWithRelations = Budget & {
   category: Category
@@ -72,17 +73,21 @@ export async function POST(request: Request) {
       type,
       date,
       description,
-      goalId
+      goalId,
+      receiptAttachment
     } = validated
+
+    const numericAmount = amount
 
     console.log('Creating transaction:', {
       categoryId,
       walletId,
-      amount,
+      amount: numericAmount,
       type,
       date,
       description,
-      goalId
+      goalId,
+      hasReceiptAttachment: Boolean(receiptAttachment)
     });
 
     // Find the wallet to make sure it belongs to this user
@@ -112,24 +117,10 @@ export async function POST(request: Request) {
 
     console.log('Found category:', category)
 
-    // Auto-route savings transactions to appropriate SAVINGS wallet
-    // Create TWO transactions: EXPENSE in main wallet + INCOME in savings wallet
-    let savingsWalletId: string | null = null
-    if (type === 'EXPENSE' && category && description) {
-      const { findOrCreateSavingsWallet } = await import('@/lib/savings-wallet-router')
-      savingsWalletId = await findOrCreateSavingsWallet(
-        session.user.id,
-        description,
-        category.name
-      )
-      if (savingsWalletId) {
-        console.log(`[Auto-Route] Will create transfer to savings wallet: ${savingsWalletId}`)
-      }
-    }
 
     // Prepare transaction data for main wallet (EXPENSE - money leaving)
     const transactionData: any = {
-      amount: parseFloat(amount),
+      amount: numericAmount,
       type,
       date: new Date(date),
       description,
@@ -168,8 +159,8 @@ export async function POST(request: Request) {
     console.log('Updating wallet balance:', {
       shouldIncrement,
       oldBalance: wallet.balance,
-      change: parseFloat(amount),
-      newBalance: shouldIncrement ? wallet.balance + parseFloat(amount) : wallet.balance - parseFloat(amount)
+      change: numericAmount,
+      newBalance: shouldIncrement ? wallet.balance + numericAmount : wallet.balance - numericAmount
     });
 
     // Update wallet balance - semua transaksi EXPENSE (termasuk savings) mengurangi saldo
@@ -177,7 +168,7 @@ export async function POST(request: Request) {
       where: { id: walletId },
       data: {
         balance: {
-          [shouldIncrement ? 'increment' : 'decrement']: parseFloat(amount),
+          [shouldIncrement ? 'increment' : 'decrement']: numericAmount,
         },
       },
     })
@@ -193,33 +184,18 @@ export async function POST(request: Request) {
       difference: (updatedWallet?.balance || 0) - wallet.balance
     });
 
-    // If this is a savings transaction, create INCOME transaction in savings wallet
-    if (savingsWalletId && type === 'EXPENSE') {
-      console.log(`[Auto-Route] Creating INCOME transaction in savings wallet: ${savingsWalletId}`)
-
-      const savingsTransaction = await prisma.transaction.create({
-        data: {
-          amount: parseFloat(amount),
-          type: 'INCOME', // Money coming INTO savings wallet
-          date: new Date(date),
-          description: description + ' (auto-saved)',
-          userId: session.user.id,
-          walletId: savingsWalletId,
-          categoryId: categoryId || undefined,
-        }
+    // Auto-route new savings expense into paired income on destination savings wallet.
+    if (type === 'EXPENSE' && category) {
+      await createAutoSavingsTransfer({
+        userId: session.user.id,
+        sourceTransactionId: transaction.id,
+        sourceWalletId: walletId,
+        categoryId,
+        amount: numericAmount,
+        date: new Date(date),
+        description,
+        categoryName: category.name,
       })
-
-      // Update savings wallet balance (increment)
-      await prisma.wallet.update({
-        where: { id: savingsWalletId },
-        data: {
-          balance: {
-            increment: parseFloat(amount),
-          },
-        },
-      })
-
-      console.log(`[Auto-Route] Created savings transaction: ${savingsTransaction.id}`)
     }
 
     // Auto-track transaction to relevant goals based on category
@@ -228,9 +204,9 @@ export async function POST(request: Request) {
         transaction.id,
         categoryId,
         session.user.id,
-        parseFloat(amount),
+        numericAmount,
         type,
-        description,
+        description ?? null,
         new Date(date)
       );
     }
@@ -238,7 +214,7 @@ export async function POST(request: Request) {
     // Auto-link savings transactions to matching goals
     if (type === 'EXPENSE' && category) {
       const savingsType = detectSavingsType(
-        description,
+        description ?? '',
         category.name,
         wallet.name
       );
@@ -281,6 +257,23 @@ export async function POST(request: Request) {
     }
 
 
+
+    let receiptAttachmentRecord = null
+    if (receiptAttachment) {
+      receiptAttachmentRecord = await prisma.receiptAttachment.create({
+        data: {
+          userId: session.user.id,
+          transactionId: transaction.id,
+          fileName: receiptAttachment.fileName,
+          mimeType: receiptAttachment.mimeType,
+          size: receiptAttachment.size,
+          source: receiptAttachment.source ?? 'manual_upload',
+          storageUrl: receiptAttachment.storageUrl,
+          extractedText: receiptAttachment.extractedText,
+          metadata: receiptAttachment.metadata ? JSON.stringify(receiptAttachment.metadata) : undefined,
+        },
+      })
+    }
 
     // If the transaction is an expense and not a savings transaction, update the budget
     if (type === 'EXPENSE' && category?.type !== 'SAVINGS') {
@@ -332,7 +325,9 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({
-          transaction,
+          transaction: receiptAttachmentRecord
+            ? { ...transaction, receiptAttachments: [receiptAttachmentRecord] }
+            : transaction,
           budget: {
             ...budget,
             spent,
@@ -344,10 +339,10 @@ export async function POST(request: Request) {
     }
 
     // Check if this is a large transaction
-    if (type === 'EXPENSE' && parseFloat(amount) >= TRANSACTION_THRESHOLDS.LARGE_EXPENSE) {
+    if (type === 'EXPENSE' && numericAmount >= TRANSACTION_THRESHOLDS.LARGE_EXPENSE) {
       try {
         // Format the amount with commas
-        const formattedAmount = parseFloat(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        const formattedAmount = numericAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
         // Create an alert for this large transaction using raw SQL
         const alertId = crypto.randomUUID();
@@ -379,7 +374,12 @@ export async function POST(request: Request) {
     revalidatePath('/goals')
     revalidatePath('/budgets')
 
-    return NextResponse.json({ transaction, triggerRefresh: true })
+    return NextResponse.json({
+      transaction: receiptAttachmentRecord
+        ? { ...transaction, receiptAttachments: [receiptAttachmentRecord] }
+        : transaction,
+      triggerRefresh: true
+    })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

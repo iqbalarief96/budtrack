@@ -2,11 +2,9 @@
 
 import React, { useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 const SignInPage = () => {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -22,6 +20,7 @@ const SignInPage = () => {
         redirect: false,
         email,
         password,
+        callbackUrl: '/dashboard',
       })
 
       if (result?.error) {
@@ -30,7 +29,7 @@ const SignInPage = () => {
         return
       }
 
-      router.push('/dashboard')
+      window.location.assign(result?.url || '/dashboard')
     } catch (error) {
       setError('Terjadi kesalahan. Silakan coba lagi.')
       setIsLoading(false)
