@@ -121,6 +121,12 @@ export async function calculateBudgetSpending(
       })).map(({ id }) => id)
     : [categoryId]
 
+  const periodStart = new Date(startDate)
+  periodStart.setUTCHours(0, 0, 0, 0)
+
+  const periodEnd = new Date(endDate)
+  periodEnd.setUTCHours(23, 59, 59, 999)
+
   const result = await prisma.transaction.aggregate({
     where: {
       userId,
@@ -128,8 +134,8 @@ export async function calculateBudgetSpending(
       categoryId: { in: categoryIds },
       type: { in: ['expense', 'EXPENSE'] },
       date: {
-        gte: startDate,
-        lte: endDate,
+        gte: periodStart,
+        lte: periodEnd,
       },
     },
     _sum: {
