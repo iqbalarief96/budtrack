@@ -21,7 +21,10 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json(settings || {})
+    return NextResponse.json({
+      ...(settings || {}),
+      customEndpoint: settings?.provider === 'custom' ? settings.customEndpoint : null
+    })
   } catch (error) {
     console.error('Error fetching settings:', error)
     return NextResponse.json(
@@ -45,6 +48,7 @@ export async function PUT(request: Request) {
 
     const body = await request.json()
     const { currency, language, theme, colorTheme, provider, apiKey, deepseekApiKey, openrouterApiKey, customApiKey, openaiApiKey, geminiApiKey, googleVisionCredentials, customEndpoint, selectedModel } = body
+    const savedCustomEndpoint = provider === 'custom' ? customEndpoint : null
 
     // First check if user exists
     const user = await prisma.user.findUnique({
@@ -78,7 +82,7 @@ export async function PUT(request: Request) {
         openaiApiKey,
         geminiApiKey,
         googleVisionCredentials,
-        customEndpoint,
+        customEndpoint: savedCustomEndpoint,
         selectedModel
       },
       create: {
@@ -95,7 +99,7 @@ export async function PUT(request: Request) {
         openaiApiKey,
         geminiApiKey,
         googleVisionCredentials,
-        customEndpoint,
+        customEndpoint: savedCustomEndpoint,
         selectedModel
       }
     })
