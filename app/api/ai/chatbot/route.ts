@@ -60,8 +60,17 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    const provider = user.settings?.provider || '';
+    const providerApiKey = provider === 'deepseek'
+      ? user.settings?.deepseekApiKey || user.settings?.apiKey
+      : provider === 'openrouter'
+        ? user.settings?.openrouterApiKey || user.settings?.apiKey
+        : provider === 'custom'
+          ? user.settings?.customApiKey || user.settings?.apiKey
+          : user.settings?.apiKey;
+
     // Check if AI settings are configured
-    if (!user.settings?.provider || !user.settings?.apiKey || !user.settings?.selectedModel) {
+    if (!provider || !providerApiKey || !user.settings?.selectedModel) {
       return new NextResponse(
         JSON.stringify({ error: 'AI settings not configured' }),
         { status: 400 }
@@ -193,10 +202,10 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     const aiResponse = await generateChatbotResponse({
       prompt: trimmedPrompt,
-      provider: user.settings.provider,
-      apiKey: user.settings.apiKey,
+      provider,
+      apiKey: providerApiKey,
       model: user.settings.selectedModel,
-      customEndpoint: user.settings.customEndpoint,
+      customEndpoint: provider === 'custom' ? user.settings.customEndpoint : null,
       context,
       history: safeHistory,
     });
