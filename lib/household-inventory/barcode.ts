@@ -12,6 +12,22 @@ interface OpenFoodFactsResponse {
   product?: OpenFoodFactsProduct
 }
 
+interface BarcodeLookupResult {
+  name: string
+  brand: string | null
+  defaultUnit: string
+  source: string
+}
+
+interface UpcItemDbResponse {
+  code?: string
+  items?: Array<{
+    title?: string
+    brand?: string
+    size?: string
+  }>
+}
+
 export async function lookupBarcode(userId: string, barcode: string) {
   const item = await prisma.householdInventoryItem.findFirst({
     where: { userId, barcode, deletedAt: null },
@@ -25,7 +41,7 @@ export async function lookupBarcode(userId: string, barcode: string) {
   })
   if (template) return { status: 'TEMPLATE_FOUND' as const, template }
 
-  const online = await lookupOpenFoodFacts(barcode)
+  const online = await lookupOnlineBarcode(barcode)
   if (!online) return { status: 'NOT_FOUND' as const, barcode }
 
   const created = await prisma.householdProductTemplate.create({
@@ -35,21 +51,32 @@ export async function lookupBarcode(userId: string, barcode: string) {
       name: online.name,
       brand: online.brand,
       defaultUnit: online.defaultUnit,
-      source: 'ONLINE'
+      source: online.source
     }
   })
 
   return { status: 'ONLINE_FOUND' as const, template: created }
 }
 
-async function lookupOpenFoodFacts(barcode: string) {
+async function lookupOnlineBarcode(barcode: string) {
+  const [openFoodFacts, upcItemDb] = await Promise.all([
+    lookupOpenFoodFacts(barcode),
+    lookupUpcItemDb(barcode)
+  ])
+
+  if (!openFoodFacts) return upcItemDb
+  if (upcItemDb && isGenericName(openFoodFacts.name)) return upcItemDb
+  return openFoodFacts
+}
+
+async function lookupOpenFoodFacts(barcode: string): Promise<BarcodeLookupResult | null> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 3000)
 
   try {
     const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, {
       signal: controller.signal,
-      headers: { Accept: 'application/json' }
+      headers: { Accept: 'application/json', 'User-Agent': 'BudTrack/1.0' }
     })
     if (!res.ok) return null
 
@@ -61,13 +88,54 @@ async function lookupOpenFoodFacts(barcode: string) {
     return {
       name,
       brand: product?.brands?.split(',')[0]?.trim() || null,
-      defaultUnit: guessUnit(product?.quantity)
+      defaultUnit: guessUnit(product?.quantity),
+      source: 'OPEN_FOOD_FACTS'
     }
   } catch {
     return null
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function lookupUpcItemDb(barcode: string): Promise<BarcodeLookupResult | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3000)
+
+  try {
+    const res = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json', 'User-Agent': 'BudTrack/1.0' }
+    })
+    if (!res.ok) return null
+
+    const json = await res.json() as UpcItemDbResponse
+    const item = json.items?.[0]
+    const name = item?.title?.trim()
+    if (!name) return null
+
+    return {
+      name: cleanProductName(name),
+      brand: item.brand?.trim() || null,
+      defaultUnit: guessUnit(item.size),
+      source: 'UPC_ITEM_DB'
+    }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function isGenericName(name: string) {
+  return /^(instant\s+noodles?|noodles?|mie|mi)$/i.test(name.trim())
+}
+
+function cleanProductName(name: string) {
+  return name
+    .replace(/\s+/g, ' ')
+    .replace(/\b1\s*pc\b/gi, '')
+    .trim()
 }
 
 function guessUnit(quantity?: string) {
