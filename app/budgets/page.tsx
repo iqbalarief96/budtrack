@@ -15,11 +15,14 @@ interface BudgetWithRelations extends Budget {
 }
 
 async function getBudgets(userId: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const budgets = await prisma.budget.findMany({
     where: {
       userId: userId,
       endDate: {
-        gte: new Date() // Only active budgets
+        gte: today // Only active budgets, including budgets ending today
       }
     },
     include: {

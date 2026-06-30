@@ -47,6 +47,8 @@ export default function BudgetForm({
 }: BudgetFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [walletSearch, setWalletSearch] = useState('');
   
   const defaultStartDate = initialData?.startDate || new Date();
   const defaultEndDate = initialData?.endDate || new Date();
@@ -124,7 +126,7 @@ export default function BudgetForm({
       
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to save budget');
+        throw new Error(error.error || error.message || 'Failed to save budget');
       }
       
       const result = await response.json();
@@ -182,6 +184,13 @@ export default function BudgetForm({
       };
     });
   };
+
+  const filteredCategories = categories.filter(category =>
+    category.name.toLowerCase().includes(categorySearch.toLowerCase())
+  );
+  const filteredWallets = wallets.filter(wallet =>
+    wallet.name.toLowerCase().includes(walletSearch.toLowerCase())
+  );
   
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -201,6 +210,12 @@ export default function BudgetForm({
       
       <div className="space-y-2">
         <Label htmlFor="category">Category</Label>
+        <Input
+          type="search"
+          value={categorySearch}
+          onChange={(e) => setCategorySearch(e.target.value)}
+          placeholder="Search category..."
+        />
         <Select 
           value={formData.categoryId} 
           onValueChange={(value) => setFormData(prev => ({ ...prev, categoryId: value }))}
@@ -209,17 +224,26 @@ export default function BudgetForm({
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
           <SelectContent>
-            {categories.map(category => (
+            {filteredCategories.map(category => (
               <SelectItem key={category.id} value={category.id}>
                 {category.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {filteredCategories.length === 0 && (
+          <p className="text-sm text-muted-foreground">No category found.</p>
+        )}
       </div>
       
       <div className="space-y-2">
         <Label htmlFor="wallet">Wallet</Label>
+        <Input
+          type="search"
+          value={walletSearch}
+          onChange={(e) => setWalletSearch(e.target.value)}
+          placeholder="Search wallet..."
+        />
         <Select 
           value={formData.walletId} 
           onValueChange={(value) => setFormData(prev => ({ ...prev, walletId: value }))}
@@ -228,13 +252,16 @@ export default function BudgetForm({
             <SelectValue placeholder="Select a wallet" />
           </SelectTrigger>
           <SelectContent>
-            {wallets.map(wallet => (
+            {filteredWallets.map(wallet => (
               <SelectItem key={wallet.id} value={wallet.id}>
                 {wallet.name} ({parseFloat(wallet.balance.toString()).toFixed(2)})
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {filteredWallets.length === 0 && (
+          <p className="text-sm text-muted-foreground">No wallet found.</p>
+        )}
       </div>
       
       <div className="space-y-2">
