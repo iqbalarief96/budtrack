@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import BudgetPageClient from "@/components/budget/BudgetPageClient";
 import { checkAndResetBudgets } from "@/lib/budgetReset";
+import { calculateBudgetDetails } from "@/lib/budgetCalculations";
 import type { Budget } from "@/app/types/budget";
 import type { Category } from "@/app/types/category";
 import type { Wallet } from "@/app/types/wallet";
@@ -38,24 +39,15 @@ async function getBudgets(userId: string) {
   // Calculate spending for each budget
   const budgetsWithSpending = await Promise.all(
     budgets.map(async (budget) => {
-      const spending = await prisma.transaction.aggregate({
-        where: {
-          userId: userId,
-          categoryId: budget.categoryId,
-          walletId: budget.walletId,
-          date: {
-            gte: budget.startDate,
-            lte: budget.endDate
-          },
-          type: "EXPENSE"
-        },
-        _sum: {
-          amount: true
-        }
+      const { spent, percentage } = await calculateBudgetDetails({
+        id: budget.id,
+        userId,
+        walletId: budget.walletId,
+        categoryId: budget.categoryId,
+        amount: budget.amount,
+        startDate: budget.startDate,
+        endDate: budget.endDate,
       });
-
-      const spent = spending._sum.amount || 0;
-      const percentage = (spent / budget.amount) * 100;
 
       return {
         ...budget,

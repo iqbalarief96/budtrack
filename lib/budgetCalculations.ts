@@ -109,11 +109,23 @@ export async function calculateBudgetSpending(
   startDate: Date,
   endDate: Date
 ): Promise<number> {
+  const category = await prisma.category.findFirst({
+    where: { id: categoryId, userId },
+    select: { name: true },
+  })
+
+  const categoryIds = category
+    ? (await prisma.category.findMany({
+        where: { userId, name: category.name },
+        select: { id: true },
+      })).map(({ id }) => id)
+    : [categoryId]
+
   const result = await prisma.transaction.aggregate({
     where: {
       userId,
       walletId,
-      categoryId,
+      categoryId: { in: categoryIds },
       type: { in: ['expense', 'EXPENSE'] },
       date: {
         gte: startDate,
