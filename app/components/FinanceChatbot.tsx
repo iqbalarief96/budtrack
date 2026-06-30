@@ -18,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ActionCards } from './chatbot/ActionCards';
 import { AnswerCards } from './chatbot/AnswerCards';
 import { InsightRail } from './chatbot/InsightRail';
 import { parseAssistantAnswer } from './chatbot/answer-parser';
@@ -439,6 +440,9 @@ export default function FinanceChatbot() {
                             )}
                             {message.status === 'streaming' && !clean && <span className="inline-flex h-5 w-16 animate-pulse rounded-full bg-slate-100" />}
                             {clean && <MarkdownMessage content={clean} />}
+                            {!isUser && message.actions && message.actions.length > 0 && (
+                              <ActionCards actions={message.actions} onPrompt={sendMessage} onNavigate={router.push} />
+                            )}
                             {message.status === 'error' && (
                               <button type="button" onClick={() => router.push('/settings')} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-red-700 underline underline-offset-2">
                                 Buka Settings → AI &amp; Integrations
