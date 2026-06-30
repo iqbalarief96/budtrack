@@ -48,7 +48,10 @@ export async function PUT(request: Request) {
 
     const body = await request.json()
     const { currency, language, theme, colorTheme, provider, apiKey, deepseekApiKey, openrouterApiKey, customApiKey, openaiApiKey, geminiApiKey, googleVisionCredentials, customEndpoint, selectedModel } = body
-    const savedCustomEndpoint = provider === 'custom' ? customEndpoint : null
+    const normalizedCustomEndpoint = typeof customEndpoint === 'string' ? customEndpoint.trim() : ''
+    const effectiveProvider = normalizedCustomEndpoint ? 'custom' : provider
+    const effectiveCustomApiKey = effectiveProvider === 'custom' ? (customApiKey || apiKey) : customApiKey
+    const savedCustomEndpoint = effectiveProvider === 'custom' ? normalizedCustomEndpoint : null
 
     // First check if user exists
     const user = await prisma.user.findUnique({
@@ -74,11 +77,11 @@ export async function PUT(request: Request) {
         language,
         theme,
         colorTheme,
-        provider,
+        provider: effectiveProvider,
         apiKey,
         deepseekApiKey,
         openrouterApiKey,
-        customApiKey,
+        customApiKey: effectiveCustomApiKey,
         openaiApiKey,
         geminiApiKey,
         googleVisionCredentials,
@@ -91,11 +94,11 @@ export async function PUT(request: Request) {
         language,
         theme,
         colorTheme,
-        provider,
+        provider: effectiveProvider,
         apiKey,
         deepseekApiKey,
         openrouterApiKey,
-        customApiKey,
+        customApiKey: effectiveCustomApiKey,
         openaiApiKey,
         geminiApiKey,
         googleVisionCredentials,
