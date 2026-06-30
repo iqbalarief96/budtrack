@@ -24,6 +24,7 @@ import { parseAssistantAnswer } from './chatbot/answer-parser';
 import { formatCompactCurrency, formatCurrency } from './chatbot/format';
 import { getContextPrompts } from './chatbot/prompts';
 import { useChatbotSummary } from './chatbot/useChatbotSummary';
+import type { AiValidatedAction } from '@/lib/ai/actions/types';
 import type { ChatMessage } from './chatbot/types';
 
 interface ChatHistoryItem {
@@ -43,6 +44,30 @@ const cleanAssistantText = (text: string) => text
   .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
   .replace(/<think>[\s\S]*?<\/think>/gi, '')
   .trim();
+
+function parseSseEvents(buffer: string) {
+  const events: Array<{ event: string; data: any }> = [];
+  const parts = buffer.split('\n\n');
+  const rest = parts.pop() ?? '';
+
+  for (const part of parts) {
+    const lines = part.split('\n');
+    const eventLine = lines.find((line) => line.startsWith('event:'));
+    const dataLine = lines.find((line) => line.startsWith('data:'));
+    if (!eventLine || !dataLine) continue;
+
+    try {
+      events.push({
+        event: eventLine.slice(6).trim(),
+        data: JSON.parse(dataLine.slice(5).trim()),
+      });
+    } catch {
+      // Ignore malformed event.
+    }
+  }
+
+  return { events, rest };
+}
 
 const formatTime = (timestamp: Date | string) => {
   const date = new Date(timestamp);
@@ -196,22 +221,51 @@ export default function FinanceChatbot() {
       setMessages([...baseMessages, placeholder]);
 
       const decoder = new TextDecoder();
+      const isEventStream = response.headers.get('content-type')?.includes('text/event-stream');
       let reply = '';
+      let finalActions: AiValidatedAction[] = [];
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      if (isEventStream) {
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        reply += decoder.decode(value, { stream: true });
-        const cleanReply = cleanAssistantText(reply);
-        setMessages([...baseMessages, { ...placeholder, content: cleanReply }]);
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseSseEvents(buffer);
+          buffer = parsed.rest;
+
+          for (const event of parsed.events) {
+            if (event.event === 'text') {
+              reply += typeof event.data?.delta === 'string' ? event.data.delta : '';
+              setMessages([...baseMessages, { ...placeholder, content: cleanAssistantText(reply), actions: finalActions }]);
+            }
+            if (event.event === 'actions' && Array.isArray(event.data?.actions)) {
+              finalActions = event.data.actions;
+              setMessages([...baseMessages, { ...placeholder, content: cleanAssistantText(reply), actions: finalActions }]);
+            }
+            if (event.event === 'error') {
+              throw new Error(event.data?.message || 'Chatbot stream error');
+            }
+          }
+        }
+      } else {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          reply += decoder.decode(value, { stream: true });
+          const cleanReply = cleanAssistantText(reply);
+          setMessages([...baseMessages, { ...placeholder, content: cleanReply }]);
+        }
+
+        reply += decoder.decode();
       }
 
-      reply += decoder.decode();
       const finalReply = cleanAssistantText(reply);
       if (!finalReply) throw new Error('Chatbot returned an empty response');
 
-      const finalMessage: ChatMessage = { ...placeholder, content: finalReply, status: 'done' };
+      const finalMessage: ChatMessage = { ...placeholder, content: finalReply, actions: finalActions, status: 'done' };
       const finalMessages = [...baseMessages, finalMessage];
       setMessages(finalMessages);
       saveMessages(finalMessages);
