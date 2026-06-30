@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import BudgetPageClient from "@/components/budget/BudgetPageClient";
+import { checkAndResetBudgets } from "@/lib/budgetReset";
 import type { Budget } from "@/app/types/budget";
 import type { Category } from "@/app/types/category";
 import type { Wallet } from "@/app/types/wallet";
@@ -75,6 +76,7 @@ export default async function BudgetPage() {
   }
 
   // Fetch budgets with spending calculations
+  await checkAndResetBudgets();
   const budgets = await getBudgets(session.user.id);
 
   // Fetch categories for budget creation

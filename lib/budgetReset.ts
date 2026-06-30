@@ -1,7 +1,16 @@
 import { PrismaClient } from '@prisma/client'
-import { getNextPeriodDates, hasBudgetEnded } from './budgetCalculations'
+import { getNextPeriodDates } from './budgetCalculations'
 
 const prisma = new PrismaClient()
+
+function jakartaDayKey(date: Date): string {
+  const shifted = new Date(date.getTime() + 7 * 60 * 60 * 1000)
+  return shifted.toISOString().slice(0, 10)
+}
+
+function hasBudgetDateEnded(endDate: Date, now = new Date()): boolean {
+  return jakartaDayKey(now) > jakartaDayKey(endDate)
+}
 
 /**
  * Check and reset budgets that have ended their period
@@ -10,19 +19,17 @@ const prisma = new PrismaClient()
 export async function checkAndResetBudgets() {
   const now = new Date()
 
-  // Find all budgets that have ended and are recurring
-  const endedBudgets = await prisma.budget.findMany({
+  // Find recurring budgets, then compare by Asia/Jakarta date-only.
+  // Budget periods are calendar dates, not exact timestamps.
+  const endedBudgets = (await prisma.budget.findMany({
     where: {
-      endDate: {
-        lt: now,
-      },
       isRecurring: true,
     },
     include: {
       category: true,
       wallet: true,
     },
-  })
+  })).filter((budget) => hasBudgetDateEnded(budget.endDate, now))
 
   console.log(`Found ${endedBudgets.length} ended recurring budgets to process`)
 

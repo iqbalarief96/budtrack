@@ -6,9 +6,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import SearchableSelect from '@/app/components/SearchableSelect';
 import { toast } from 'react-hot-toast';
 import { format, addDays, addWeeks, addMonths } from 'date-fns';
 import { cn } from '@/lib/utils';
+
+function budgetDateFromInput(value: string): Date {
+  return new Date(`${value}T12:00:00.000Z`);
+}
+
+function budgetDateToInput(date: Date): string {
+  return format(date, 'yyyy-MM-dd');
+}
+
+function monthlyEndDate(startDate: Date): Date {
+  const end = new Date(startDate);
+  end.setUTCMonth(end.getUTCMonth() + 1, 0);
+  return end;
+}
 
 interface BudgetFormProps {
   userId: string;
@@ -47,12 +62,9 @@ export default function BudgetForm({
 }: BudgetFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [categorySearch, setCategorySearch] = useState('');
-  const [walletSearch, setWalletSearch] = useState('');
   
-  const defaultStartDate = initialData?.startDate || new Date();
-  const defaultEndDate = initialData?.endDate || new Date();
-  defaultEndDate.setMonth(defaultEndDate.getMonth() + 1);
+  const defaultStartDate = initialData?.startDate || budgetDateFromInput(format(new Date(), 'yyyy-MM-dd'));
+  const defaultEndDate = initialData?.endDate || monthlyEndDate(defaultStartDate);
   
   const [formData, setFormData] = useState({
     amount: initialData?.amount || 0,
@@ -119,6 +131,7 @@ export default function BudgetForm({
         body: JSON.stringify({
           ...(isEditing && initialData?.id ? { id: initialData.id } : {}),
           ...formData,
+          periodType,
           notificationThresholds,
           userId,
         }),
@@ -167,11 +180,7 @@ export default function BudgetForm({
           newEndDate = addWeeks(currentStartDate, 1);
           break;
         case 'monthly':
-          // Set to last day of the current month
-          const year = currentStartDate.getFullYear();
-          const month = currentStartDate.getMonth();
-          // Create date for the first day of next month, then subtract 1 day
-          newEndDate = new Date(year, month + 1, 0);
+          newEndDate = monthlyEndDate(currentStartDate);
           break;
         default:
           newEndDate = addMonths(currentStartDate, 1);
@@ -185,12 +194,7 @@ export default function BudgetForm({
     });
   };
 
-  const filteredCategories = categories.filter(category =>
-    category.name.toLowerCase().includes(categorySearch.toLowerCase())
-  );
-  const filteredWallets = wallets.filter(wallet =>
-    wallet.name.toLowerCase().includes(walletSearch.toLowerCase())
-  );
+  const periodType = formData.period === 'daily' ? 'DAILY' : formData.period === 'weekly' ? 'WEEKLY' : 'MONTHLY';
   
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -210,58 +214,24 @@ export default function BudgetForm({
       
       <div className="space-y-2">
         <Label htmlFor="category">Category</Label>
-        <Input
-          type="search"
-          value={categorySearch}
-          onChange={(e) => setCategorySearch(e.target.value)}
+        <SearchableSelect
+          options={categories.map(category => ({ id: category.id, name: category.name, color: category.color }))}
+          value={formData.categoryId}
+          onChange={(value) => setFormData(prev => ({ ...prev, categoryId: value }))}
           placeholder="Search category..."
+          required
         />
-        <Select 
-          value={formData.categoryId} 
-          onValueChange={(value) => setFormData(prev => ({ ...prev, categoryId: value }))}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {filteredCategories.map(category => (
-              <SelectItem key={category.id} value={category.id}>
-                {category.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {filteredCategories.length === 0 && (
-          <p className="text-sm text-muted-foreground">No category found.</p>
-        )}
       </div>
       
       <div className="space-y-2">
         <Label htmlFor="wallet">Wallet</Label>
-        <Input
-          type="search"
-          value={walletSearch}
-          onChange={(e) => setWalletSearch(e.target.value)}
+        <SearchableSelect
+          options={wallets.map(wallet => ({ id: wallet.id, name: wallet.name }))}
+          value={formData.walletId}
+          onChange={(value) => setFormData(prev => ({ ...prev, walletId: value }))}
           placeholder="Search wallet..."
+          required
         />
-        <Select 
-          value={formData.walletId} 
-          onValueChange={(value) => setFormData(prev => ({ ...prev, walletId: value }))}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a wallet" />
-          </SelectTrigger>
-          <SelectContent>
-            {filteredWallets.map(wallet => (
-              <SelectItem key={wallet.id} value={wallet.id}>
-                {wallet.name} ({parseFloat(wallet.balance.toString()).toFixed(2)})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {filteredWallets.length === 0 && (
-          <p className="text-sm text-muted-foreground">No wallet found.</p>
-        )}
       </div>
       
       <div className="space-y-2">
@@ -287,11 +257,15 @@ export default function BudgetForm({
           <Input
             id="startDate"
             type="date"
-            value={format(formData.startDate, "yyyy-MM-dd")}
+            value={budgetDateToInput(formData.startDate)}
             onChange={(e) => {
-              const date = new Date(e.target.value);
+              const date = budgetDateFromInput(e.target.value);
               if (!isNaN(date.getTime())) {
-                setFormData(prev => ({ ...prev, startDate: date }));
+                setFormData(prev => ({
+                  ...prev,
+                  startDate: date,
+                  endDate: prev.period === 'monthly' ? monthlyEndDate(date) : prev.endDate,
+                }));
               }
             }}
             required
@@ -303,14 +277,14 @@ export default function BudgetForm({
           <Input
             id="endDate"
             type="date"
-            value={format(formData.endDate, "yyyy-MM-dd")}
+            value={budgetDateToInput(formData.endDate)}
             onChange={(e) => {
-              const date = new Date(e.target.value);
+              const date = budgetDateFromInput(e.target.value);
               if (!isNaN(date.getTime())) {
                 setFormData(prev => ({ ...prev, endDate: date }));
               }
             }}
-            min={format(formData.startDate, "yyyy-MM-dd")}
+            min={budgetDateToInput(formData.startDate)}
             required
           />
         </div>

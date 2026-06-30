@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { calculateBudgetDetails, isActiveBudget } from '@/lib/budgetCalculations';
+import { checkAndResetBudgets } from '@/lib/budgetReset';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +13,8 @@ export async function GET(request: NextRequest) {
     }
 
     const userId = session.user.id;
+
+    await checkAndResetBudgets();
 
     // Fetch only active budgets for the user (endDate >= today)
     const today = new Date();
