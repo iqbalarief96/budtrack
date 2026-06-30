@@ -122,17 +122,27 @@ const SettingsPage = () => {
       if (!response.ok) throw new Error('Failed to fetch settings')
       const data = await response.json()
 
-      if (data.provider && data.apiKey) {
+      if (data.provider) {
         const provider = (data.provider || 'deepseek') as AISettings['provider']
         const defaultModel = models[provider]?.[0] || ''
+        const deepseekApiKey = data.deepseekApiKey || ''
+        const openrouterApiKey = data.openrouterApiKey || ''
+        const customApiKey = data.customApiKey || ''
+        const activeApiKey = provider === 'deepseek'
+          ? deepseekApiKey
+          : provider === 'openrouter'
+            ? openrouterApiKey
+            : provider === 'custom'
+              ? customApiKey
+              : ''
         setAiSettings({
           provider,
-          apiKey: data[`${provider}ApiKey`] || data.apiKey || '',
-          deepseekApiKey: data.deepseekApiKey || (provider === 'deepseek' ? data.apiKey : '') || '',
-          openrouterApiKey: data.openrouterApiKey || (provider === 'openrouter' ? data.apiKey : '') || '',
-          customApiKey: data.customApiKey || (provider === 'custom' ? data.apiKey : '') || '',
+          apiKey: activeApiKey,
+          deepseekApiKey,
+          openrouterApiKey,
+          customApiKey,
           selectedModel: data.selectedModel || defaultModel,
-          customEndpoint: data.customEndpoint || '',
+          customEndpoint: provider === 'custom' ? data.customEndpoint || '' : '',
           openaiApiKey: data.openaiApiKey || '',
           geminiApiKey: data.geminiApiKey || '',
           googleVisionCredentials: data.googleVisionCredentials || '',
@@ -231,14 +241,19 @@ const SettingsPage = () => {
     setSuccess(false)
 
     try {
+      const keyField = `${aiSettings.provider}ApiKey` as keyof AISettings
+      const activeApiKey = (aiSettings[keyField] as string) || aiSettings.apiKey
       const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: aiSettings.provider,
-          apiKey: aiSettings.apiKey,
+          apiKey: activeApiKey,
+          deepseekApiKey: aiSettings.provider === 'deepseek' ? activeApiKey : aiSettings.deepseekApiKey,
+          openrouterApiKey: aiSettings.provider === 'openrouter' ? activeApiKey : aiSettings.openrouterApiKey,
+          customApiKey: aiSettings.provider === 'custom' ? activeApiKey : aiSettings.customApiKey,
           selectedModel: aiSettings.selectedModel,
-          customEndpoint: aiSettings.customEndpoint,
+          customEndpoint: aiSettings.provider === 'custom' ? aiSettings.customEndpoint : '',
           openaiApiKey: aiSettings.openaiApiKey,
           geminiApiKey: aiSettings.geminiApiKey,
           googleVisionCredentials: aiSettings.googleVisionCredentials,
