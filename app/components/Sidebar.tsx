@@ -45,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       defaultOpen: true,
       items: [
         { path: '/dashboard', icon: <FiHome size={20} />, label: 'Dashboard' },
+        { path: '/household-inventory', icon: <FiPieChart size={20} />, label: 'Stok Rumah' },
         { path: '/household', icon: <FiUsers size={20} />, label: 'Household' },
       ]
     },
