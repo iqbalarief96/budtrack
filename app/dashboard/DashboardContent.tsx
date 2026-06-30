@@ -797,56 +797,56 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </select>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 mt-4 lg:grid-cols-3">
-          <div className="bg-gradient-to-br from-blue-900 to-indigo-900 rounded-2xl p-6 lg:col-span-2 text-white shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 top-0 opacity-10 mix-blend-overlay">
-              <svg width="200" height="200" viewBox="0 0 200 200" fill="none"><circle cx="100" cy="100" r="80" stroke="currentColor" strokeWidth="40" /></svg>
-            </div>
-            <div className="relative z-10 grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 mt-4 lg:grid-cols-6">
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 lg:col-span-3 hover:bg-white/20 transition-all duration-200">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-sm font-medium text-blue-200">Total Balance</h3>
-                <p className="mt-2 text-4xl font-bold tracking-tight">{formatCurrency(displayBalance)}</p>
-                <p className="mt-2 text-sm text-blue-200">{displayName}</p>
-                <div className="mt-4 flex items-center space-x-2 text-sm">
-                  <span className={`flex items-center rounded-full px-2 py-0.5 font-medium ${netCashflow > 0 ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'}`}>
-                    {netCashflow > 0 ? <FiTrendingUp className="mr-1" /> : <FiArrowDownLeft className="mr-1" />}
-                    {formatCurrency(Math.abs(netCashflow))}
-                  </span>
-                  <span className="text-blue-200">net cashflow</span>
-                </div>
+                <h3 className="text-blue-100">Total Saldo</h3>
+                <p className="mt-1 text-4xl font-bold tracking-tight">{formatCurrency(displayBalance)}</p>
+                <p className="mt-2 text-sm text-blue-100">Saldo aktual • {displayName}</p>
+                <p className={`mt-1 text-sm ${netCashflow >= 0 ? 'text-green-200' : 'text-red-200'}`}>
+                  Net cashflow {periodLabel.toLowerCase()}: {formatCurrency(netCashflow)}
+                </p>
               </div>
-
-              <div className="space-y-4 rounded-xl bg-white/10 p-4 backdrop-blur-sm border border-white/10">
-                <div>
-                  <h4 className="text-sm font-medium text-blue-200 flex items-center justify-between">
-                    Safe to Spend
-                    <span className="text-xs bg-blue-500/30 px-1.5 py-0.5 rounded text-blue-100">{safeConfidence}</span>
-                  </h4>
-                  <p className="text-2xl font-bold mt-1">{formatCurrency(safeToSpend)}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-blue-200 border-t border-white/10 pt-2">
-                  <div>
-                    <span className="block opacity-70">Expense & Bills</span>
-                    <span className="font-medium">-{formatCurrency(summary.expense + sharedBillsSummary.outstandingAmount)}</span>
-                  </div>
-                  <div>
-                    <span className="block opacity-70">Goal Reserve</span>
-                    <span className="font-medium">-{formatCurrency(goalReserve)}</span>
-                  </div>
-                </div>
+              <div className="p-3 bg-white/20 rounded-full">
+                <FiDollarSign size={26} />
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4">
-            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <h3 className="text-sm font-medium text-gray-500">Pemasukan <span className="text-xs">({periodLabel})</span></h3>
-              <p className="mt-1 text-2xl font-bold text-emerald-600">{formatCurrency(summary.income)}</p>
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 lg:col-span-3 hover:bg-white/20 transition-all duration-200">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-blue-100">Safe to spend</h3>
+                <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
+                <p className="mt-2 text-xs text-blue-100">
+                  Saldo - expense - bills - goal reserve
+                </p>
+                <div className="mt-3 grid gap-1 text-xs text-blue-50 sm:grid-cols-4">
+                  <span>Saldo {formatCurrency(displayBalance)}</span>
+                  <span>Expense -{formatCurrency(summary.expense)}</span>
+                  <span>Bills -{formatCurrency(sharedBillsSummary.outstandingAmount)}</span>
+                  <span>Reserve -{formatCurrency(goalReserve)}</span>
+                </div>
+              </div>
+              <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">Confidence: {safeConfidence}</span>
             </div>
-            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <h3 className="text-sm font-medium text-gray-500">Pengeluaran <span className="text-xs">({periodLabel})</span></h3>
-              <p className="mt-1 text-2xl font-bold text-rose-600">{formatCurrency(summary.expense)}</p>
-            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+            <h3 className="text-blue-100">Pemasukan <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
+            <p className="mt-1 text-2xl font-bold text-green-300">{formatCurrency(summary.income)}</p>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+            <h3 className="text-blue-100">Pengeluaran <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
+            <p className="mt-1 text-2xl font-bold text-red-300">{formatCurrency(summary.expense)}</p>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+            <h3 className="text-blue-100">Data Quality</h3>
+            <p className="mt-1 text-2xl font-bold">{dataQualityLabel}</p>
+            <p className="text-xs text-blue-100">{dataQualityReason}</p>
           </div>
 
           <button type="button" onClick={() => router.push(todayAction.href)} className="rounded-xl bg-white p-4 text-left text-blue-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md lg:col-span-3">
@@ -998,79 +998,33 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       <div className="py-4">
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && (
-          <div className="grid gap-4 xl:grid-cols-3">
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm xl:col-span-2">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Transaksi Terbaru</h2>
-                  <p className="text-sm text-gray-500">Aktivitas terakhir untuk {displayName}</p>
-                </div>
-                <button onClick={() => router.push('/transactions')} className="text-sm font-medium text-blue-600 hover:underline">Lihat semua</button>
-              </div>
-              <div className="space-y-2">
-                {filteredTransactions.slice(0, 6).map((tx) => (
-                  <div key={tx.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tx.type === 'INCOME' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                        {tx.type === 'INCOME' ? <FiArrowDownLeft size={16} /> : <FiArrowUpRight size={16} />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-gray-900">{tx.description || 'Unnamed Transaction'}</p>
-                        <p className="text-xs text-gray-500">{tx.category?.name || 'Uncategorized'} • {formatDate(tx.date)}</p>
-                      </div>
-                    </div>
-                    <p className={`shrink-0 text-sm font-semibold ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {tx.type === 'INCOME' ? '+' : '-'} {formatCurrency(tx.amount)}
-                    </p>
-                  </div>
-                ))}
-                {filteredTransactions.length === 0 && (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed bg-gray-50 text-center">
-                    <p className="text-sm font-medium text-gray-700">Belum ada transaksi di periode ini.</p>
-                    <button onClick={() => setIsTransactionModalOpen(true)} className="mt-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Catat transaksi</button>
-                  </div>
-                )}
-              </div>
-            </section>
+          <div>
+            {/* Customizable content for Ringkasan */}
+            <CustomizableTabContent
+              isEditMode={isEditModeRingkasan}
+              onSaveChanges={(widgets) => {
+                console.log('Debug - onSaveChanges called with widgets:', widgets);
 
-            <aside className="space-y-4">
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">Budget Watch</h2>
-                <div className="mt-4 space-y-3">
-                  {filteredBudgets.slice(0, 4).map((budget) => {
-                    const used = Number(budget.spent || 0)
-                    const limit = Number(budget.amount || 0)
-                    const pct = limit > 0 ? Math.min(Math.round((used / limit) * 100), 999) : 0
-                    return (
-                      <div key={budget.id}>
-                        <div className="mb-1 flex justify-between text-sm">
-                          <span className="truncate font-medium text-gray-700">{budget.category?.name || budget.name || 'Budget'}</span>
-                          <span className={pct > 90 ? 'font-semibold text-rose-600' : 'text-gray-500'}>{pct}%</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-gray-100">
-                          <div className={`h-2 rounded-full ${pct > 90 ? 'bg-rose-500' : pct > 75 ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {filteredBudgets.length === 0 && <p className="rounded-xl border border-dashed bg-gray-50 p-4 text-sm text-gray-500">Belum ada budget aktif.</p>}
-                </div>
-              </section>
+                // Check if widgets is valid
+                if (!widgets || !Array.isArray(widgets)) {
+                  console.error('Invalid widgets data received:', widgets);
+                  return;
+                }
 
-              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">Next Actions</h2>
-                  <button onClick={() => setIsTransactionModalOpen(true)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">+ Transaksi</button>
-                </div>
-                <div className="space-y-2">
-                  {monthlyCloseItems.slice(0, 4).map((item, i) => (
-                    <div key={i} className={`rounded-xl p-3 text-sm ${item.hot ? 'bg-amber-50 text-amber-900' : 'bg-gray-50 text-gray-700'}`}>
-                      {item.label}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </aside>
+                // Simpan ke state lokal
+                setRingkasanWidgets(widgets);
+
+                // Simpan ke localStorage untuk persistensi
+                localStorage.setItem('ringkasanWidgets', JSON.stringify(widgets));
+                console.log('Debug - Saved widgets to localStorage during onSaveChanges');
+
+                // Tutup mode edit
+                setIsEditModeRingkasan(false);
+              }}
+              onCancelEdit={() => setIsEditModeRingkasan(false)}
+              selectedWalletId={selectedWallet?.id}
+              initialWidgets={ringkasanWidgets}
+            />
           </div>
         )}
 
