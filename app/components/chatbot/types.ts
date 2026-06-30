@@ -1,3 +1,5 @@
+import type { AiValidatedAction } from '@/lib/ai/actions/types';
+
 export type ChatRole = 'user' | 'assistant';
 
 export interface ChatMessage {
@@ -6,6 +8,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date | string;
   status?: 'sending' | 'streaming' | 'done' | 'error';
+  actions?: AiValidatedAction[];
 }
 
 export type InsightSeverity = 'critical' | 'warning' | 'info' | 'success';
@@ -22,7 +25,7 @@ export interface AnswerAction {
   label: string;
   prompt?: string;
   href?: string;
-  kind: 'prompt' | 'navigate' | 'copy' | 'disabled';
+  kind: 'prompt' | 'navigate' | 'copy' | 'disabled' | 'execute_tool';
   severity?: InsightSeverity;
 }
 
