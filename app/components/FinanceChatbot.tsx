@@ -135,26 +135,6 @@ export default function FinanceChatbot() {
     }
   };
 
-  const animateAssistantMessage = async (baseMessages: ChatMessage[], fullReply: string) => {
-    const id = crypto.randomUUID();
-    const placeholder: ChatMessage = { id, role: 'assistant', content: '', timestamp: new Date(), status: 'streaming' };
-    setMessages([...baseMessages, placeholder]);
-
-    const step = Math.max(16, Math.ceil(fullReply.length / 80));
-    let current = '';
-    for (let index = 0; index < fullReply.length; index += step) {
-      current = fullReply.slice(0, index + step);
-      setMessages([...baseMessages, { ...placeholder, content: current }]);
-      await new Promise((resolve) => setTimeout(resolve, 12));
-    }
-
-    const finalMessage = { ...placeholder, content: fullReply, status: 'done' as const };
-    const finalMessages = [...baseMessages, finalMessage];
-    setMessages(finalMessages);
-    saveMessages(finalMessages);
-    return finalMessage;
-  };
-
   const sendMessage = async (messageText = inputMessage, options?: { appendUser?: boolean }) => {
     const text = messageText.trim();
     if (!text || isLoading) return;
@@ -194,7 +174,7 @@ export default function FinanceChatbot() {
       const response = await fetch('/api/ai/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text, walletId: selectedWallet.id, history: nextHistory, stream: false }),
+        body: JSON.stringify({ prompt: text, walletId: selectedWallet.id, history: nextHistory, stream: true }),
       });
 
       if (!response.ok) {
@@ -202,12 +182,41 @@ export default function FinanceChatbot() {
         throw new Error(typeof errorData?.error === 'string' ? errorData.error : 'Failed to get chatbot response');
       }
 
-      const data = await response.json();
-      const reply = typeof data?.response === 'string' ? cleanAssistantText(data.response) : '';
-      if (!reply) throw new Error('Chatbot returned an empty response');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Chatbot stream unavailable');
 
-      const assistantMessage = await animateAssistantMessage(baseMessages, reply);
-      const finalHistory = [...nextHistory, { role: 'assistant' as const, content: assistantMessage.content }].slice(-10);
+      const assistantId = crypto.randomUUID();
+      const placeholder: ChatMessage = {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        status: 'streaming',
+      };
+      setMessages([...baseMessages, placeholder]);
+
+      const decoder = new TextDecoder();
+      let reply = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        reply += decoder.decode(value, { stream: true });
+        const cleanReply = cleanAssistantText(reply);
+        setMessages([...baseMessages, { ...placeholder, content: cleanReply }]);
+      }
+
+      reply += decoder.decode();
+      const finalReply = cleanAssistantText(reply);
+      if (!finalReply) throw new Error('Chatbot returned an empty response');
+
+      const finalMessage: ChatMessage = { ...placeholder, content: finalReply, status: 'done' };
+      const finalMessages = [...baseMessages, finalMessage];
+      setMessages(finalMessages);
+      saveMessages(finalMessages);
+
+      const finalHistory = [...nextHistory, { role: 'assistant' as const, content: finalMessage.content }].slice(-10);
       setChatHistory(finalHistory);
       summary.refresh();
     } catch (error) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { generateChatbotResponse } from '@/lib/ai';
+import { generateChatbotResponse, streamChatbotResponse } from '@/lib/ai';
 
 type ChatHistoryItem = {
   role: 'user' | 'assistant';
@@ -201,6 +201,45 @@ export async function POST(request: NextRequest) {
     Harus banget ada satu atau dua emoji yang relevan dalam setiap jawaban untuk membuat conversational.
     `;
     
+    const shouldStream = body?.stream === true;
+
+    if (shouldStream) {
+      const encoder = new TextEncoder();
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const chunk of streamChatbotResponse({
+              prompt: trimmedPrompt,
+              provider,
+              apiKey: providerApiKey,
+              model: user.settings.selectedModel,
+              customEndpoint: provider === 'custom' ? user.settings.customEndpoint : null,
+              context,
+              history: safeHistory,
+              timeoutMs: 120000,
+              maxTokens: 2000,
+            })) {
+              controller.enqueue(encoder.encode(chunk));
+            }
+            controller.close();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown chatbot stream error';
+            controller.error(new Error(message));
+          }
+        },
+      });
+
+      return new NextResponse(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+
     // Generate AI response
     const aiResponse = await generateChatbotResponse({
       prompt: trimmedPrompt,

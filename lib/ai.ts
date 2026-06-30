@@ -111,6 +111,19 @@ function extractMessage(payload: any): string {
   return typeof content === 'string' ? content.trim() : ''
 }
 
+
+function extractSseDelta(line: string): string {
+  if (!line.startsWith('data:')) return ''
+  const data = line.slice(5).trim()
+  if (!data || data === '[DONE]') return ''
+
+  const payload = safeJson(data)
+  const choice = payload?.choices?.[0]
+  const content = choice?.delta?.content ?? choice?.message?.content ?? choice?.text ?? ''
+  if (Array.isArray(content)) return content.map((part) => part?.text ?? '').join('')
+  return typeof content === 'string' ? content : ''
+}
+
 function extractSseMessage(text: string): string {
   return text
     .split(/\r?\n/)
@@ -214,7 +227,124 @@ export const __aiTest = {
   safeJson,
   extractSseMessage,
   parseChatResponse,
+  extractSseDelta,
   chatCompletionUrls,
+}
+
+function buildChatbotPrompt(params: ChatbotParams): string {
+  const { prompt, context, history } = params
+
+  let fullPrompt = "You are a helpful financial assistant for BudTrack, a personal finance app. "
+  fullPrompt += "Provide friendly, informative and concise responses about financial topics. "
+  fullPrompt += "Focus on practical advice related to budgeting, saving, investing, and general personal finance. "
+  fullPrompt += "Don't recommend specific financial products or services by name unless explicitly asked. "
+  fullPrompt += "Keep answers brief, friendly, and easy to understand.\n\n"
+  fullPrompt += "Use Markdown formatting in your responses: **bold** for emphasis, *italics* for secondary emphasis, "
+  fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n"
+  fullPrompt += "Never expose reasoning, chain-of-thought, <thinking>, <think>, analysis, or meta commentary. Return final user-facing answer only.\n\n"
+
+  if (context) {
+    fullPrompt += `User Context: ${context}\n\n`
+  }
+
+  if (history && history.length > 0) {
+    fullPrompt += "Conversation History:\n"
+    history.forEach((msg) => {
+      fullPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`
+    })
+    fullPrompt += "\n"
+  }
+
+  fullPrompt += `User's Question: ${prompt}\n\nYour helpful response:`
+  return fullPrompt
+}
+
+async function* streamChatCompletion(params: AIRequestParams, messages: ChatMessage[]): AsyncGenerator<string> {
+  const cfg = providerConfig(params)
+  const urls = chatCompletionUrls(cfg.baseUrls)
+  const failures: string[] = []
+
+  for (const url of urls) {
+    const controller = new AbortController()
+    const timeoutMs = params.timeoutMs ?? cfg.timeoutMs
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream, application/json',
+          'Authorization': `Bearer ${params.apiKey}`,
+          ...cfg.headers,
+        },
+        body: JSON.stringify({
+          model: compactModel(params.provider.toLowerCase(), params.model),
+          messages,
+          temperature: params.temperature ?? 0.7,
+          max_tokens: params.maxTokens ?? 2000,
+          stream: true,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        failures.push(`${url} -> ${response.status}: ${errorMessageFromBody(text)}`)
+        continue
+      }
+
+      if (!response.body) throw new Error('Provider returned empty stream')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const delta = extractSseDelta(line)
+          if (delta) yield delta
+        }
+      }
+
+      buffer += decoder.decode()
+      for (const line of buffer.split(/\r?\n/)) {
+        const delta = extractSseDelta(line)
+        if (delta) yield delta
+      }
+
+      return
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`${cfg.name} stream timed out after ${Math.round(timeoutMs / 1000)}s`)
+      }
+      failures.push(`${url} -> ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  throw new AIProviderError(`${cfg.name} stream failed: ${failures.join('; ')}`)
+}
+
+export async function* streamChatbotResponse(params: ChatbotParams): AsyncGenerator<string> {
+  const fullPrompt = buildChatbotPrompt(params)
+  yield* streamChatCompletion(
+    {
+      ...params,
+      prompt: fullPrompt,
+      timeoutMs: params.timeoutMs ?? 120000,
+      maxTokens: params.maxTokens ?? 2000,
+    },
+    [{ role: 'user', content: fullPrompt }]
+  )
 }
 
 /**
@@ -225,49 +355,17 @@ export const __aiTest = {
  */
 export async function generateChatbotResponse(params: ChatbotParams): Promise<string> {
   try {
-    const { prompt, provider, apiKey, model, customEndpoint, context, history } = params;
+    const fullPrompt = buildChatbotPrompt(params)
 
-    // Build complete prompt with context and history
-    let fullPrompt = "You are a helpful financial assistant for BudTrack, a personal finance app. ";
-    fullPrompt += "Provide friendly, informative and concise responses about financial topics. ";
-    fullPrompt += "Focus on practical advice related to budgeting, saving, investing, and general personal finance. ";
-    fullPrompt += "Don't recommend specific financial products or services by name unless explicitly asked. ";
-    fullPrompt += "Keep answers brief, friendly, and easy to understand.\n\n";
-    fullPrompt += "Use Markdown formatting in your responses: **bold** for emphasis, *italics* for secondary emphasis, ";
-    fullPrompt += "bullet points for lists, `code` for numbers/percentages, and headings (## or ###) for sections.\n";
-    fullPrompt += "Never expose reasoning, chain-of-thought, <thinking>, <think>, analysis, or meta commentary. Return final user-facing answer only.\n\n";
-
-    // Add user context if available
-    if (context) {
-      fullPrompt += `User Context: ${context}\n\n`;
-    }
-
-    // Add conversation history if available
-    if (history && history.length > 0) {
-      fullPrompt += "Conversation History:\n";
-      history.forEach(msg => {
-        fullPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`;
-      });
-      fullPrompt += "\n";
-    }
-
-    // Add the current question
-    fullPrompt += `User's Question: ${prompt}\n\nYour helpful response:`;
-
-    // Generate response using the appropriate provider
     return await generateAIResponse({
+      ...params,
       prompt: fullPrompt,
-      provider,
-      apiKey,
-      model,
-      customEndpoint,
-      timeoutMs: 60000,
-      maxTokens: 900,
-    });
-
+      timeoutMs: params.timeoutMs ?? 60000,
+      maxTokens: params.maxTokens ?? 900,
+    })
   } catch (error) {
-    console.error('Error generating chatbot response:', error);
-    throw error;
+    console.error('Error generating chatbot response:', error)
+    throw error
   }
 }
 
