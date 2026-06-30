@@ -34,6 +34,8 @@ export function HouseholdInventoryClient() {
   const [form, setForm] = useState(emptyForm)
   const [opname, setOpname] = useState<Record<string, string>>({})
   const [scanDraft, setScanDraft] = useState<ScanDraft | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'AMAN' | 'MENIPIS' | 'HABIS' | 'EXPIRED'>('all')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -46,6 +48,12 @@ export function HouseholdInventoryClient() {
     habis: items.filter(item => item.status === 'HABIS').length,
     expired: items.filter(item => item.status === 'EXPIRED' || item.status === 'MAU_EXPIRED').length
   }), [items])
+
+  const filteredItems = useMemo(() => {
+    if (statusFilter === 'all') return items
+    if (statusFilter === 'EXPIRED') return items.filter(item => item.status === 'EXPIRED' || item.status === 'MAU_EXPIRED')
+    return items.filter(item => item.status === statusFilter)
+  }, [items, statusFilter])
 
   async function loadAll() {
     setLoading(true)
@@ -101,16 +109,14 @@ export function HouseholdInventoryClient() {
     await loadAll()
   }
 
-  async function adjustItem(item: HouseholdItem, mode: 'ADD' | 'SUBTRACT') {
-    const raw = prompt(`${mode === 'ADD' ? 'Tambah' : 'Kurangi'} stok ${item.name}`, '1')
-    if (!raw) return
-    const quantity = Number(raw)
-    if (!Number.isFinite(quantity) || quantity <= 0) return
-    await fetch(`/api/household-inventory/items/${item.id}/adjust`, {
+  async function adjustItem(item: HouseholdItem, mode: 'ADD' | 'SUBTRACT' | 'SET', quantity: number, reason: 'RESTOCK' | 'USED' | 'AUDIT' = mode === 'ADD' ? 'RESTOCK' : 'USED') {
+    if (!Number.isFinite(quantity) || quantity < 0) return
+    const res = await fetch(`/api/household-inventory/items/${item.id}/adjust`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, quantity, reason: mode === 'ADD' ? 'RESTOCK' : 'USED' })
+      body: JSON.stringify({ mode, quantity, reason })
     })
+    if (!res.ok) return setMessage('Gagal update stok.')
     await loadAll()
   }
 
@@ -209,12 +215,12 @@ export function HouseholdInventoryClient() {
       </div>
 
       {tab === 'summary' && (
-        <section className="grid gap-4 sm:grid-cols-5">
-          <SummaryCard label="Total" value={summary.total} />
-          <SummaryCard label="Aman" value={summary.aman} />
-          <SummaryCard label="Menipis" value={summary.menipis} />
-          <SummaryCard label="Habis" value={summary.habis} />
-          <SummaryCard label="Expired" value={summary.expired} />
+        <section className="grid gap-3 sm:grid-cols-5">
+          <SummaryCard label="Total" value={summary.total} active={statusFilter === 'all'} onClick={() => { setStatusFilter('all'); setTab('items') }} />
+          <SummaryCard label="Aman" value={summary.aman} active={statusFilter === 'AMAN'} tone="green" onClick={() => { setStatusFilter('AMAN'); setTab('items') }} />
+          <SummaryCard label="Menipis" value={summary.menipis} active={statusFilter === 'MENIPIS'} tone="amber" onClick={() => { setStatusFilter('MENIPIS'); setTab('items') }} />
+          <SummaryCard label="Habis" value={summary.habis} active={statusFilter === 'HABIS'} tone="red" onClick={() => { setStatusFilter('HABIS'); setTab('items') }} />
+          <SummaryCard label="Expired" value={summary.expired} active={statusFilter === 'EXPIRED'} tone="purple" onClick={() => { setStatusFilter('EXPIRED'); setTab('items') }} />
         </section>
       )}
 
@@ -228,14 +234,30 @@ export function HouseholdInventoryClient() {
               <Field label="Qty"><Input type="number" step="0.01" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></Field>
               <Field label="Unit"><UnitSelect value={form.unit} onChange={unit => setForm({ ...form, unit })} /></Field>
             </div>
-            <Field label="Minimum"><Input type="number" step="0.01" value={form.minimumQuantity} onChange={e => setForm({ ...form, minimumQuantity: e.target.value })} /></Field>
-            <Field label="Kategori"><NativeSelect value={form.categoryId} onChange={categoryId => setForm({ ...form, categoryId })} options={categories} /></Field>
             <Field label="Lokasi"><NativeSelect value={form.locationId} onChange={locationId => setForm({ ...form, locationId })} options={locations} /></Field>
-            <Field label="Expired"><Input type="date" value={form.expiredAt} onChange={e => setForm({ ...form, expiredAt: e.target.value })} /></Field>
-            <Field label="Notes"><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
+            <button type="button" className="text-left text-sm font-medium text-blue-700" onClick={() => setAdvancedOpen(!advancedOpen)}>
+              {advancedOpen ? 'Sembunyikan detail tambahan' : 'Detail tambahan'}
+            </button>
+            {advancedOpen && (
+              <div className="space-y-3 rounded-lg bg-gray-50 p-3">
+                <Field label="Minimum"><Input type="number" step="0.01" value={form.minimumQuantity} onChange={e => setForm({ ...form, minimumQuantity: e.target.value })} /></Field>
+                <Field label="Kategori"><NativeSelect value={form.categoryId} onChange={categoryId => setForm({ ...form, categoryId })} options={categories} /></Field>
+                <Field label="Expired"><Input type="date" value={form.expiredAt} onChange={e => setForm({ ...form, expiredAt: e.target.value })} /></Field>
+                <Field label="Notes"><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
+              </div>
+            )}
             <Button className="w-full" onClick={saveItem}>Simpan Barang</Button>
           </div>
-          <ItemList items={items} onAdd={item => adjustItem(item, 'ADD')} onSubtract={item => adjustItem(item, 'SUBTRACT')} loading={loading} />
+          <ItemList
+            items={filteredItems}
+            totalItems={items.length}
+            statusFilter={statusFilter}
+            onClearFilter={() => setStatusFilter('all')}
+            onAdd={item => adjustItem(item, 'ADD', 1)}
+            onSubtract={item => adjustItem(item, 'SUBTRACT', 1)}
+            onUseUp={item => adjustItem(item, 'SET', 0, 'USED')}
+            loading={loading}
+          />
         </section>
       )}
 
@@ -286,8 +308,20 @@ export function HouseholdInventoryClient() {
   )
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-xl border bg-white p-4 shadow-sm"><p className="text-sm text-gray-600">{label}</p><p className="text-2xl font-bold">{value}</p></div>
+function SummaryCard({ label, value, active, tone = 'gray', onClick }: { label: string; value: number; active?: boolean; tone?: 'gray' | 'green' | 'amber' | 'red' | 'purple'; onClick?: () => void }) {
+  const toneClass = {
+    gray: 'bg-white text-gray-900',
+    green: 'bg-green-50 text-green-800',
+    amber: 'bg-amber-50 text-amber-800',
+    red: 'bg-red-50 text-red-800',
+    purple: 'bg-purple-50 text-purple-800'
+  }[tone]
+  return (
+    <button type="button" onClick={onClick} className={`rounded-xl border p-4 text-left shadow-sm transition ${toneClass} ${active ? 'ring-2 ring-blue-500' : 'hover:border-blue-300'}`}>
+      <p className="text-sm opacity-80">{label}</p>
+      <p className="text-2xl font-bold">{value}</p>
+    </button>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -307,11 +341,26 @@ function NativeSelect({ value, onChange, options }: { value: string; onChange: (
   )
 }
 
-function ItemList({ items, onAdd, onSubtract, loading }: { items: HouseholdItem[]; onAdd: (item: HouseholdItem) => void; onSubtract: (item: HouseholdItem) => void; loading: boolean }) {
+function ItemList({ items, totalItems, statusFilter, onClearFilter, onAdd, onSubtract, onUseUp, loading }: {
+  items: HouseholdItem[]
+  totalItems: number
+  statusFilter: string
+  onClearFilter: () => void
+  onAdd: (item: HouseholdItem) => void
+  onSubtract: (item: HouseholdItem) => void
+  onUseUp: (item: HouseholdItem) => void
+  loading: boolean
+}) {
   return (
     <div className="space-y-3">
       <datalist id="household-units">{HOUSEHOLD_UNITS.map(unit => <option key={unit} value={unit} />)}</datalist>
       {loading && <p className="text-sm text-gray-600">Loading...</p>}
+      {statusFilter !== 'all' && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          <span>Filter: {statusFilter}</span>
+          <button type="button" className="font-semibold" onClick={onClearFilter}>Reset</button>
+        </div>
+      )}
       {items.map(item => (
         <div key={item.id} className="rounded-xl border bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
@@ -322,13 +371,15 @@ function ItemList({ items, onAdd, onSubtract, loading }: { items: HouseholdItem[
             </div>
             <StatusBadge status={item.status} />
           </div>
-          <div className="mt-3 flex gap-2">
-            <Button size="sm" onClick={() => onAdd(item)}>+ Stok</Button>
-            <Button size="sm" variant="outline" onClick={() => onSubtract(item)}>- Stok</Button>
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:flex">
+            <Button size="sm" onClick={() => onSubtract(item)} disabled={item.quantity <= 0}>-1</Button>
+            <Button size="sm" onClick={() => onAdd(item)}>+1</Button>
+            <Button size="sm" variant="outline" onClick={() => onUseUp(item)} disabled={item.quantity <= 0}>Pakai habis</Button>
           </div>
         </div>
       ))}
-      {!loading && items.length === 0 && <p className="rounded-xl border bg-white p-4 text-sm text-gray-600">Belum ada barang. Tambah barang pertama atau scan barcode.</p>}
+      {!loading && items.length === 0 && totalItems > 0 && <p className="rounded-xl border bg-white p-4 text-sm text-gray-600">Tidak ada barang untuk filter ini.</p>}
+      {!loading && totalItems === 0 && <p className="rounded-xl border bg-white p-4 text-sm text-gray-600">Belum ada stok rumah. Scan barcode atau tambah manual barang pertama.</p>}
     </div>
   )
 }
