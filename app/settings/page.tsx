@@ -13,6 +13,9 @@ import SavingsRulesPanel from '@/components/savings/SavingsRulesPanel'
 interface AISettings {
   provider: 'deepseek' | 'openrouter' | 'custom'
   apiKey: string
+  deepseekApiKey?: string
+  openrouterApiKey?: string
+  customApiKey?: string
   selectedModel: string
   customEndpoint?: string
   openaiApiKey?: string
@@ -68,6 +71,9 @@ const SettingsPage = () => {
   const [aiSettings, setAiSettings] = useState<AISettings>({
     provider: 'deepseek',
     apiKey: '',
+    deepseekApiKey: '',
+    openrouterApiKey: '',
+    customApiKey: '',
     selectedModel: models.deepseek[0],
     customEndpoint: '',
     openaiApiKey: '',
@@ -121,7 +127,10 @@ const SettingsPage = () => {
         const defaultModel = models[provider]?.[0] || ''
         setAiSettings({
           provider,
-          apiKey: data.apiKey,
+          apiKey: data[`${provider}ApiKey`] || data.apiKey || '',
+          deepseekApiKey: data.deepseekApiKey || (provider === 'deepseek' ? data.apiKey : '') || '',
+          openrouterApiKey: data.openrouterApiKey || (provider === 'openrouter' ? data.apiKey : '') || '',
+          customApiKey: data.customApiKey || (provider === 'custom' ? data.apiKey : '') || '',
           selectedModel: data.selectedModel || defaultModel,
           customEndpoint: data.customEndpoint || '',
           openaiApiKey: data.openaiApiKey || '',
@@ -533,7 +542,10 @@ const SettingsPage = () => {
                       {(['deepseek', 'openrouter', 'custom'] as const).map((provider) => (
                         <button
                           key={provider}
-                          onClick={() => setAiSettings((prev) => ({ ...prev, provider, selectedModel: models[provider][0] || prev.selectedModel }))}
+                          onClick={() => setAiSettings((prev) => {
+                            const providerApiKey = (prev[`${provider}ApiKey` as keyof AISettings] as string) || ''
+                            return { ...prev, provider, apiKey: providerApiKey, selectedModel: models[provider][0] || prev.selectedModel }
+                          })}
                           className={`p-4 border-2 rounded-lg transition-all ${
                             aiSettings.provider === provider
                               ? 'border-blue-600 bg-blue-50'
@@ -568,7 +580,11 @@ const SettingsPage = () => {
                     <input
                       type="password"
                       value={aiSettings.apiKey}
-                      onChange={(e) => setAiSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        const keyField = `${aiSettings.provider}ApiKey` as keyof AISettings
+                        setAiSettings((prev) => ({ ...prev, apiKey: value, [keyField]: value }))
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder={`Enter ${aiSettings.provider} API key`}
                     />

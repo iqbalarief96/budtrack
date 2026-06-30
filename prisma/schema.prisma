@@ -371,6 +371,9 @@ model UserSettings {
   colorTheme              String   @default("blue")
   provider                String?
   apiKey                  String?
+  deepseekApiKey          String?
+  openrouterApiKey        String?
+  customApiKey            String?
   openaiApiKey            String?
   geminiApiKey            String?
   googleVisionCredentials String?
