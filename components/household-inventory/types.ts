@@ -33,3 +33,12 @@ export interface ShoppingAutoItem {
   minimumQuantity: number
   suggestedQuantity: number
 }
+
+export interface ScanDraft {
+  barcode: string
+  name: string
+  brand?: string | null
+  unit: string
+  source?: string
+  confidence: 'high' | 'low'
+}

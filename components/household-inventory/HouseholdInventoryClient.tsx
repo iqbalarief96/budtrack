@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { BarcodeScanner } from './BarcodeScanner'
-import type { HouseholdCategory, HouseholdItem, HouseholdLocation, ShoppingAutoItem } from './types'
+import { ScanResultSheet } from './ScanResultSheet'
+import { isGenericProductName } from './display'
+import type { HouseholdCategory, HouseholdItem, HouseholdLocation, ScanDraft, ShoppingAutoItem } from './types'
 import { HOUSEHOLD_UNITS } from '@/lib/household-inventory/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +33,7 @@ export function HouseholdInventoryClient() {
   const [shopping, setShopping] = useState<ShoppingAutoItem[]>([])
   const [form, setForm] = useState(emptyForm)
   const [opname, setOpname] = useState<Record<string, string>>({})
+  const [scanDraft, setScanDraft] = useState<ScanDraft | null>(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -137,10 +140,39 @@ export function HouseholdInventoryClient() {
       setTab('items')
       return
     }
+
     const template = data.template
-    setForm({ ...emptyForm, barcode, name: template?.name || '', unit: template?.defaultUnit || 'pcs' })
-    setMessage(template ? 'Produk ditemukan online/lokal. Cek form lalu simpan.' : 'Barcode belum dikenal. Isi manual lalu simpan.')
+    const name = template?.name || ''
+    setScanDraft({
+      barcode,
+      name,
+      brand: template?.brand || null,
+      unit: template?.defaultUnit || 'pcs',
+      source: template?.source,
+      confidence: name && !isGenericProductName(name) ? 'high' : 'low'
+    })
+    setMessage(template ? 'Produk ditemukan. Konfirmasi qty dan lokasi.' : 'Barcode belum dikenal. Isi nama barang dulu.')
+  }
+
+  async function saveScanDraft(payload: { name: string; barcode: string; quantity: number; unit: string; locationId?: string | null; categoryId?: string | null }) {
+    const res = await fetch('/api/household-inventory/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.name,
+        barcode: payload.barcode,
+        quantity: payload.quantity,
+        unit: payload.unit,
+        minimumQuantity: 1,
+        categoryId: payload.categoryId || null,
+        locationId: payload.locationId || null
+      })
+    })
+    if (!res.ok) return setMessage((await res.json()).error || 'Gagal simpan hasil scan.')
+    setScanDraft(null)
+    setMessage('Barang hasil scan disimpan.')
     setTab('items')
+    await loadAll()
   }
 
   async function restockShopping(item: ShoppingAutoItem) {
@@ -224,6 +256,16 @@ export function HouseholdInventoryClient() {
       )}
 
       {tab === 'scan' && <BarcodeScanner onDetected={lookupBarcode} />}
+
+      {scanDraft && (
+        <ScanResultSheet
+          draft={scanDraft}
+          locations={locations}
+          categories={categories}
+          onCancel={() => setScanDraft(null)}
+          onSave={saveScanDraft}
+        />
+      )}
 
       {tab === 'shopping' && (
         <section className="space-y-3 rounded-xl border bg-white p-4 shadow-sm">
