@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { generateChatbotResponse, streamChatbotResponse } from '@/lib/ai';
+import { generateChatbotResponse, parseChatbotToolCalls, streamChatbotResponse } from '@/lib/ai';
+import { getAiActionValidationContext } from '@/lib/ai/actions/context';
+import { validateProposedActions } from '@/lib/ai/actions/validate';
 
 type ChatHistoryItem = {
   role: 'user' | 'assistant';
@@ -208,6 +210,9 @@ export async function POST(request: NextRequest) {
 
       const stream = new ReadableStream({
         async start(controller) {
+          let raw = '';
+          let sentText = '';
+
           try {
             for await (const chunk of streamChatbotResponse({
               prompt: trimmedPrompt,
@@ -220,12 +225,32 @@ export async function POST(request: NextRequest) {
               timeoutMs: 120000,
               maxTokens: 2000,
             })) {
-              controller.enqueue(encoder.encode(chunk));
+              raw += chunk;
+              const { visibleText } = parseChatbotToolCalls(raw);
+              const delta = visibleText.slice(sentText.length);
+
+              if (delta) {
+                sentText = visibleText;
+                controller.enqueue(encoder.encode(sse('text', { delta })));
+              }
             }
+
+            const parsed = parseChatbotToolCalls(raw);
+            const tail = parsed.visibleText.slice(sentText.length);
+            if (tail) controller.enqueue(encoder.encode(sse('text', { delta: tail })));
+
+            const actionContext = await getAiActionValidationContext(user.id);
+            const actions = validateProposedActions(parsed.proposedActions, actionContext);
+            if (actions.length > 0) {
+              controller.enqueue(encoder.encode(sse('actions', { actions })));
+            }
+
+            controller.enqueue(encoder.encode(sse('done', {})));
             controller.close();
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown chatbot stream error';
-            controller.error(new Error(message));
+            controller.enqueue(encoder.encode(sse('error', { message })));
+            controller.close();
           }
         },
       });
@@ -233,7 +258,7 @@ export async function POST(request: NextRequest) {
       return new NextResponse(stream, {
         status: 200,
         headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache, no-transform',
           'X-Accel-Buffering': 'no',
         },
@@ -273,6 +298,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+
+function sse(event: string, data: unknown) {
+  return `event: ${event}
+data: ${JSON.stringify(data)}
+
+`;
 }
 
 function sanitizeHistory(history: unknown): ChatHistoryItem[] {

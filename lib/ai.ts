@@ -1,3 +1,5 @@
+import { extractToolCalls, stripToolCalls } from '@/lib/ai/actions/extract'
+
 type ChatRole = 'system' | 'user' | 'assistant'
 
 type ChatMessage = {
@@ -231,7 +233,7 @@ export const __aiTest = {
   chatCompletionUrls,
 }
 
-function buildChatbotPrompt(params: ChatbotParams): string {
+export function buildChatbotPrompt(params: ChatbotParams): string {
   const { prompt, context, history } = params
 
   let fullPrompt = "You are a helpful financial assistant for BudTrack, a personal finance app. "
@@ -254,6 +256,14 @@ function buildChatbotPrompt(params: ChatbotParams): string {
     })
     fullPrompt += "\n"
   }
+
+  fullPrompt += "BudTrack action proposal rules:\n"
+  fullPrompt += "You may propose up to 3 actions using <BUDTRACK_TOOL_CALLS>{...}</BUDTRACK_TOOL_CALLS> at the very end.\n"
+  fullPrompt += "Supported tools: create_budget, create_goal, create_alert, open_page, ask_followup.\n"
+  fullPrompt += "Never say an action was created. Never auto-create. User must confirm.\n"
+  fullPrompt += "Only propose actions grounded in wallet/category data from context.\n"
+  fullPrompt += "If details are missing, propose ask_followup instead.\n"
+  fullPrompt += "Tool JSON shape: {\"actions\":[{\"id\":\"...\",\"tool\":\"create_budget\",\"label\":\"...\",\"confidence\":0.8,\"reason\":\"...\",\"payload\":{...}}]}\n\n"
 
   fullPrompt += `User's Question: ${prompt}\n\nYour helpful response:`
   return fullPrompt
@@ -334,6 +344,13 @@ async function* streamChatCompletion(params: AIRequestParams, messages: ChatMess
   throw new AIProviderError(`${cfg.name} stream failed: ${failures.join('; ')}`)
 }
 
+export function parseChatbotToolCalls(text: string) {
+  return {
+    visibleText: stripToolCalls(text),
+    proposedActions: extractToolCalls(text),
+  }
+}
+
 export async function* streamChatbotResponse(params: ChatbotParams): AsyncGenerator<string> {
   const fullPrompt = buildChatbotPrompt(params)
   yield* streamChatCompletion(
@@ -357,12 +374,14 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
   try {
     const fullPrompt = buildChatbotPrompt(params)
 
-    return await generateAIResponse({
+    const raw = await generateAIResponse({
       ...params,
       prompt: fullPrompt,
       timeoutMs: params.timeoutMs ?? 60000,
       maxTokens: params.maxTokens ?? 900,
     })
+
+    return parseChatbotToolCalls(raw).visibleText
   } catch (error) {
     console.error('Error generating chatbot response:', error)
     throw error
