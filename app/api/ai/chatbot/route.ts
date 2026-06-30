@@ -65,9 +65,11 @@ export async function POST(request: NextRequest) {
       ? user.settings?.deepseekApiKey || user.settings?.apiKey
       : provider === 'openrouter'
         ? user.settings?.openrouterApiKey || user.settings?.apiKey
-        : provider === 'custom'
-          ? user.settings?.customApiKey || user.settings?.apiKey
-          : user.settings?.apiKey;
+        : provider === 'zai'
+          ? user.settings?.zaiApiKey || user.settings?.apiKey
+          : provider === 'custom'
+            ? user.settings?.customApiKey || user.settings?.apiKey
+            : user.settings?.apiKey;
 
     // Check if AI settings are configured
     if (!provider || !providerApiKey || !user.settings?.selectedModel) {

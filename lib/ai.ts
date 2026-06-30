@@ -260,7 +260,9 @@ export async function generateChatbotResponse(params: ChatbotParams): Promise<st
       provider,
       apiKey,
       model,
-      customEndpoint
+      customEndpoint,
+      timeoutMs: 60000,
+      maxTokens: 900,
     });
 
   } catch (error) {
