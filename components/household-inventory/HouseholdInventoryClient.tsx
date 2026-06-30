@@ -206,9 +206,9 @@ export function HouseholdInventoryClient() {
 
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{message}</div>}
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="sticky top-0 z-20 grid grid-cols-2 gap-2 bg-gray-50/95 py-2 backdrop-blur sm:flex sm:overflow-x-auto sm:bg-transparent sm:py-0">
         {[
-          ['summary', 'Ringkasan'], ['items', 'Barang'], ['opname', 'Opname'], ['scan', 'Scan'], ['shopping', 'Belanja']
+          ['summary', 'Ringkas'], ['items', 'Barang'], ['scan', 'Scan'], ['opname', 'Opname'], ['shopping', 'Belanja']
         ].map(([key, label]) => (
           <Button key={key} variant={tab === key ? 'default' : 'outline'} onClick={() => setTab(key as Tab)}>{label}</Button>
         ))}
@@ -256,6 +256,9 @@ export function HouseholdInventoryClient() {
             onAdd={item => adjustItem(item, 'ADD', 1)}
             onSubtract={item => adjustItem(item, 'SUBTRACT', 1)}
             onUseUp={item => adjustItem(item, 'SET', 0, 'USED')}
+            onScan={() => setTab('scan')}
+            onManual={() => setTab('items')}
+            onCreateDefaults={createDefaults}
             loading={loading}
           />
         </section>
@@ -341,7 +344,7 @@ function NativeSelect({ value, onChange, options }: { value: string; onChange: (
   )
 }
 
-function ItemList({ items, totalItems, statusFilter, onClearFilter, onAdd, onSubtract, onUseUp, loading }: {
+function ItemList({ items, totalItems, statusFilter, onClearFilter, onAdd, onSubtract, onUseUp, onScan, onManual, onCreateDefaults, loading }: {
   items: HouseholdItem[]
   totalItems: number
   statusFilter: string
@@ -349,6 +352,9 @@ function ItemList({ items, totalItems, statusFilter, onClearFilter, onAdd, onSub
   onAdd: (item: HouseholdItem) => void
   onSubtract: (item: HouseholdItem) => void
   onUseUp: (item: HouseholdItem) => void
+  onScan: () => void
+  onManual: () => void
+  onCreateDefaults: () => void
   loading: boolean
 }) {
   return (
@@ -379,7 +385,17 @@ function ItemList({ items, totalItems, statusFilter, onClearFilter, onAdd, onSub
         </div>
       ))}
       {!loading && items.length === 0 && totalItems > 0 && <p className="rounded-xl border bg-white p-4 text-sm text-gray-600">Tidak ada barang untuk filter ini.</p>}
-      {!loading && totalItems === 0 && <p className="rounded-xl border bg-white p-4 text-sm text-gray-600">Belum ada stok rumah. Scan barcode atau tambah manual barang pertama.</p>}
+      {!loading && totalItems === 0 && (
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <h3 className="font-semibold">Belum ada stok rumah.</h3>
+          <p className="mt-1 text-sm text-gray-600">Scan barcode atau tambah manual barang pertama.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <Button type="button" onClick={onScan}>Scan Barang</Button>
+            <Button type="button" variant="outline" onClick={onManual}>Tambah Manual</Button>
+            <Button type="button" variant="outline" onClick={onCreateDefaults}>Buat Default</Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
