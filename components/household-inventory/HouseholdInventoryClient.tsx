@@ -55,6 +55,12 @@ export function HouseholdInventoryClient() {
     return items.filter(item => item.status === statusFilter)
   }, [items, statusFilter])
 
+  const attentionItems = useMemo(() => items
+    .filter(item => item.status !== 'AMAN')
+    .slice(0, 5), [items])
+
+  const stockCoverage = summary.total ? Math.round((summary.aman / summary.total) * 100) : 0
+
   async function loadAll() {
     setLoading(true)
     try {
@@ -215,13 +221,75 @@ export function HouseholdInventoryClient() {
       </div>
 
       {tab === 'summary' && (
-        <section className="grid gap-3 sm:grid-cols-5">
-          <SummaryCard label="Total" value={summary.total} active={statusFilter === 'all'} onClick={() => { setStatusFilter('all'); setTab('items') }} />
-          <SummaryCard label="Aman" value={summary.aman} active={statusFilter === 'AMAN'} tone="green" onClick={() => { setStatusFilter('AMAN'); setTab('items') }} />
-          <SummaryCard label="Menipis" value={summary.menipis} active={statusFilter === 'MENIPIS'} tone="amber" onClick={() => { setStatusFilter('MENIPIS'); setTab('items') }} />
-          <SummaryCard label="Habis" value={summary.habis} active={statusFilter === 'HABIS'} tone="red" onClick={() => { setStatusFilter('HABIS'); setTab('items') }} />
-          <SummaryCard label="Expired" value={summary.expired} active={statusFilter === 'EXPIRED'} tone="purple" onClick={() => { setStatusFilter('EXPIRED'); setTab('items') }} />
-        </section>
+        <div className="space-y-6">
+          <section className="grid gap-3 sm:grid-cols-5">
+            <SummaryCard label="Total" value={summary.total} active={statusFilter === 'all'} onClick={() => { setStatusFilter('all'); setTab('items') }} />
+            <SummaryCard label="Aman" value={summary.aman} active={statusFilter === 'AMAN'} tone="green" onClick={() => { setStatusFilter('AMAN'); setTab('items') }} />
+            <SummaryCard label="Menipis" value={summary.menipis} active={statusFilter === 'MENIPIS'} tone="amber" onClick={() => { setStatusFilter('MENIPIS'); setTab('items') }} />
+            <SummaryCard label="Habis" value={summary.habis} active={statusFilter === 'HABIS'} tone="red" onClick={() => { setStatusFilter('HABIS'); setTab('items') }} />
+            <SummaryCard label="Expired" value={summary.expired} active={statusFilter === 'EXPIRED'} tone="purple" onClick={() => { setStatusFilter('EXPIRED'); setTab('items') }} />
+          </section>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="space-y-3 rounded-xl border bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">Perhatian Segera</h2>
+                <Button size="sm" variant="outline" onClick={() => setTab('shopping')}>Buka Belanja</Button>
+              </div>
+              {attentionItems.length === 0 ? (
+                <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-gray-500">
+                  Semua stok dalam kondisi aman.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {attentionItems.map(item => (
+                    <div key={item.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                      <div>
+                        <p className="font-medium text-gray-900">{item.name}</p>
+                        <p className="text-xs text-gray-500">Sisa {item.quantity} {item.unit}</p>
+                      </div>
+                      <StatusBadge status={item.status} />
+                    </div>
+                  ))}
+                  {summary.total - summary.aman > 5 && (
+                    <button type="button" onClick={() => { setStatusFilter('all'); setTab('items') }} className="w-full text-center text-sm font-medium text-blue-600 hover:text-blue-700">
+                      Lihat semua
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3 rounded-xl border bg-white p-5 shadow-sm">
+              <h2 className="font-semibold text-gray-900">Action Cepat</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setTab('scan')} className="flex flex-col items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-6 transition hover:border-blue-300 hover:bg-blue-50">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                  </div>
+                  <span className="text-sm font-medium">Scan Barcode</span>
+                </button>
+                <button type="button" onClick={() => setTab('opname')} className="flex flex-col items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-6 transition hover:border-blue-300 hover:bg-blue-50">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                  </div>
+                  <span className="text-sm font-medium">Opname Cepat</span>
+                </button>
+              </div>
+              <div className="mt-4 rounded-lg bg-gray-50 p-4">
+                <p className="mb-2 text-sm font-medium text-gray-700">Kesehatan Stok</p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div className={`h-full ${stockCoverage > 70 ? 'bg-green-500' : stockCoverage > 40 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${stockCoverage}%` }} />
+                </div>
+                <p className="mt-1 text-right text-xs text-gray-500">{stockCoverage}% aman</p>
+              </div>
+            </section>
+          </div>
+        </div>
       )}
 
       {tab === 'items' && (
