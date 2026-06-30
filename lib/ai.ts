@@ -70,6 +70,14 @@ function providerConfig(params: AIRequestParams): ProviderConfig {
     }
   }
 
+  if (provider === 'zai') {
+    return {
+      name: 'Z.ai',
+      baseUrls: ['https://api.z.ai/api/coding/paas/v4'],
+      timeoutMs,
+    }
+  }
+
   if (provider === 'custom') {
     const base = normalizeBaseUrl(params.customEndpoint)
     return {

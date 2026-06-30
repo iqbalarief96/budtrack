@@ -47,7 +47,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
-    const { currency, language, theme, colorTheme, provider, apiKey, deepseekApiKey, openrouterApiKey, customApiKey, openaiApiKey, geminiApiKey, googleVisionCredentials, customEndpoint, selectedModel } = body
+    const { currency, language, theme, colorTheme, provider, apiKey, deepseekApiKey, openrouterApiKey, zaiApiKey, customApiKey, openaiApiKey, geminiApiKey, googleVisionCredentials, customEndpoint, selectedModel } = body
     const normalizedCustomEndpoint = typeof customEndpoint === 'string' ? customEndpoint.trim() : ''
     const effectiveProvider = normalizedCustomEndpoint ? 'custom' : provider
     const effectiveCustomApiKey = effectiveProvider === 'custom' ? (customApiKey || apiKey) : customApiKey
@@ -81,6 +81,7 @@ export async function PUT(request: Request) {
         apiKey,
         deepseekApiKey,
         openrouterApiKey,
+        zaiApiKey,
         customApiKey: effectiveCustomApiKey,
         openaiApiKey,
         geminiApiKey,
@@ -98,6 +99,7 @@ export async function PUT(request: Request) {
         apiKey,
         deepseekApiKey,
         openrouterApiKey,
+        zaiApiKey,
         customApiKey: effectiveCustomApiKey,
         openaiApiKey,
         geminiApiKey,

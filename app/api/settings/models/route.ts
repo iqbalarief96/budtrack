@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 const DEFAULT_BASE_URLS: Record<string, string> = {
   deepseek: 'https://api.deepseek.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
+  zai: 'https://api.z.ai/api/coding/paas/v4',
 }
 
 function normalizeBaseUrl(provider: string, customEndpoint?: string) {

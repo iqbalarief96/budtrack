@@ -11,10 +11,11 @@ import MigrateSavingsButton from '@/components/MigrateSavingsButton'
 import SavingsRulesPanel from '@/components/savings/SavingsRulesPanel'
 
 interface AISettings {
-  provider: 'deepseek' | 'openrouter' | 'custom'
+  provider: 'deepseek' | 'openrouter' | 'zai' | 'custom'
   apiKey: string
   deepseekApiKey?: string
   openrouterApiKey?: string
+  zaiApiKey?: string
   customApiKey?: string
   selectedModel: string
   customEndpoint?: string
@@ -50,12 +51,22 @@ const models = {
     'meta-llama/llama-2-70b-chat',
     'mistral-ai/mistral-large',
   ],
+  zai: [
+    'glm-5.2',
+    'glm-5.1',
+    'glm-5',
+    'glm-5-turbo',
+    'glm-4.7',
+    'glm-4.6',
+    'glm-4.5',
+  ],
   custom: [],
 }
 
 const providerLabels = {
   deepseek: 'DeepSeek',
   openrouter: 'OpenRouter',
+  zai: 'Z.ai Coding Plan',
   custom: 'Custom Endpoint',
 }
 
@@ -73,6 +84,7 @@ const SettingsPage = () => {
     apiKey: '',
     deepseekApiKey: '',
     openrouterApiKey: '',
+    zaiApiKey: '',
     customApiKey: '',
     selectedModel: models.deepseek[0],
     customEndpoint: '',
@@ -127,19 +139,23 @@ const SettingsPage = () => {
         const defaultModel = models[provider]?.[0] || ''
         const deepseekApiKey = data.deepseekApiKey || ''
         const openrouterApiKey = data.openrouterApiKey || ''
+        const zaiApiKey = data.zaiApiKey || ''
         const customApiKey = data.customApiKey || ''
         const activeApiKey = provider === 'deepseek'
           ? deepseekApiKey
           : provider === 'openrouter'
             ? openrouterApiKey
-            : provider === 'custom'
-              ? customApiKey
-              : ''
+            : provider === 'zai'
+              ? zaiApiKey
+              : provider === 'custom'
+                ? customApiKey
+                : ''
         setAiSettings({
           provider,
           apiKey: activeApiKey,
           deepseekApiKey,
           openrouterApiKey,
+          zaiApiKey,
           customApiKey,
           selectedModel: data.selectedModel || defaultModel,
           customEndpoint: provider === 'custom' ? data.customEndpoint || '' : '',
@@ -251,6 +267,7 @@ const SettingsPage = () => {
           apiKey: activeApiKey,
           deepseekApiKey: aiSettings.provider === 'deepseek' ? activeApiKey : aiSettings.deepseekApiKey,
           openrouterApiKey: aiSettings.provider === 'openrouter' ? activeApiKey : aiSettings.openrouterApiKey,
+          zaiApiKey: aiSettings.provider === 'zai' ? activeApiKey : aiSettings.zaiApiKey,
           customApiKey: aiSettings.provider === 'custom' ? activeApiKey : aiSettings.customApiKey,
           selectedModel: aiSettings.selectedModel,
           customEndpoint: aiSettings.provider === 'custom' ? aiSettings.customEndpoint : '',
@@ -553,8 +570,8 @@ const SettingsPage = () => {
                   {/* Provider Selection */}
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider</label>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {(['deepseek', 'openrouter', 'custom'] as const).map((provider) => (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      {(['deepseek', 'openrouter', 'zai', 'custom'] as const).map((provider) => (
                         <button
                           key={provider}
                           onClick={() => setAiSettings((prev) => {

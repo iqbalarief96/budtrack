@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 const BASE_URLS: Record<string, string> = {
   deepseek: 'https://api.deepseek.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
+  zai: 'https://api.z.ai/api/coding/paas/v4',
 }
 
 function baseUrlFor(provider: string, customEndpoint?: string) {
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Provider and model are required for chatbot verification' }, { status: 400 })
       }
 
-      if (!['deepseek', 'openrouter', 'custom'].includes(provider)) {
+      if (!['deepseek', 'openrouter', 'zai', 'custom'].includes(provider)) {
         return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
       }
 

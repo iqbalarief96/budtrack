@@ -373,6 +373,7 @@ model UserSettings {
   apiKey                  String?
   deepseekApiKey          String?
   openrouterApiKey        String?
+  zaiApiKey               String?
   customApiKey            String?
   openaiApiKey            String?
   geminiApiKey            String?
