@@ -58,6 +58,18 @@ export function InsightRail({ summary, isLoading, onAsk, onRefresh }: InsightRai
   );
 }
 
+function formatBudgetStatus(status: ChatbotSummaryResponse['budgetStatus']) {
+  if (status === 'unknown') return 'Belum ada budget';
+  if (status === 'under') return 'Aman';
+  if (status === 'near') return 'Hampir jebol';
+  return 'Jebol';
+}
+
+function budgetStatusDetail(summary: ChatbotSummaryResponse) {
+  if (summary.budgetStatus === 'unknown') return `${summary.transactionCount} transaksi, budget belum diset`;
+  return `${summary.transactionCount} transaksi bulan ini`;
+}
+
 function buildInsights(summary?: ChatbotSummaryResponse | null): ChatInsight[] {
   if (!summary) return [];
 
@@ -93,10 +105,12 @@ function buildInsights(summary?: ChatbotSummaryResponse | null): ChatInsight[] {
     {
       id: 'budget-status',
       label: 'Budget status',
-      value: summary.budgetStatus,
-      detail: `${summary.transactionCount} transaksi bulan ini`,
+      value: formatBudgetStatus(summary.budgetStatus),
+      detail: budgetStatusDetail(summary),
       severity: summary.budgetStatus === 'over' ? 'critical' : summary.budgetStatus === 'near' ? 'warning' : summary.budgetStatus === 'under' ? 'success' : 'info',
-      prompt: 'Cek status budget saya dan rekomendasikan adjustment bulan ini.',
+      prompt: summary.budgetStatus === 'unknown'
+        ? 'Bantu saya bikin budget bulan ini berdasarkan pola transaksi.'
+        : 'Cek status budget saya dan rekomendasikan adjustment bulan ini.',
     },
   ];
 }
