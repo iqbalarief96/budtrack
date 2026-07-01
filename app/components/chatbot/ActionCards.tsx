@@ -30,6 +30,15 @@ function actionIssueText(action: AiValidatedAction) {
   return '';
 }
 
+function hasMissingDraftInputs(action: AiValidatedAction | null, payload: Record<string, unknown>) {
+  if (!action) return true;
+  return (action.inputIssues ?? []).some((issue) => {
+    const value = payload[issue.field];
+    if (issue.kind === 'money') return typeof value !== 'number' || value <= 0;
+    return value === undefined || value === null || value === '';
+  });
+}
+
 export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps) {
   const [reviewAction, setReviewAction] = useState<AiValidatedAction | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
@@ -87,6 +96,8 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
   }
 
   const reviewPayload = reviewAction ? payloadRows(draftPayload(reviewAction)) : [];
+  const reviewDraftPayload = reviewAction ? draftPayload(reviewAction) : {};
+  const approveDisabled = !reviewAction || executingId === reviewAction.id || reviewAction.status === 'blocked' || hasMissingDraftInputs(reviewAction, reviewDraftPayload);
 
   return (
     <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-3">
@@ -192,7 +203,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setReviewAction(null)}>Cancel</Button>
-            <Button type="button" disabled={!reviewAction || executingId === reviewAction.id || reviewAction.status === 'blocked'} onClick={() => reviewAction && execute(reviewAction)}>
+            <Button type="button" disabled={approveDisabled} onClick={() => reviewAction && execute(reviewAction)}>
               {reviewAction && executingId === reviewAction.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Approve
             </Button>
