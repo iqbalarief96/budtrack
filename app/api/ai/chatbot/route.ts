@@ -74,14 +74,6 @@ export async function POST(request: NextRequest) {
             ? user.settings?.customApiKey || user.settings?.apiKey
             : user.settings?.apiKey;
 
-    // Check if AI settings are configured
-    if (!provider || !providerApiKey || !user.settings?.selectedModel) {
-      return new NextResponse(
-        JSON.stringify({ error: 'AI settings not configured' }),
-        { status: 400 }
-      );
-    }
-    
     // Get wallet data if walletId is provided
     let wallet: { id: string; name: string; balance: number } | null = null;
     if (walletId) {
@@ -103,6 +95,43 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         );
       }
+    }
+
+    const shouldStream = body?.stream === true;
+
+    // App-generated actions must keep working even when AI text provider is not configured.
+    if (!provider || !providerApiKey || !user.settings?.selectedModel) {
+      const actionContext = await getAiActionValidationContext(user.id, walletId);
+      const detectedActions = validateProposedActions(detectSuggestedActions(trimmedPrompt), actionContext);
+      if (detectedActions.length > 0) {
+        if (shouldStream) {
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(sse('actions', { actions: detectedActions })));
+              controller.enqueue(encoder.encode(sse('text', { delta: 'Gw siapin Suggested Action dulu. AI text belum aktif karena API/model belum diset.' })));
+              controller.enqueue(encoder.encode(sse('done', {})));
+              controller.close();
+            },
+          });
+
+          return new NextResponse(stream, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache, no-transform',
+              'X-Accel-Buffering': 'no',
+            },
+          });
+        }
+
+        return NextResponse.json({ response: 'Suggested Action siap. AI text belum aktif karena API/model belum diset.', actions: detectedActions });
+      }
+
+      return new NextResponse(
+        JSON.stringify({ error: 'AI settings not configured' }),
+        { status: 400 }
+      );
     }
     
     // Get user's financial data to provide context to AI
@@ -204,8 +233,6 @@ export async function POST(request: NextRequest) {
     Harus banget ada satu atau dua emoji yang relevan dalam setiap jawaban untuk membuat conversational.
     `;
     
-    const shouldStream = body?.stream === true;
-
     if (shouldStream) {
       const encoder = new TextEncoder();
 
