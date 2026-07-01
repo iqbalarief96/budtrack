@@ -213,8 +213,14 @@ export async function POST(request: NextRequest) {
         async start(controller) {
           let raw = '';
           let sentText = '';
+          const actionContext = await getAiActionValidationContext(user.id, walletId);
+          const detectedActions = validateProposedActions(detectSuggestedActions(trimmedPrompt), actionContext);
 
           try {
+            if (detectedActions.length > 0) {
+              controller.enqueue(encoder.encode(sse('actions', { actions: detectedActions })));
+            }
+
             for await (const chunk of streamChatbotResponse({
               prompt: trimmedPrompt,
               provider,
@@ -240,9 +246,7 @@ export async function POST(request: NextRequest) {
             const tail = parsed.visibleText.slice(sentText.length);
             if (tail) controller.enqueue(encoder.encode(sse('text', { delta: tail })));
 
-            const actionContext = await getAiActionValidationContext(user.id, walletId);
-            const detectedActions = detectSuggestedActions(trimmedPrompt);
-            const actions = validateProposedActions([...detectedActions, ...parsed.proposedActions], actionContext);
+            const actions = validateProposedActions(parsed.proposedActions, actionContext);
             if (actions.length > 0) {
               controller.enqueue(encoder.encode(sse('actions', { actions })));
             }
@@ -251,6 +255,12 @@ export async function POST(request: NextRequest) {
             controller.close();
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown chatbot stream error';
+            if (detectedActions.length > 0) {
+              controller.enqueue(encoder.encode(sse('text', { delta: 'Gw siapin Suggested Action dulu. AI text lagi error, tapi action masih bisa lo review.' })));
+              controller.enqueue(encoder.encode(sse('done', {})));
+              controller.close();
+              return;
+            }
             controller.enqueue(encoder.encode(sse('error', { message })));
             controller.close();
           }
