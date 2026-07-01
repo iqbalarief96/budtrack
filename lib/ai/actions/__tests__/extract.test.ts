@@ -14,6 +14,11 @@ describe('action tool extraction', () => {
     expect(extractToolCalls('<BUDTRACK_TOOL_CALLS>{bad}</BUDTRACK_TOOL_CALLS>')).toEqual([])
   })
 
+  it('hides complete and partial tool-call tags during streaming', () => {
+    expect(stripToolCalls('Halo\n<BUDTRACK_TOOL_CALLS>{"actions":[')).toBe('Halo')
+    expect(stripToolCalls('Halo\n<BUDTRACK')).toBe('Halo')
+  })
+
   it('caps actions to 3', () => {
     const action = (id: string) => ({ id, tool: 'ask_followup', label: id, confidence: 1, reason: 'x', payload: { prompt: 'x', reason: 'x' } })
     const text = `<BUDTRACK_TOOL_CALLS>${JSON.stringify({ actions: [action('1'), action('2'), action('3'), action('4')] })}</BUDTRACK_TOOL_CALLS>`

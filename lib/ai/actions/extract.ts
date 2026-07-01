@@ -11,7 +11,18 @@ function safeJson(text: string): unknown | null {
 }
 
 export function stripToolCalls(text: string): string {
-  return text.replace(TOOL_CALLS_RE, '').trim()
+  const stripped = text.replace(TOOL_CALLS_RE, '')
+  const openTagIndex = stripped.search(/<BUDTRACK_TOOL_CALLS\b/i)
+  if (openTagIndex >= 0) return stripped.slice(0, openTagIndex).trim()
+
+  const partialTag = '<BUDTRACK_TOOL_CALLS'
+  const lower = stripped.toLowerCase()
+  for (let length = partialTag.length - 1; length > 0; length -= 1) {
+    const suffix = partialTag.slice(0, length).toLowerCase()
+    if (lower.endsWith(suffix)) return stripped.slice(0, -length).trim()
+  }
+
+  return stripped.trim()
 }
 
 export function extractToolCalls(text: string): AiProposedAction[] {
