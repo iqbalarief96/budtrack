@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma'
 import type { AiActionValidationContext } from './types'
 
-export async function getAiActionValidationContext(userId: string): Promise<AiActionValidationContext> {
+export async function getAiActionValidationContext(userId: string, defaultWalletId?: string): Promise<AiActionValidationContext> {
   const [wallets, categories] = await Promise.all([
     prisma.wallet.findMany({ where: { userId }, select: { id: true } }),
     prisma.category.findMany({ where: { userId }, select: { id: true, name: true } }),
@@ -15,6 +15,7 @@ export async function getAiActionValidationContext(userId: string): Promise<AiAc
 
   return {
     userId,
+    defaultWalletId: defaultWalletId && wallets.some((wallet) => wallet.id === defaultWalletId) ? defaultWalletId : undefined,
     walletIds: wallets.map((wallet) => wallet.id),
     categoryIds: categories.map((category) => category.id),
     categoriesByName,

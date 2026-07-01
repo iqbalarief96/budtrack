@@ -85,6 +85,7 @@ export interface AskFollowupActionPayload {
 
 export interface AiActionValidationContext {
   userId: string
+  defaultWalletId?: string
   walletIds: string[]
   categoryIds: string[]
   categoriesByName: Map<string, { id: string; name: string }[]>

@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
             const tail = parsed.visibleText.slice(sentText.length);
             if (tail) controller.enqueue(encoder.encode(sse('text', { delta: tail })));
 
-            const actionContext = await getAiActionValidationContext(user.id);
+            const actionContext = await getAiActionValidationContext(user.id, walletId);
             const actions = validateProposedActions(parsed.proposedActions, actionContext);
             if (actions.length > 0) {
               controller.enqueue(encoder.encode(sse('actions', { actions })));

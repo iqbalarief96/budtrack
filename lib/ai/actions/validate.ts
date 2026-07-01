@@ -36,7 +36,7 @@ function validateCreateBudget(action: AiProposedAction, ctx: AiActionValidationC
   const warnings: string[] = []
   const missingFields: string[] = []
 
-  const walletId = typeof payload.walletId === 'string' ? payload.walletId : ''
+  const walletId = typeof payload.walletId === 'string' ? payload.walletId : (ctx.defaultWalletId ?? '')
   if (!walletId) missingFields.push('walletId')
   else if (!ctx.walletIds.includes(walletId)) warnings.push('Wallet not found for user')
 

@@ -4,6 +4,7 @@ import type { AiActionValidationContext } from '../types'
 
 const ctx: AiActionValidationContext = {
   userId: 'u1',
+  defaultWalletId: 'w1',
   walletIds: ['w1'],
   categoryIds: ['c1'],
   categoriesByName: new Map([['makan', [{ id: 'c1', name: 'Makan' }]]]),
@@ -27,6 +28,17 @@ describe('validateProposedActions', () => {
     }], ctx)
     expect(action.status).toBe('needs_review')
     expect(action.warnings[0]).toContain('Wallet')
+  })
+
+  it('uses selected wallet when create_budget omits walletId', () => {
+    const [action] = validateProposedActions([{
+      id: 'a1', tool: 'create_budget', label: 'Budget Makan', confidence: 0.9, reason: 'Top spend',
+      payload: { categoryName: 'Makan', amount: 750000, periodType: 'MONTHLY', reason: 'Top spend' },
+    }], ctx)
+
+    expect(action.status).toBe('ready')
+    expect((action.payload as any).walletId).toBe('w1')
+    expect((action.payload as any).categoryId).toBe('c1')
   })
 
   it('drops unsupported or low confidence actions', () => {
