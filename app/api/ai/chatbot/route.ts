@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { generateChatbotResponse, parseChatbotToolCalls, streamChatbotResponse } from '@/lib/ai';
 import { getAiActionValidationContext } from '@/lib/ai/actions/context';
+import { detectSuggestedActions } from '@/lib/ai/actions/detect';
 import { validateProposedActions } from '@/lib/ai/actions/validate';
 
 type ChatHistoryItem = {
@@ -240,7 +241,8 @@ export async function POST(request: NextRequest) {
             if (tail) controller.enqueue(encoder.encode(sse('text', { delta: tail })));
 
             const actionContext = await getAiActionValidationContext(user.id, walletId);
-            const actions = validateProposedActions(parsed.proposedActions, actionContext);
+            const detectedActions = detectSuggestedActions(trimmedPrompt);
+            const actions = validateProposedActions([...detectedActions, ...parsed.proposedActions], actionContext);
             if (actions.length > 0) {
               controller.enqueue(encoder.encode(sse('actions', { actions })));
             }

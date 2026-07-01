@@ -7,6 +7,8 @@ const ctx: AiActionValidationContext = {
   defaultWalletId: 'w1',
   walletIds: ['w1'],
   categoryIds: ['c1'],
+  wallets: [{ id: 'w1', name: 'Main' }],
+  categories: [{ id: 'c1', name: 'Makan' }],
   categoriesByName: new Map([['makan', [{ id: 'c1', name: 'Makan' }]]]),
 }
 
@@ -21,12 +23,12 @@ describe('validateProposedActions', () => {
     expect((action.payload as any).categoryId).toBe('c1')
   })
 
-  it('marks foreign wallet as needs_review', () => {
+  it('marks foreign wallet as needs_input', () => {
     const [action] = validateProposedActions([{
       id: 'a1', tool: 'create_budget', label: 'Budget', confidence: 0.9, reason: 'x',
       payload: { walletId: 'foreign', amount: 1, periodType: 'MONTHLY', reason: 'x' },
     }], ctx)
-    expect(action.status).toBe('needs_review')
+    expect(action.status).toBe('needs_input')
     expect(action.warnings[0]).toContain('Wallet')
   })
 
@@ -39,6 +41,16 @@ describe('validateProposedActions', () => {
     expect(action.status).toBe('ready')
     expect((action.payload as any).walletId).toBe('w1')
     expect((action.payload as any).categoryId).toBe('c1')
+  })
+
+  it('uses friendly input issue for missing category', () => {
+    const [action] = validateProposedActions([{
+      id: 'a1', tool: 'create_budget', label: 'Budget', confidence: 0.9, reason: 'x',
+      payload: { walletId: 'w1', amount: 1, periodType: 'MONTHLY', reason: 'x' },
+    }], ctx)
+
+    expect(action.status).toBe('needs_input')
+    expect(action.inputIssues?.[0]).toMatchObject({ field: 'categoryId', label: 'Pilih kategori dulu' })
   })
 
   it('drops unsupported or low confidence actions', () => {

@@ -18,6 +18,8 @@ export async function getAiActionValidationContext(userId: string, defaultWallet
     defaultWalletId: defaultWalletId && wallets.some((wallet) => wallet.id === defaultWalletId) ? defaultWalletId : undefined,
     walletIds: wallets.map((wallet) => wallet.id),
     categoryIds: categories.map((category) => category.id),
+    wallets,
+    categories,
     categoriesByName,
   }
 }

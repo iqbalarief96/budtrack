@@ -23,13 +23,35 @@ function payloadRows(payload: Record<string, unknown>) {
   return Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== '');
 }
 
+function actionIssueText(action: AiValidatedAction) {
+  const issues = action.inputIssues ?? [];
+  if (issues.length > 0) return issues.map((issue) => issue.label).join(' • ');
+  if (action.warnings.length > 0) return action.warnings.join(' • ');
+  return '';
+}
+
 export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps) {
   const [reviewAction, setReviewAction] = useState<AiValidatedAction | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, AiActionExecutionResult>>({});
   const [errorById, setErrorById] = useState<Record<string, string>>({});
+  const [draftPayloadById, setDraftPayloadById] = useState<Record<string, Record<string, unknown>>>({});
 
   if (!actions.length) return null;
+
+  function draftPayload(action: AiValidatedAction) {
+    return draftPayloadById[action.id] ?? (action.payload as Record<string, unknown>);
+  }
+
+  function updateDraft(action: AiValidatedAction, key: string, value: unknown) {
+    setDraftPayloadById((current) => ({
+      ...current,
+      [action.id]: {
+        ...(current[action.id] ?? action.payload as Record<string, unknown>),
+        [key]: value,
+      },
+    }));
+  }
 
   async function execute(action: AiValidatedAction) {
     if (action.tool === 'open_page') {
@@ -51,7 +73,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
       const response = await fetch('/api/ai/actions/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actionId: action.id, tool: action.tool, label: action.label, payload: action.payload }),
+        body: JSON.stringify({ actionId: action.id, tool: action.tool, label: action.label, payload: draftPayload(action) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to execute action');
@@ -64,7 +86,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
     }
   }
 
-  const reviewPayload = reviewAction ? payloadRows(reviewAction.payload as Record<string, unknown>) : [];
+  const reviewPayload = reviewAction ? payloadRows(draftPayload(reviewAction)) : [];
 
   return (
     <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-3">
@@ -75,7 +97,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
         {actions.map((action) => {
           const result = results[action.id];
           const error = errorById[action.id];
-          const disabledReason = action.warnings.concat(action.missingFields).join(', ');
+          const disabledReason = actionIssueText(action);
           return (
             <div key={action.id} className="flex flex-col gap-1">
               <Button
@@ -83,7 +105,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                 size="sm"
                 variant="outline"
                 className="rounded-full bg-white"
-                disabled={executingId === action.id || action.status === 'needs_review'}
+                disabled={executingId === action.id || action.status === 'blocked'}
                 onClick={() => setReviewAction(action)}
                 title={disabledReason}
               >
@@ -91,7 +113,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                 {result ? result.message : action.label}
               </Button>
               {error && <span className="max-w-[220px] text-xs text-red-600">{error}</span>}
-              {!error && disabledReason && <span className="max-w-[220px] text-xs text-amber-700">Needs review: {disabledReason}</span>}
+              {!error && disabledReason && <span className="max-w-[220px] text-xs text-amber-700">{disabledReason}</span>}
             </div>
           );
         })}
@@ -113,6 +135,44 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                 <div className="mt-1 text-xs text-slate-500">Tool: {reviewAction.tool}</div>
               </div>
 
+              {reviewAction.inputIssues && reviewAction.inputIssues.length > 0 && (
+                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                  {reviewAction.inputIssues.map((issue) => {
+                    if (issue.kind === 'select_category' || issue.kind === 'select_wallet') {
+                      return (
+                        <label key={issue.field} className="block text-sm text-amber-900">
+                          <span className="font-medium">{issue.label}</span>
+                          <select
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
+                            value={String(draftPayload(reviewAction)[issue.field] ?? '')}
+                            onChange={(event) => updateDraft(reviewAction, issue.field, event.target.value)}
+                          >
+                            <option value="">Pilih</option>
+                            {(issue.options ?? []).map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                          </select>
+                        </label>
+                      );
+                    }
+
+                    if (issue.kind === 'money') {
+                      return (
+                        <label key={issue.field} className="block text-sm text-amber-900">
+                          <span className="font-medium">{issue.label}</span>
+                          <input
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
+                            inputMode="numeric"
+                            value={String(draftPayload(reviewAction)[issue.field] || '')}
+                            onChange={(event) => updateDraft(reviewAction, issue.field, Number(event.target.value.replace(/\D/g, '')))}
+                          />
+                        </label>
+                      );
+                    }
+
+                    return <div key={issue.field} className="text-sm text-amber-900">{issue.label}</div>;
+                  })}
+                </div>
+              )}
+
               <div className="max-h-72 overflow-auto rounded-2xl border border-slate-200">
                 {reviewPayload.map(([key, value]) => (
                   <div key={key} className="grid grid-cols-[140px_minmax(0,1fr)] border-b border-slate-100 px-3 py-2 text-sm last:border-b-0">
@@ -122,9 +182,9 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                 ))}
               </div>
 
-              {(reviewAction.warnings.length > 0 || reviewAction.missingFields.length > 0) && (
+              {reviewAction.warnings.length > 0 && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  {[...reviewAction.warnings, ...reviewAction.missingFields].join(', ')}
+                  {reviewAction.warnings.join(', ')}
                 </div>
               )}
             </div>
@@ -132,7 +192,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setReviewAction(null)}>Cancel</Button>
-            <Button type="button" disabled={!reviewAction || executingId === reviewAction.id || reviewAction.status === 'needs_review'} onClick={() => reviewAction && execute(reviewAction)}>
+            <Button type="button" disabled={!reviewAction || executingId === reviewAction.id || reviewAction.status === 'blocked'} onClick={() => reviewAction && execute(reviewAction)}>
               {reviewAction && executingId === reviewAction.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Approve
             </Button>

@@ -1,5 +1,8 @@
 import type {
   AiActionValidationContext,
+  AiActionInputField,
+  AiActionInputIssue,
+  AiActionStatus,
   AiProposedAction,
   AiValidatedAction,
   AskFollowupActionPayload,
@@ -8,6 +11,7 @@ import type {
   CreateGoalActionPayload,
   OpenPageActionPayload,
 } from './types'
+import { resolveCategoryId } from './resolve'
 
 const SUPPORTED_TOOLS = new Set(['create_budget', 'create_goal', 'create_alert', 'open_page', 'ask_followup'])
 const ALLOWED_HREFS = new Set(['/budgets', '/goals', '/transactions', '/alerts', '/settings'])
@@ -20,7 +24,37 @@ function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
-function base<TPayload>(action: AiProposedAction<TPayload>, status: AiValidatedAction['status'], warnings: string[], missingFields: string[]): AiValidatedAction<TPayload> {
+const FIELD_LABELS: Record<string, { label: string; kind: AiActionInputIssue['kind'] }> = {
+  walletId: { label: 'Pilih wallet dulu', kind: 'select_wallet' },
+  categoryId: { label: 'Pilih kategori dulu', kind: 'select_category' },
+  amount: { label: 'Isi nominal dulu', kind: 'money' },
+  target: { label: 'Isi target dulu', kind: 'money' },
+  title: { label: 'Isi judul dulu', kind: 'text' },
+  message: { label: 'Isi pesan dulu', kind: 'text' },
+  prompt: { label: 'Lengkapi pertanyaan dulu', kind: 'text' },
+  href: { label: 'Pilih halaman dulu', kind: 'navigation' },
+}
+
+function inputIssues(fields: string[], ctx?: AiActionValidationContext): AiActionInputIssue[] {
+  return fields.map((field) => {
+    const info = FIELD_LABELS[field]
+    const kind = info?.kind ?? 'text'
+    return {
+      field: field as AiActionInputField,
+      label: info?.label ?? `Lengkapi ${field}`,
+      kind,
+      options: kind === 'select_category' ? ctx?.categories : kind === 'select_wallet' ? ctx?.wallets : undefined,
+    }
+  })
+}
+
+function actionStatus(missingFields: string[], warnings: string[]): AiActionStatus {
+  if (missingFields.length) return 'needs_input'
+  if (warnings.some((warning) => /not found|ambiguous/i.test(warning))) return 'needs_input'
+  return 'ready'
+}
+
+function base<TPayload>(action: AiProposedAction<TPayload>, status: AiValidatedAction['status'], warnings: string[], missingFields: string[], ctx?: AiActionValidationContext): AiValidatedAction<TPayload> {
   return {
     ...action,
     label: action.label.slice(0, 120),
@@ -28,6 +62,7 @@ function base<TPayload>(action: AiProposedAction<TPayload>, status: AiValidatedA
     status,
     warnings,
     missingFields,
+    inputIssues: inputIssues(missingFields, ctx),
   }
 }
 
@@ -45,9 +80,9 @@ function validateCreateBudget(action: AiProposedAction, ctx: AiActionValidationC
   let resolvedCategoryId = categoryId
   if (categoryId && !ctx.categoryIds.includes(categoryId)) warnings.push('Category not found for user')
   if (!categoryId && categoryName) {
-    const matches = ctx.categoriesByName.get(categoryName.toLowerCase()) ?? []
-    if (matches.length === 1) resolvedCategoryId = matches[0].id
-    if (matches.length > 1) warnings.push('Category name is ambiguous')
+    const resolved = resolveCategoryId(categoryName, ctx)
+    if (resolved.id) resolvedCategoryId = resolved.id
+    if (resolved.ambiguous) warnings.push('Category name is ambiguous')
   }
   if (!resolvedCategoryId) missingFields.push('categoryId')
 
@@ -66,8 +101,8 @@ function validateCreateBudget(action: AiProposedAction, ctx: AiActionValidationC
     reason: typeof payload.reason === 'string' ? payload.reason : action.reason,
   }
 
-  const status = missingFields.length || warnings.length ? 'needs_review' : 'ready'
-  return base({ ...action, payload: clean }, status, warnings, missingFields)
+  const status = actionStatus(missingFields, warnings)
+  return base({ ...action, payload: clean }, status, warnings, missingFields, ctx)
 }
 
 function validateCreateGoal(action: AiProposedAction): AiValidatedAction<CreateGoalActionPayload> {
@@ -87,7 +122,7 @@ function validateCreateGoal(action: AiProposedAction): AiValidatedAction<CreateG
     reason: typeof payload.reason === 'string' ? payload.reason : action.reason,
   }
 
-  return base({ ...action, payload: clean }, missingFields.length ? 'needs_review' : 'ready', [], missingFields)
+  return base({ ...action, payload: clean }, actionStatus(missingFields, []), [], missingFields)
 }
 
 function validateCreateAlert(action: AiProposedAction, ctx: AiActionValidationContext): AiValidatedAction<CreateAlertActionPayload> {
@@ -115,8 +150,8 @@ function validateCreateAlert(action: AiProposedAction, ctx: AiActionValidationCo
     reason: typeof payload.reason === 'string' ? payload.reason : action.reason,
   }
 
-  const status = missingFields.length || warnings.length ? 'needs_review' : 'ready'
-  return base({ ...action, payload: clean }, status, warnings, missingFields)
+  const status = actionStatus(missingFields, warnings)
+  return base({ ...action, payload: clean }, status, warnings, missingFields, ctx)
 }
 
 function validateOpenPage(action: AiProposedAction): AiValidatedAction<OpenPageActionPayload> {
@@ -131,7 +166,7 @@ function validateOpenPage(action: AiProposedAction): AiValidatedAction<OpenPageA
       href,
       reason: typeof payload.reason === 'string' ? payload.reason : action.reason,
     },
-  }, missingFields.length ? 'needs_review' : 'ready', [], missingFields)
+  }, actionStatus(missingFields, []), [], missingFields)
 }
 
 function validateAskFollowup(action: AiProposedAction): AiValidatedAction<AskFollowupActionPayload> {
@@ -144,7 +179,7 @@ function validateAskFollowup(action: AiProposedAction): AiValidatedAction<AskFol
       prompt,
       reason: typeof payload.reason === 'string' ? payload.reason : action.reason,
     },
-  }, prompt ? 'ready' : 'needs_review', [], prompt ? [] : ['prompt'])
+  }, actionStatus(prompt ? [] : ['prompt'], []), [], prompt ? [] : ['prompt'])
 }
 
 export function validateProposedActions(actions: AiProposedAction[], ctx: AiActionValidationContext): AiValidatedAction[] {

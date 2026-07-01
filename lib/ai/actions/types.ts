@@ -8,6 +8,8 @@ export type AiActionTool =
 export type AiActionStatus =
   | 'proposed'
   | 'ready'
+  | 'needs_input'
+  | 'blocked'
   | 'needs_review'
   | 'executing'
   | 'executed'
@@ -15,6 +17,19 @@ export type AiActionStatus =
   | 'failed'
 
 export type AiActionEntityType = 'budget' | 'goal' | 'alert'
+export type AiActionInputField = 'walletId' | 'categoryId' | 'amount' | 'target' | 'title' | 'message' | 'prompt' | 'href'
+
+export interface AiActionOption {
+  id: string
+  name: string
+}
+
+export interface AiActionInputIssue {
+  field: AiActionInputField
+  label: string
+  kind: 'select_wallet' | 'select_category' | 'money' | 'text' | 'navigation'
+  options?: AiActionOption[]
+}
 
 export interface AiProposedAction<TPayload = unknown> {
   id: string
@@ -30,6 +45,7 @@ export interface AiValidatedAction<TPayload = unknown> extends AiProposedAction<
   status: AiActionStatus
   warnings: string[]
   missingFields: string[]
+  inputIssues?: AiActionInputIssue[]
 }
 
 export interface AiActionExecutionResult {
@@ -88,5 +104,7 @@ export interface AiActionValidationContext {
   defaultWalletId?: string
   walletIds: string[]
   categoryIds: string[]
+  wallets: AiActionOption[]
+  categories: AiActionOption[]
   categoriesByName: Map<string, { id: string; name: string }[]>
 }
