@@ -20,6 +20,7 @@ import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
+import { calculateGoalReserve, calculateMonthlySafeToSpend } from '@/lib/safeToSpendSummary'
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
@@ -594,8 +595,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const activeGoals = goals.filter((g) => !g.isArchived && g.status !== 'COMPLETED')
   const totalRemainingGoal = activeGoals.reduce((sum, g) => sum + Math.max((g.target || 0) - (g.current || 0), 0), 0)
   // ponytail: goalReserve pakai heuristik (10% saldo atau sisa goal/12). Upgrade: pakai /api/goals/projections kalau butuh akurasi.
-  const goalReserve = activeGoals.length ? Math.round(Math.min(displayBalance * 0.1, totalRemainingGoal / 12)) : 0
-  const safeToSpend = Math.max(displayBalance - summary.expense - sharedBillsSummary.outstandingAmount - goalReserve, 0)
+  const goalReserve = calculateGoalReserve({ balance: displayBalance, remainingGoalAmount: totalRemainingGoal })
+  const safeToSpend = calculateMonthlySafeToSpend({
+    balance: displayBalance,
+    monthlyExpense: summary.expense,
+    outstandingBills: sharedBillsSummary.outstandingAmount,
+    goalReserve,
+  })
   const safeConfidence = dataQualityLabel
 
   // Goal projection (nearest active goal)

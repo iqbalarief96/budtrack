@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateTransactionBalance } from '@/lib/safeToSpendSummary';
+import { listSharedBills } from '@/lib/shared-bills/shared-bill-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const [transactions, budgets] = await Promise.all([
+  const [transactions, budgets, goals, sharedBills, incomeSum, expenseSum] = await Promise.all([
     prisma.transaction.findMany({
       where: { userId: user.id, walletId, date: { gte: start, lt: end } },
       include: { category: { select: { name: true } } },
@@ -44,8 +46,25 @@ export async function GET(request: NextRequest) {
       },
       select: { amount: true, spent: true },
     }),
+    prisma.goal.findMany({
+      where: { userId: user.id, isArchived: false, status: { not: 'COMPLETED' } },
+      select: { target: true, current: true },
+    }),
+    listSharedBills(user.id, { walletId }),
+    prisma.transaction.aggregate({
+      where: { userId: user.id, walletId, type: { in: ['income', 'INCOME'] } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { userId: user.id, walletId, type: { in: ['expense', 'EXPENSE'] } },
+      _sum: { amount: true },
+    }),
   ]);
 
+  const calculatedBalance = calculateTransactionBalance({
+    totalIncome: incomeSum._sum.amount || 0,
+    totalExpense: expenseSum._sum.amount || 0,
+  });
   const expenses = transactions.filter((tx) => tx.type === 'EXPENSE');
   const income = transactions.filter((tx) => tx.type === 'INCOME');
   const totalExpense = expenses.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
@@ -74,6 +93,18 @@ export async function GET(request: NextRequest) {
     .reduce((sum, [, amount]) => sum + amount, 0);
   const debtRatio = totalExpense > 0 ? (debtExpense / totalExpense) * 100 : 0;
   const debtRisk = debtRatio >= 50 ? 'critical' : debtRatio >= 25 ? 'warning' : 'none';
+  const remainingGoalAmount = goals.reduce((sum, goal) => sum + Math.max((goal.target || 0) - (goal.current || 0), 0), 0);
+  const goalReserve = calculateGoalReserve({ balance: calculatedBalance, remainingGoalAmount });
+  const outstandingBills = sharedBills.reduce((sum, bill) => {
+    const paidAmount = bill.participants.reduce((paid, participant) => paid + participant.paidAmount, 0);
+    return sum + Math.max(0, bill.totalAmount - paidAmount);
+  }, 0);
+  const safeToSpend = calculateMonthlySafeToSpend({
+    balance: calculatedBalance,
+    monthlyExpense: totalExpense,
+    outstandingBills,
+    goalReserve,
+  });
 
   return NextResponse.json({
     walletId: wallet.id,
@@ -82,10 +113,10 @@ export async function GET(request: NextRequest) {
     dataFreshness: new Date().toISOString(),
     totalIncome,
     totalExpense,
-    balance: wallet.balance,
+    balance: calculatedBalance,
     transactionCount: transactions.length,
     topCategory,
-    safeToSpend: wallet.balance,
+    safeToSpend,
     debtRisk,
     budgetStatus,
   });
