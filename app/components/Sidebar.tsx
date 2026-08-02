@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   FiHome, FiDollarSign, FiCreditCard, FiPieChart,
   FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
-  FiBriefcase, FiUsers, FiHeart, FiChevronDown, FiChevronUp, FiSearch
+  FiBriefcase, FiUsers, FiHeart, FiChevronDown, FiChevronUp, FiSearch, FiCalendar
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
@@ -54,6 +54,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       defaultOpen: true,
       items: [
         { path: '/transactions', icon: <FiDollarSign size={20} />, label: 'Transaksi' },
+        { path: '/calendar', icon: <FiCalendar size={20} />, label: 'Kalender' },
         { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
         { path: '/savings', icon: <FiTrendingUp size={20} />, label: 'Tabungan' },
         { path: '/credit-cards', icon: <CreditCard size={20} />, label: 'Credit Cards' },
