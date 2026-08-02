@@ -17,6 +17,7 @@ import CustomizableTabContent from '../components/dashboard/CustomizableTabConte
 import WalletContributionChart from '@/app/components/dashboard/WalletContributionChart'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
+import { calculateTrend, type TrendResult } from '@/lib/trend'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
@@ -45,6 +46,25 @@ type SubscriptionAlert = {
     billingCycle: string
     wallet?: { name: string } | null
   }
+}
+
+function TrendBadge({ trend, invert, label }: { trend: TrendResult; invert?: boolean; label?: string }) {
+  if (trend.direction === 'none' || trend.pct === null) {
+    return <span className="mt-2 inline-block text-[10px] text-blue-200/60">— belum ada data</span>
+  }
+  const isGood = invert ? trend.direction === 'down' : trend.direction === 'up'
+  const arrow = trend.direction === 'up' ? '▲' : trend.direction === 'down' ? '▼' : '•'
+  const sign = trend.pct > 0 ? '+' : ''
+  return (
+    <span
+      className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        isGood ? 'bg-emerald-500/20 text-emerald-200' : 'bg-red-500/20 text-red-200'
+      }`}
+    >
+      {arrow} {sign}{trend.pct.toFixed(1)}%
+      {label ? <span className="font-normal opacity-70">vs {label}</span> : null}
+    </span>
+  )
 }
 
 interface Props {
@@ -604,6 +624,21 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   })
   const safeConfidence = dataQualityLabel
 
+  // Month-over-month trend (last COMPLETE month vs previous month from transaction history)
+  // Skip the current in-progress month so a 2-day-old month doesn't show -100% as "trend"
+  const nowForTrend = new Date()
+  const currentMonthLabel = nowForTrend.toLocaleString('id-ID', { month: 'short' })
+  const fullMonths = transactionHistory.filter((m) => m.month !== currentMonthLabel)
+  const trendCurrentMonth = fullMonths.length >= 1 ? fullMonths[fullMonths.length - 1] : null
+  const trendPrevMonth = fullMonths.length >= 2 ? fullMonths[fullMonths.length - 2] : null
+  const incomeTrend: TrendResult = trendCurrentMonth && trendPrevMonth
+    ? calculateTrend(trendCurrentMonth.income, trendPrevMonth.income)
+    : { pct: null, direction: 'none' }
+  const expenseTrend: TrendResult = trendCurrentMonth && trendPrevMonth
+    ? calculateTrend(trendCurrentMonth.expense, trendPrevMonth.expense)
+    : { pct: null, direction: 'none' }
+  const trendPrevLabel = trendPrevMonth?.month ?? ''
+
   // Goal projection (nearest active goal)
   const projectionGoal = activeGoals
     .map((g) => ({ g, remaining: Math.max((g.target || 0) - (g.current || 0), 0) }))
@@ -671,12 +706,16 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       {
         label: 'Pemasukan',
         data: transactionHistory.map(m => m.income),
-        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        backgroundColor: '#10b981',
+        borderRadius: 6,
+        maxBarThickness: 26,
       },
       {
         label: 'Pengeluaran',
         data: transactionHistory.map(m => m.expense),
-        backgroundColor: 'rgba(255, 99, 132, 0.6)',
+        backgroundColor: '#f87171',
+        borderRadius: 6,
+        maxBarThickness: 26,
       },
     ],
   }
@@ -842,11 +881,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
             <h3 className="text-blue-100">Pemasukan <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
             <p className="mt-1 text-2xl font-bold text-green-300">{formatCurrency(summary.income)}</p>
+            <TrendBadge trend={incomeTrend} label={trendPrevLabel} />
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
             <h3 className="text-blue-100">Pengeluaran <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
             <p className="mt-1 text-2xl font-bold text-red-300">{formatCurrency(summary.expense)}</p>
+            <TrendBadge trend={expenseTrend} invert label={trendPrevLabel} />
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
@@ -1160,7 +1201,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
               </div>
 
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="font-medium text-gray-700 mb-3">Tren Pemasukan/Pengeluaran</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium text-gray-700">Tren Pemasukan/Pengeluaran</h3>
+                  <a href="/reports" className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                    Unduh Laporan →
+                  </a>
+                </div>
                 {transactionHistory.length > 0 ? (
                   <div className="h-80">
                     <Bar data={barChartData} options={barChartOptions} />
