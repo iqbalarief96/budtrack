@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateEmergencyFundRecommendation } from '@/lib/ai/deepseek'
-import { prisma } from '@/lib/prisma'
+import prisma from '@/lib/prisma'
 
 /**
  * POST /api/wallets/[walletId]/emergency-fund/ai-recommend
@@ -42,14 +42,29 @@ export async function POST(
       select: {
         provider: true,
         apiKey: true,
+        deepseekApiKey: true,
+        openrouterApiKey: true,
+        zaiApiKey: true,
+        customApiKey: true,
         selectedModel: true,
       },
     })
 
-    // Default to DeepSeek if no settings or use user's preference
+    const provider = userSettings?.provider || 'deepseek'
+    const providerApiKey =
+      provider === 'deepseek'
+        ? userSettings?.deepseekApiKey || userSettings?.apiKey
+        : provider === 'openrouter'
+          ? userSettings?.openrouterApiKey || userSettings?.apiKey
+          : provider === 'zai'
+            ? userSettings?.zaiApiKey || userSettings?.apiKey
+            : provider === 'custom'
+              ? userSettings?.customApiKey || userSettings?.apiKey
+              : userSettings?.apiKey
+
     const aiSettings = {
-      provider: userSettings?.provider || 'deepseek',
-      apiKey: userSettings?.apiKey || '',
+      provider,
+      apiKey: providerApiKey || '',
       model: userSettings?.selectedModel || 'deepseek-chat',
     }
 
