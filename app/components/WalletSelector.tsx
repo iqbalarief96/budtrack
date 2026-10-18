@@ -27,9 +27,11 @@ interface WalletGroup {
 // Define props interface to include displayBalance
 interface WalletSelectorProps {
   displayBalance?: number; // Make it optional, it might not always be passed
+  /** Wrapper spacing/width override. Defaults to the dashboard layout (mb-6). */
+  className?: string;
 }
 
-const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
+const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance, className }) => {
   const { 
     filteredWallets, 
     selectedWallet, 
@@ -137,8 +139,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
   if (!display) return null
 
   return (
-    <div className="relative mb-6">
+    <div className={`relative ${className ?? 'mb-6'}`}>
       <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         className="flex items-center justify-between w-full p-3 bg-white/90 backdrop-blur-sm border rounded-lg shadow-sm hover:bg-white transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
@@ -176,7 +181,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance }) => {
       </button>
 
       {isOpen && (
-        <div className="absolute mt-2 w-full bg-white border rounded-lg shadow-lg z-10 max-h-[400px] overflow-y-auto">
+        <div className="absolute mt-2 w-full min-w-[16rem] bg-white border rounded-lg shadow-lg z-30 max-h-[400px] overflow-y-auto">
           {/* Wallet Groups Section */}
           {walletGroups.length > 0 && (
             <>

@@ -1,5 +1,5 @@
-export const VALID_CREDIT_CARD_STATUSES = new Set(['active', 'paused', 'closed'])
-export const VALID_CREDIT_CARD_TRANSACTION_TYPES = new Set(['charge', 'payment', 'fee', 'adjustment'])
+export const VALID_CREDIT_CARD_STATUSES = new Set(['active', 'paused', 'closed', 'archived'])
+export const VALID_CREDIT_CARD_TRANSACTION_TYPES = new Set(['charge', 'payment', 'fee', 'adjustment', 'installment', 'refund', 'reversal'])
 
 export function clampBillingDay(value: unknown, fallback = 1) {
   const day = Number.parseInt(String(value ?? fallback), 10)
@@ -127,12 +127,28 @@ export function normalizeCreditCardPatch(body: any) {
 export function transactionDelta(type: string, amount: number) {
   switch (type) {
     case 'payment':
+    case 'refund':
+    case 'reversal':
       return -Math.abs(amount)
     case 'adjustment':
       return amount
     case 'charge':
     case 'fee':
+    case 'installment':
     default:
       return Math.abs(amount)
   }
 }
+
+/** Label UI untuk tipe transaksi (Bahasa Indonesia) */
+export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
+  charge: 'Charge',
+  payment: 'Payment',
+  fee: 'Fee',
+  adjustment: 'Adjustment',
+  installment: 'Cicilan',
+  refund: 'Refund',
+  reversal: 'Reversal / Koreksi',
+}
+
+export const TRANSACTION_TYPE_OPTIONS = Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))

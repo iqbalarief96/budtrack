@@ -26,6 +26,16 @@ export const useTransactionModal = () => {
   return context;
 };
 
+/**
+ * Non-throwing variant. Returns null when no provider is mounted (e.g. the
+ * root layout only mounts TransactionModalProvider for authenticated
+ * sessions). Callers that must render unconditionally should fall back to
+ * their own local modal state instead of crashing the page.
+ */
+export const useOptionalTransactionModal = () => {
+  return useContext(TransactionModalContext);
+};
+
 interface TransactionModalProviderProps {
   children: ReactNode;
 }

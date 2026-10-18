@@ -21,6 +21,7 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'BudTrack - Financial Tracker',
   description: 'Track your finances, budgets, and savings',
+  manifest: '/manifest.json',
 }
 
 export default async function RootLayout({

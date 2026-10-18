@@ -14,18 +14,37 @@ export async function GET(request: NextRequest) {
   }
 
   const walletId = request.nextUrl.searchParams.get('walletId');
-  if (!walletId) {
-    return NextResponse.json({ error: 'walletId is required' }, { status: 400 });
-  }
 
   const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const wallet = await prisma.wallet.findFirst({
-    where: { id: walletId, userId: user.id },
-    select: { id: true, name: true, balance: true },
-  });
-  if (!wallet) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
+  // Mode "Semua Dompet": walletId kosong = agregasi seluruh wallet user.
+  let wallet: { id: string | null; name: string; balance: number };
+  let walletFilter: { walletId?: string | { in: string[] } };
+
+  if (walletId) {
+    const found = await prisma.wallet.findFirst({
+      where: { id: walletId, userId: user.id },
+      select: { id: true, name: true, balance: true },
+    });
+    if (!found) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
+    wallet = found;
+    walletFilter = { walletId };
+  } else {
+    const wallets = await prisma.wallet.findMany({
+      where: { userId: user.id },
+      select: { id: true, balance: true },
+    });
+    if (wallets.length === 0) {
+      return NextResponse.json({ error: 'No wallets found' }, { status: 404 });
+    }
+    wallet = {
+      id: null,
+      name: 'Semua Dompet',
+      balance: wallets.reduce((sum, w) => sum + w.balance, 0),
+    };
+    walletFilter = { walletId: { in: wallets.map((w) => w.id) } };
+  }
 
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -33,14 +52,14 @@ export async function GET(request: NextRequest) {
 
   const [transactions, budgets, goals, sharedBills, incomeSum, expenseSum] = await Promise.all([
     prisma.transaction.findMany({
-      where: { userId: user.id, walletId, date: { gte: start, lt: end } },
+      where: { userId: user.id, ...walletFilter, date: { gte: start, lt: end } },
       include: { category: { select: { name: true } } },
       orderBy: { date: 'desc' },
     }),
     prisma.budget.findMany({
       where: {
         userId: user.id,
-        walletId,
+        ...walletFilter,
         startDate: { lte: end },
         endDate: { gte: start },
       },
@@ -50,20 +69,20 @@ export async function GET(request: NextRequest) {
       where: { userId: user.id, isArchived: false, status: { not: 'COMPLETED' } },
       select: { target: true, current: true },
     }),
-    listSharedBills(user.id, { walletId }),
+    listSharedBills(user.id, walletId ? { walletId } : {}),
     prisma.transaction.aggregate({
-      where: { userId: user.id, walletId, type: { in: ['income', 'INCOME'] } },
+      where: { userId: user.id, ...walletFilter, type: { in: ['income', 'INCOME'] } },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { userId: user.id, walletId, type: { in: ['expense', 'EXPENSE'] } },
+      where: { userId: user.id, ...walletFilter, type: { in: ['expense', 'EXPENSE'] } },
       _sum: { amount: true },
     }),
   ]);
 
   const calculatedBalance = calculateTransactionBalance({
-    totalIncome: incomeSum._sum.amount || 0,
-    totalExpense: expenseSum._sum.amount || 0,
+    totalIncome: incomeSum._sum?.amount || 0,
+    totalExpense: expenseSum._sum?.amount || 0,
   });
   const expenses = transactions.filter((tx) => tx.type === 'EXPENSE');
   const income = transactions.filter((tx) => tx.type === 'INCOME');

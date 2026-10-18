@@ -22,6 +22,7 @@ import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
 import { calculateGoalReserve, calculateMonthlySafeToSpend } from '@/lib/safeToSpendSummary'
+import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
@@ -780,7 +781,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     : selectedWallet?.name || 'Personal'
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <SpendingAnomalyBanner />
       <div className={`bg-gradient-to-r ${isGroupSelected ? 'from-purple-700 to-purple-500' : 'from-blue-700 to-blue-500'} rounded-xl p-6 text-white shadow-lg`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
           <div>

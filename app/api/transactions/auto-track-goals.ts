@@ -45,7 +45,7 @@ export async function autoTrackTransactionToGoals(
           status?: string | null;
         }>
       >`
-        SELECT g.id as goalId, g.name, g.current, g.target, g.status
+        SELECT g.id as goalId, g.category as goalType, g.name, g.current, g.target, g.status
         FROM "Goal" g
         JOIN "GoalCategory" gc ON g.id = gc."goalId"
         WHERE gc."categoryId" = ${categoryId}

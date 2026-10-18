@@ -656,8 +656,8 @@ export default function RecurringPage() {
           <div className="mt-4">
             <h3 className="text-lg font-medium mb-3">Your Active Recurring Transactions</h3>
             <div className="overflow-x-auto">
-              <table className="min-w-full bg-white rounded-lg border">
-                <thead className="bg-gray-50">
+              <table className="min-w-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300">
                   <tr>
                     <th className="py-3 px-4 text-left">Name</th>
                     <th className="py-3 px-4 text-left">Category</th>

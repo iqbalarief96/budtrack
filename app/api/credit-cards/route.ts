@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         wallet: { select: { id: true, name: true, color: true, currencyCode: true } },
         transactions: {
           orderBy: { date: 'desc' },
-          take: 5,
+          take: 200,
         },
       },
       orderBy: [{ status: 'asc' }, { name: 'asc' }],

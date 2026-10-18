@@ -58,11 +58,11 @@ export function parseAssistantAnswer(markdown: string): ParsedAnswer {
     });
   }
 
-  if (lower.includes('budget')) actions.push({ id: 'budget', label: 'Open Budgets', href: '/budgets', kind: 'navigate' });
-  if (lower.includes('transaction') || lower.includes('pengeluaran') || lower.includes('spending')) actions.push({ id: 'transactions', label: 'Show Transactions', href: '/transactions', kind: 'navigate' });
-  if (lower.includes('goal') || lower.includes('target')) actions.push({ id: 'goals', label: 'Open Goals', href: '/goals', kind: 'navigate' });
-  if (lower.includes('alert') || lower.includes('risiko') || lower.includes('risk')) actions.push({ id: 'alert', label: 'Set Alert Plan', prompt: 'Bantu bikin alert plan dari risiko yang kamu temukan tadi.', kind: 'prompt', severity });
-  actions.push({ id: 'analyze-3m', label: 'Analyze 3 Months', prompt: 'Analisis pengeluaran saya 3 bulan terakhir dengan detail.', kind: 'prompt' });
+  if (lower.includes('budget')) actions.push({ id: 'budget', label: 'Lihat Budget', href: '/budgets', kind: 'navigate' });
+  if (lower.includes('transaction') || lower.includes('pengeluaran') || lower.includes('spending')) actions.push({ id: 'transactions', label: 'Lihat Transaksi', href: '/transactions', kind: 'navigate' });
+  if (lower.includes('goal') || lower.includes('target')) actions.push({ id: 'goals', label: 'Lihat Goal', href: '/goals', kind: 'navigate' });
+  if (lower.includes('alert') || lower.includes('risiko') || lower.includes('risk')) actions.push({ id: 'alert', label: 'Buat Alert Plan', prompt: 'Bantu bikin alert plan dari risiko yang kamu temukan tadi.', kind: 'prompt', severity });
+  actions.push({ id: 'analyze-3m', label: 'Analisis 3 Bulan', prompt: 'Analisis pengeluaran saya 3 bulan terakhir dengan detail.', kind: 'prompt' });
 
   return {
     summary: firstUsefulLine(clean),

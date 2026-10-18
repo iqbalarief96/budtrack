@@ -16,14 +16,14 @@ export async function POST(request: NextRequest) {
   try {
     // Get user session
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user?.email) {
       return new NextResponse(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401 }
       );
     }
-    
+
     // Parse request body
     const body = await request.json();
 
@@ -33,21 +33,21 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     const rawPrompt = typeof body?.prompt === 'string' ? body.prompt : '';
     const trimmedPrompt = rawPrompt.trim();
     const walletId = typeof body?.walletId === 'string' && body.walletId.trim().length > 0
       ? body.walletId.trim()
       : undefined;
     const safeHistory = sanitizeHistory(body?.history);
-    
+
     if (!trimmedPrompt) {
       return new NextResponse(
         JSON.stringify({ error: 'Prompt is required' }),
         { status: 400 }
       );
     }
-    
+
     // Get user data
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
@@ -55,14 +55,14 @@ export async function POST(request: NextRequest) {
         settings: true,
       },
     });
-    
+
     if (!user) {
       return new NextResponse(
         JSON.stringify({ error: 'User not found' }),
         { status: 404 }
       );
     }
-    
+
     const provider = user.settings?.provider || '';
     const providerApiKey = provider === 'deepseek'
       ? user.settings?.deepseekApiKey || user.settings?.apiKey
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           balance: true,
         },
       });
-      
+
       if (!wallet) {
         return new NextResponse(
           JSON.stringify({ error: 'Wallet not found' }),
@@ -133,21 +133,50 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Get user's financial data to provide context to AI
     const financialData = await getFinancialData(user.id, walletId);
-    
+    const crossDomain = await getCrossDomainSnapshot(user.id);
+
+    const ccBlock = crossDomain.cards.length
+      ? crossDomain.cards.map(c => `- ${c.name}: tagihan berjalan ${formatCurrency(c.currentBalance)} / limit ${formatCurrency(c.creditLimit)} (jatuh tempo tgl ${c.dueDay})`).join('\n')
+      : 'Tidak ada kartu kredit aktif.'
+
+    const installmentBlock = crossDomain.installments.length
+      ? crossDomain.installments.map(i => `- ${i.merchant}: cicilan ${i.term}/${i.tenor} (${formatCurrency(i.amount)}/bulan, mulai ${new Date(i.date).toLocaleDateString('id-ID')})`).join('\n')
+      : 'Tidak ada cicilan aktif.'
+
+    const goalBlock = crossDomain.goals.length
+      ? crossDomain.goals.map(g => {
+          const pct = g.target > 0 ? Math.round((g.current / g.target) * 100) : 0
+          const dl = g.deadline ? ` deadline ${new Date(g.deadline).toLocaleDateString('id-ID')}` : ''
+          return `- ${g.name}: ${formatCurrency(g.current)} / ${formatCurrency(g.target)} (${pct}%)${dl}`
+        }).join('\n')
+      : 'Tidak ada goal aktif.'
+
+    const h = crossDomain.health
+    const healthBlock = h
+      ? [
+          h.weight != null ? `Berat: ${h.weight} kg` : null,
+          h.bodyFat != null ? `Lemak tubuh: ${h.bodyFat}%` : null,
+          h.bmi != null ? `BMI: ${h.bmi}` : null,
+          h.avgSteps != null ? `Rata-rata langkah: ${Math.round(h.avgSteps)}/hari` : null,
+          h.avgSleep != null ? `Rata-rata tidur: ${h.avgSleep.toFixed(1)} jam` : null,
+          h.avgRestingHr != null ? `RHR: ${Math.round(h.avgRestingHr)} bpm` : null,
+        ].filter(Boolean).join(' | ')
+      : 'Belum ada data kesehatan.'
+
     // Create context for AI
     const context = `
     Data Keuangan Pengguna:
     Nama: ${user.name || 'Pengguna'}
     Total Saldo: ${formatCurrency(financialData.totalBalance)}
     Dompet Terpilih: ${wallet ? `${wallet.name} (${formatCurrency(wallet.balance)})` : 'Semua dompet'}
-    
+
     Transaksi Bulan Ini: ${financialData.transactions.length}
     Total Pemasukan Bulan Ini: ${formatCurrency(financialData.monthlyIncome)}
     Total Pengeluaran Bulan Ini: ${formatCurrency(financialData.monthlyExpense)}
-    
+
     Transaksi Tahun Ini: ${financialData.allTransactions.filter(t => {
       const date = new Date(t.date);
       const now = new Date();
@@ -155,9 +184,9 @@ export async function POST(request: NextRequest) {
     }).length}
     Total Pemasukan Tahun Ini: ${formatCurrency(financialData.yearlyIncome)}
     Total Pengeluaran Tahun Ini: ${formatCurrency(financialData.yearlyExpense)}
-    
+
     Total Semua Transaksi: ${financialData.allTransactions.length}
-    
+
     Detail Transaksi Bulan Ini:
     ${financialData.transactions
       .filter(t => t.type === 'EXPENSE')
@@ -165,28 +194,40 @@ export async function POST(request: NextRequest) {
       .map(t => `- ${t.description}: ${formatCurrency(Math.abs(t.amount))} (${t.category?.name || 'Tanpa Kategori'})`)
       .join('\n')
     }
-    
+
     Kategori Pengeluaran Terbesar Tahun Ini: ${financialData.topCategory ? `${financialData.topCategory.name} (${formatCurrency(financialData.topCategory.amount)})` : 'Tidak ada data'}
     Jumlah Budget Aktif: ${financialData.budgets.length}
-    
+
     Detail Dompet (${wallet ? wallet.name : 'Semua Dompet'}):
     ${wallet
       ? `Saldo: ${formatCurrency(wallet.balance)}`
       : financialData.wallets.slice(0, 5).map(w => `${w.name}: ${formatCurrency(w.balance)}`).join('\n')}
-    
+
     Budgets:
     ${financialData.budgets.map(b => `${b.title}: ${formatCurrency(b.amount)} (Terpakai: ${formatCurrency(b.spent)} - ${b.percentUsed}%)`).join('\n')}
-    
+
     Transaksi Terbaru:
     ${financialData.recentTransactions.map(t => `${new Date(t.date).toLocaleDateString()}: ${t.description} - ${formatCurrency(t.amount)} (${t.categoryName})`).join('\n')}
-    
+
     Statistik Bulanan (12 bulan terakhir):
-    ${financialData.monthlyStats.slice(0, 6).map(m => 
+    ${financialData.monthlyStats.slice(0, 6).map(m =>
       `${m.month}: Pemasukan ${formatCurrency(m.income)}, Pengeluaran ${formatCurrency(m.expense)}, Tabungan ${formatCurrency(m.savings)}, Jumlah Transaksi ${m.transactionCount}`
     ).join('\n')}
-    
+
+    === KARTU KREDIT ===
+    ${ccBlock}
+
+    === CICILAN AKTIF ===
+    ${installmentBlock}
+
+    === TARGET KEUANGAN (GOALS) ===
+    ${goalBlock}
+
+    === DATA KESEHATAN (7 hari terakhir) ===
+    ${healthBlock}
+
     Lu adalah Financial Advisor profesional world-class yang ahli banget dalam personal finance dan wealth management. Berikan analisis data keuangan dengan sangat tajam dan mendalam, insights yang actionable, dan rekomendasi tingkat tinggi.
-    
+
     STYLE KOMUNIKASI:
     1. Gunakan bahasa Jaksel gaul yang konsisten - mix Bahasa Indonesia dengan English terms keuangan.
     2. PENTING: Pakai "gw/gue" untuk merujuk diri sendiri, JANGAN pernah pakai "aku/saya".
@@ -194,7 +235,7 @@ export async function POST(request: NextRequest) {
     4. Gunakan slang Jaksel seperti: "literally", "basically", "which is", "literally", "kayak", "gimana", "gitu", "so", "anyway", "honestly", "please deh", "parah sih", dll.
     5. Gunakan financial terms English yang dicampur dengan bahasa Indonesia, seperti: "cash flow lo", "spending habit", "investment portfolio lo", "emergency fund", dll.
     6. Tone suara: Smart, confident, sedikit witty, tapi tetap profesional.
-    
+
     PEDOMAN KONTEN:
     1. Berikan analisis financial yang sophisticated dan high-level, tapi dijelaskan dengan gaya santai.
     2. Jadilah konkrit dan specific dalam saran - bukan sekedar generic advice.
@@ -203,7 +244,7 @@ export async function POST(request: NextRequest) {
     5. SELALU pakai data historis pengguna untuk memberikan insights yang komprehensif dan personal.
     6. Jangan ragu highlight red flags atau areas of improvement dalam keuangan pengguna.
     7. Gunakan financial frameworks dan best practices dari wealth management profesional.
-    
+
     STRUKTUR JAWABAN:
     1. **Bold** untuk judul sections dan key insights
     2. *Italic* untuk penekanan atau financial terms penting
@@ -217,22 +258,16 @@ export async function POST(request: NextRequest) {
        | Column1 | Column2 |
        | ------- | ------- |
        | Data1   | Data2   |
-    
-    SLANG JAKSEL YANG WAJIB DIPAKAI (gunakan beberapa dalam setiap jawaban):
-    - "Which is..." untuk menjelaskan sesuatu
-    - "I mean..." untuk memberikan penekanan
-    - "So basically..." untuk mengawali penjelasan
-    - "Literally..." untuk menekankan sesuatu
-    - "Honestly..." saat memberikan pendapat pribadi
-    - "In my opinion..." saat memberikan rekomendasi
-    - "Please deh..." untuk ekspresi ketidaksetujuan
-    - "By the way..." untuk transisi topik
-    - "Anyway..." untuk transisi atau kesimpulan
-    - Tambahkan "sih", "dong", "kan", "gitu", "banget" untuk emphasize
-    
-    Harus banget ada satu atau dua emoji yang relevan dalam setiap jawaban untuk membuat conversational.
+
+    GAYA BAHASA:
+    - Bahasa Indonesia gaul yang natural: pakai "gw" untuk diri sendiri, "lo" untuk pengguna. JANGAN pakai "aku/saya" atau "kamu/anda".
+    - Boleh campur istilah keuangan English yang lazim (cash flow, spending, emergency fund) — tapi JANGAN dipaksakan.
+    - DILARANG pakai slang paksaan: "which is", "literally", "so basically", "honestly", "please deh", "anyway", "I mean".
+    - DILARANG pakai filler "sih", "dong", "kan", "gitu", "banget" sebagai hiasan.
+    - Emoji maksimal 1 per jawaban, dan hanya kalau benar-benar menambah kejelasan. Jangan dekoratif.
+    - Tone: tajam, presisi, langsung ke poin. Kayak senior financial advisor yang nggak buang waktu.
     `;
-    
+
     if (shouldStream) {
       const encoder = new TextEncoder();
 
@@ -252,12 +287,12 @@ export async function POST(request: NextRequest) {
               prompt: trimmedPrompt,
               provider,
               apiKey: providerApiKey,
-              model: user.settings.selectedModel,
-              customEndpoint: provider === 'custom' ? user.settings.customEndpoint : null,
+              model: user.settings?.selectedModel ?? '',
+              customEndpoint: provider === 'custom' ? user.settings?.customEndpoint ?? null : null,
               context,
               history: safeHistory,
               timeoutMs: 120000,
-              maxTokens: 2000,
+              maxTokens: 4000,
             })) {
               raw += chunk;
               const { visibleText } = parseChatbotToolCalls(raw);
@@ -314,7 +349,7 @@ export async function POST(request: NextRequest) {
       context,
       history: safeHistory,
     });
-    
+
     return NextResponse.json({ response: aiResponse });
   } catch (error) {
     // Log detailed error info
@@ -327,12 +362,12 @@ export async function POST(request: NextRequest) {
     } else {
       console.error('Unknown error in chatbot API:', error);
     }
-    
+
     // Return more descriptive error
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Failed to process request', 
-        details: error instanceof Error ? error.message : 'Unknown error' 
+      JSON.stringify({
+        error: 'Failed to process request',
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { status: 500 }
     );
@@ -366,7 +401,101 @@ function sanitizeHistory(history: unknown): ChatHistoryItem[] {
     cleaned.push({ role, content });
   }
 
-  return cleaned.slice(-10);
+  // Budget cap: ambil maksimal 10 pesan, tapi potong dari yang tertua jika total > 8000 char
+  const sliced = cleaned.slice(-10);
+  let total = 0;
+  const budgeted: ChatHistoryItem[] = [];
+  for (let i = sliced.length - 1; i >= 0; i--) {
+    const len = JSON.stringify(sliced[i]).length;
+    if (total + len > 8000) break;
+    budgeted.unshift(sliced[i]);
+    total += len;
+  }
+  return budgeted;
+}
+
+// Helper: cross-domain snapshot (credit card installments, goals, health)
+async function getCrossDomainSnapshot(userId: string) {
+  const empty = {
+    cards: [] as Array<{ name: string; currentBalance: number; creditLimit: number; dueDay: number }>,
+    installments: [] as Array<{ merchant: string; term: number; tenor: number; amount: number; date: Date }>,
+    goals: [] as Array<{ name: string; current: number; target: number; deadline: Date | null; status: string }>,
+    health: null as null | {
+      weight: number | null
+      bodyFat: number | null
+      bmi: number | null
+      avgSteps: number | null
+      avgSleep: number | null
+      avgRestingHr: number | null
+      days: number
+    },
+  }
+
+  try {
+    const [cards, installmentTx, goals, healthRows] = await Promise.all([
+      prisma.creditCard.findMany({
+        where: { userId, status: 'active' },
+        select: { name: true, currentBalance: true, creditLimit: true, dueDay: true },
+      }),
+      prisma.creditCardTransaction.findMany({
+        where: {
+          userId,
+          installmentTenor: { not: null },
+          installmentTerm: { not: null },
+          type: { not: 'installment_completed' },
+        },
+        select: { merchant: true, installmentTerm: true, installmentTenor: true, amount: true, date: true },
+        orderBy: { date: 'desc' },
+        take: 20,
+      }),
+      prisma.goal.findMany({
+        where: { userId, isArchived: false, status: { not: 'COMPLETED' } },
+        select: { name: true, current: true, target: true, deadline: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.healthMetric.findMany({
+        where: { userId },
+        orderBy: { date: 'desc' },
+        take: 7,
+        select: {
+          weight: true, bodyFat: true, bmi: true, steps: true,
+          sleepHours: true, restingHeartRate: true,
+        },
+      }),
+    ])
+
+    empty.cards = cards
+    empty.installments = installmentTx.map(t => ({
+      merchant: t.merchant || 'Tanpa nama',
+      term: t.installmentTerm as number,
+      tenor: t.installmentTenor as number,
+      amount: t.amount,
+      date: t.date,
+    }))
+    empty.goals = goals
+
+    if (healthRows.length > 0) {
+      const latest = healthRows[0]
+      const avg = (pick: (r: typeof healthRows[number]) => number | null) => {
+        const vals = healthRows.map(pick).filter((v): v is number => typeof v === 'number')
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+      }
+      empty.health = {
+        weight: latest.weight,
+        bodyFat: latest.bodyFat,
+        bmi: latest.bmi,
+        avgSteps: avg(r => r.steps),
+        avgSleep: avg(r => r.sleepHours),
+        avgRestingHr: avg(r => r.restingHeartRate),
+        days: healthRows.length,
+      }
+    }
+  } catch (error) {
+    console.error('Error getting cross-domain snapshot:', error)
+  }
+
+  return empty
 }
 
 // Helper function to get user's financial data
@@ -378,7 +507,7 @@ async function getFinancialData(userId: string, walletId?: string) {
         ? { id: walletId, userId }
         : { userId },
     });
-    
+
     // Handle no wallets case
     if (wallets.length === 0) {
       return {
@@ -396,19 +525,19 @@ async function getFinancialData(userId: string, walletId?: string) {
         monthlyStats: []
       };
     }
-    
+
     // Calculate total balance
     const totalBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
-    
+
     // Get date ranges
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const endOfYear = new Date(now.getFullYear(), 11, 31);
-    
+
     const lookbackStart = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-    
+
     // Get transactions within the last 12 months (capped to 500 records for prompt size)
     const allTransactions = await prisma.transaction.findMany({
       where: {
@@ -428,14 +557,14 @@ async function getFinancialData(userId: string, walletId?: string) {
       },
       take: 500,
     });
-    
+
     // Get current month transactions
     const transactions = allTransactions.filter(t => {
       const date = new Date(t.date);
       return date >= startOfMonth && date <= endOfMonth;
     });
-    
-    // Get year transactions 
+
+    // Get year transactions
     const yearTransactions = allTransactions.filter(t => {
       const date = new Date(t.date);
       return date >= startOfYear && date <= endOfYear;
@@ -448,51 +577,51 @@ async function getFinancialData(userId: string, walletId?: string) {
       date: t.date,
       categoryName: t.category?.name || 'Uncategorized',
     }));
-    
+
     // Calculate monthly income and expense
     const monthlyIncome = transactions
       .filter(t => t.type === 'INCOME')
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    
+
     // Calculate yearly income
     const yearlyIncome = yearTransactions
       .filter(t => t.type === 'INCOME')
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    
+
     // Identify expenses by transaction type
     const expenseTransactions = transactions.filter(t => t.type === 'EXPENSE');
     const yearlyExpenseTransactions = yearTransactions.filter(t => t.type === 'EXPENSE');
-    
+
     const monthlyExpense = expenseTransactions
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     const yearlyExpense = yearlyExpenseTransactions
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     // Calculate monthly stats for the last 12 months
     const lastTwelveMonths = [];
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
       lastTwelveMonths.push(monthDate);
     }
-    
+
     const monthlyStats = lastTwelveMonths.map(monthStart => {
       const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
       const monthName = monthStart.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-      
+
       const monthTransactions = allTransactions.filter(t => {
         const date = new Date(t.date);
         return date >= monthStart && date <= monthEnd;
       });
-      
+
       const income = monthTransactions
         .filter(t => t.type === 'INCOME')
         .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-      
+
       const expense = monthTransactions
         .filter(t => t.type === 'EXPENSE')
         .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-      
+
       return {
         month: monthName,
         income,
@@ -501,7 +630,7 @@ async function getFinancialData(userId: string, walletId?: string) {
         transactionCount: monthTransactions.length
       };
     });
-    
+
     // Get top expense category
     const categoryExpenses = yearlyExpenseTransactions
       .reduce((acc, t) => {
@@ -512,13 +641,13 @@ async function getFinancialData(userId: string, walletId?: string) {
         acc[categoryName] += Math.abs(t.amount);
         return acc;
       }, {} as Record<string, number>);
-    
+
     const categories = Object.entries(categoryExpenses)
       .map(([name, amount]) => ({ name, amount }))
       .sort((a, b) => b.amount - a.amount);
-    
+
     const topCategory = categories.length > 0 ? categories[0] : null;
-    
+
     // Get user's budgets
     const budgets = await prisma.budget.findMany({
       where: {
@@ -535,7 +664,7 @@ async function getFinancialData(userId: string, walletId?: string) {
       },
       take: 5,
     });
-    
+
     // Calculate budget usage
     const budgetsWithUsage = await Promise.all(
       budgets.map(async (budget) => {
@@ -545,17 +674,17 @@ async function getFinancialData(userId: string, walletId?: string) {
             if (t.type !== 'EXPENSE') return false;
             if (budget.categoryId && t.categoryId !== budget.categoryId) return false;
             if (budget.walletId && t.walletId !== budget.walletId) return false;
-            
+
             const txDate = new Date(t.date);
             const endDate = budget.endDate || now;
             return txDate >= budget.startDate && txDate <= endDate;
           });
-          
+
           const spent = budgetTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-          const percentUsed = budget.amount > 0 
+          const percentUsed = budget.amount > 0
             ? Math.round((spent / budget.amount) * 100)
             : 0;
-          
+
           return {
             id: budget.id,
             title: `Budget: ${budget.category?.name || 'Uncategorized'}`,
@@ -578,7 +707,7 @@ async function getFinancialData(userId: string, walletId?: string) {
         }
       })
     );
-    
+
     return {
       totalBalance,
       transactions,
@@ -624,4 +753,4 @@ function formatCurrency(amount: number) {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(amount);
-} 
+}

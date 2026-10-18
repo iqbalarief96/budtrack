@@ -38,7 +38,7 @@ export interface ParsedAnswer {
 }
 
 export interface ChatbotSummaryResponse {
-  walletId: string;
+  walletId: string | null;
   walletName: string;
   monthLabel: string;
   dataFreshness: string;

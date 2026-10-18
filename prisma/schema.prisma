@@ -30,69 +30,71 @@ model Investment {
 }
 
 model User {
-  id                      String                   @id @default(cuid())
-  name                    String?
-  email                   String                   @unique
-  emailVerified           DateTime?
-  image                   String?
-  password                String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  riskProfile             String?
-  dashboardLayout         String?
-  accounts                Account[]
-  alerts                  Alert[]
-  budgets                 Budget[]
-  budgetAlerts            BudgetAlert[]
-  categories              Category[]
-  categoryRules           CategoryRule[]
-  chatMessages            ChatMessage[]
-  dashboardViews          DashboardView[]
-  emergencyFund           EmergencyFund?
-  expenseSplits           ExpenseSplit[]
-  financialAdvice         FinancialAdvice[]
-  goals                   Goal[]
-  goalActivities          GoalActivity[]
-  ownedGroups             Group[]                  @relation("OwnedGroups")
-  groupTransactions       GroupTransaction[]
-  investments             Investment[]
-  RecurringTransaction    RecurringTransaction[]
-  sessions                Session[]
-  transactions            Transaction[]
-  importRecords           ImportRecord[]
-  receiptAttachments       ReceiptAttachment[]
-  groupMemberships        UserGroup[]
-  groupSettings           UserGroupSettings[]
-  settings                UserSettings?
-  wallets                 Wallet[]
-  walletEmergencyFunds    WalletEmergencyFund[]
-  weddings                Wedding[]
-  debts                   Debt[]
-  salaryAllocationConfigs SalaryAllocationConfig[]
-  bills                   Bill[]
-  billReminders           BillReminder[]
-  creditCards             CreditCard[]
-  creditCardTransactions  CreditCardTransaction[]
-  goalProjections         GoalProjection[]
-  goalPriorities          GoalPriority[]
-  timelineScenarios       TimelineScenario[]
-  savingRateHistory       SavingRateHistory[]
-  netWorthSnapshots       NetWorthSnapshot[]
-  netWorthGoals           NetWorthGoal[]
-  spendingInsights        SpendingInsight[]
-  spendingAlerts          SpendingAlert[]
-  spendingStats           SpendingStats[]
-  walletGroups            WalletGroup[]
-  subscriptionTrackers    SubscriptionTracker[]
-  sharedBills             SharedBill[]
-  sharedBillParticipants  SharedBillParticipant[]
-  savingsRules            SavingsRule[]
+  id                           String                       @id @default(cuid())
+  name                         String?
+  email                        String                       @unique
+  emailVerified                DateTime?
+  image                        String?
+  password                     String?
+  createdAt                    DateTime                     @default(now())
+  updatedAt                    DateTime                     @updatedAt
+  riskProfile                  String?
+  dashboardLayout              String?
+  accounts                     Account[]
+  alerts                       Alert[]
+  budgets                      Budget[]
+  budgetAlerts                 BudgetAlert[]
+  categories                   Category[]
+  categoryRules                CategoryRule[]
+  chatMessages                 ChatMessage[]
+  dashboardViews               DashboardView[]
+  emergencyFund                EmergencyFund?
+  expenseSplits                ExpenseSplit[]
+  financialAdvice              FinancialAdvice[]
+  goals                        Goal[]
+  goalActivities               GoalActivity[]
+  ownedGroups                  Group[]                      @relation("OwnedGroups")
+  groupTransactions            GroupTransaction[]
+  investments                  Investment[]
+  RecurringTransaction         RecurringTransaction[]
+  sessions                     Session[]
+  transactions                 Transaction[]
+  importRecords                ImportRecord[]
+  receiptAttachments           ReceiptAttachment[]
+  groupMemberships             UserGroup[]
+  groupSettings                UserGroupSettings[]
+  settings                     UserSettings?
+  wallets                      Wallet[]
+  walletEmergencyFunds         WalletEmergencyFund[]
+  weddings                     Wedding[]
+  debts                        Debt[]
+  salaryAllocationConfigs      SalaryAllocationConfig[]
+  bills                        Bill[]
+  billReminders                BillReminder[]
+  creditCards                  CreditCard[]
+  creditCardTransactions       CreditCardTransaction[]
+  goalProjections              GoalProjection[]
+  goalPriorities               GoalPriority[]
+  timelineScenarios            TimelineScenario[]
+  savingRateHistory            SavingRateHistory[]
+  netWorthSnapshots            NetWorthSnapshot[]
+  netWorthGoals                NetWorthGoal[]
+  spendingInsights             SpendingInsight[]
+  spendingAlerts               SpendingAlert[]
+  spendingStats                SpendingStats[]
+  walletGroups                 WalletGroup[]
+  subscriptionTrackers         SubscriptionTracker[]
+  sharedBills                  SharedBill[]
+  sharedBillParticipants       SharedBillParticipant[]
+  savingsRules                 SavingsRule[]
+  telegramActors               TelegramActor[]
   householdInventoryItems      HouseholdInventoryItem[]
   householdInventoryCategories HouseholdInventoryCategory[]
   householdInventoryLocations  HouseholdInventoryLocation[]
   householdStockMovements      HouseholdStockMovement[]
   householdProductTemplates    HouseholdProductTemplate[]
   householdShoppingListItems   HouseholdShoppingListItem[]
+  healthMetrics                HealthMetric[]
 }
 
 model Account {
@@ -154,6 +156,7 @@ model Wallet {
   creditCards           CreditCard[]
   importRecords         ImportRecord[]
   savingsRules          SavingsRule[]
+  healthMetrics         HealthMetric[]
 
   @@index([userId])
   @@index([userId, type])
@@ -188,32 +191,32 @@ model Category {
 }
 
 model Transaction {
-  id               String                        @id @default(cuid())
-  amount           Float
-  description      String?
-  date             DateTime
-  type             String
-  createdAt        DateTime                      @default(now())
-  updatedAt        DateTime                      @updatedAt
-  userId           String
-  walletId         String
-  categoryId       String?
-  goalId           String?
-  importRecordId   String?
+  id                           String                        @id @default(cuid())
+  amount                       Float
+  description                  String?
+  date                         DateTime
+  type                         String
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  userId                       String
+  walletId                     String
+  categoryId                   String?
+  goalId                       String?
+  importRecordId               String?
   migrationSourceTransactionId String?
-  migrationBatchId String?
-  transferPairId String?
-  goalActivities   GoalActivity[]
-  recurringHistory RecurringTransactionHistory[]
-  items            TransactionItem[]
-  category         Category?                     @relation(fields: [categoryId], references: [id])
-  goal             Goal?                         @relation(fields: [goalId], references: [id])
-  importRecord     ImportRecord?                 @relation(fields: [importRecordId], references: [id], onDelete: SetNull)
-  receiptAttachments ReceiptAttachment[]
-  migrationSourceTransaction   Transaction?  @relation("SavingsMigrationSource", fields: [migrationSourceTransactionId], references: [id], onDelete: SetNull)
-  migratedTransactions         Transaction[] @relation("SavingsMigrationSource")
-  wallet           Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  migrationBatchId             String?
+  transferPairId               String?
+  goalActivities               GoalActivity[]
+  recurringHistory             RecurringTransactionHistory[]
+  items                        TransactionItem[]
+  category                     Category?                     @relation(fields: [categoryId], references: [id])
+  goal                         Goal?                         @relation(fields: [goalId], references: [id])
+  importRecord                 ImportRecord?                 @relation(fields: [importRecordId], references: [id], onDelete: SetNull)
+  receiptAttachments           ReceiptAttachment[]
+  migrationSourceTransaction   Transaction?                  @relation("SavingsMigrationSource", fields: [migrationSourceTransactionId], references: [id], onDelete: SetNull)
+  migratedTransactions         Transaction[]                 @relation("SavingsMigrationSource")
+  wallet                       Wallet                        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user                         User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, date])
   @@index([walletId, type])
@@ -245,43 +248,43 @@ model TransactionItem {
 }
 
 model ReceiptAttachment {
-  id            String      @id @default(cuid())
+  id            String   @id @default(cuid())
   userId        String
   transactionId String
   fileName      String
   mimeType      String
   size          Int
-  source        String      @default("manual_upload")
+  source        String   @default("manual_upload")
   storageUrl    String?
   extractedText String?
   metadata      String?
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime @default(now())
 
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([transactionId])
 }
 
 model ImportRecord {
-  id            String        @id @default(cuid())
-  userId        String
-  walletId      String
-  source        String        @default("bank_csv")
-  fileName      String?
-  rowHash       String
-  rawRow        String
-  parsedDate    DateTime
-  parsedAmount  Float
-  parsedType    String
-  status        String        @default("IMPORTED") // IMPORTED, DUPLICATE, ERROR
-  errorMessage  String?
-  createdAt     DateTime      @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  walletId     String
+  source       String   @default("bank_csv")
+  fileName     String?
+  rowHash      String
+  rawRow       String
+  parsedDate   DateTime
+  parsedAmount Float
+  parsedType   String
+  status       String   @default("IMPORTED") // IMPORTED, DUPLICATE, ERROR
+  errorMessage String?
+  createdAt    DateTime @default(now())
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet        Wallet        @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  transactions  Transaction[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet       Wallet        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
 
   @@unique([userId, walletId, rowHash])
   @@index([userId, createdAt])
@@ -401,7 +404,6 @@ model FinancialAdvice {
   @@index([userId])
 }
 
-
 model SavingsRule {
   id                  String   @id @default(cuid())
   userId              String
@@ -414,8 +416,8 @@ model SavingsRule {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  destinationWallet   Wallet   @relation(fields: [destinationWalletId], references: [id], onDelete: Cascade)
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destinationWallet Wallet @relation(fields: [destinationWalletId], references: [id], onDelete: Cascade)
 
   @@index([userId, isActive, priority])
   @@index([destinationWalletId])
@@ -1090,23 +1092,23 @@ model BillReminder {
 }
 
 model CreditCard {
-  id                  String                  @id @default(cuid())
-  userId              String
-  walletId            String?
-  name                String
-  issuer              String?
-  lastFour            String?
-  creditLimit         Float                   @default(0)
-  currentBalance      Float                   @default(0)
-  statementDay        Int
-  dueDay              Int
-  apr                 Float?
-  minimumPaymentRate  Float                   @default(0.03)
-  reminderDaysBefore  Int                     @default(7)
-  status              String                  @default("active") // active, paused, closed
-  notes               String?
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  id                 String   @id @default(cuid())
+  userId             String
+  walletId           String?
+  name               String
+  issuer             String?
+  lastFour           String?
+  creditLimit        Float    @default(0)
+  currentBalance     Float    @default(0)
+  statementDay       Int
+  dueDay             Int
+  apr                Float?
+  minimumPaymentRate Float    @default(0.03)
+  reminderDaysBefore Int      @default(7)
+  status             String   @default("active") // active, paused, closed
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   wallet       Wallet?                 @relation(fields: [walletId], references: [id], onDelete: SetNull)
@@ -1119,18 +1121,28 @@ model CreditCard {
 }
 
 model CreditCardTransaction {
-  id          String     @id @default(cuid())
-  userId      String
-  cardId      String
-  amount      Float
-  type        String     @default("charge") // charge, payment, fee, adjustment
-  description String?
-  merchant    String?
-  category    String?
-  date        DateTime   @default(now())
-  statementId String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id               String   @id @default(cuid())
+  userId           String
+  cardId           String
+  amount           Float
+  type             String   @default("charge") // charge, payment, fee, adjustment, installment, refund, reversal
+  description      String?
+  merchant         String?
+  category         String?
+  date             DateTime @default(now())
+  statementId      String?
+  // Installment (cicilan)
+  installmentTenor Int?
+  installmentTerm  Int?
+  installmentTotal Float?
+  installmentPaid  Float?
+  // Multi-currency / reversal
+  originalAmount   Float?
+  currency         String?  @default("IDR")
+  exchangeRate     Float?
+  reversalOfId     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   card CreditCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
@@ -1395,29 +1407,29 @@ model SubscriptionTracker {
 }
 
 model SharedBill {
-  id              String                  @id @default(cuid())
-  userId          String
-  walletId        String?
-  walletGroupId   String?
-  title           String
-  description     String?
-  category        String                  @default("household")
-  totalAmount     Float                   @default(0)
-  currencyCode    String                  @default("IDR")
-  dueDate         DateTime?
-  paidAt          DateTime?
-  status          String                  @default("open") // open, partially_paid, paid, cancelled
-  ownership       String                  @default("SHARED") // HIS, HERS, SHARED
-  splitMethod     String                  @default("equal") // equal, fixed, percentage
-  recurrence      String                  @default("none") // none, weekly, monthly, yearly
-  notes           String?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id            String    @id @default(cuid())
+  userId        String
+  walletId      String?
+  walletGroupId String?
+  title         String
+  description   String?
+  category      String    @default("household")
+  totalAmount   Float     @default(0)
+  currencyCode  String    @default("IDR")
+  dueDate       DateTime?
+  paidAt        DateTime?
+  status        String    @default("open") // open, partially_paid, paid, cancelled
+  ownership     String    @default("SHARED") // HIS, HERS, SHARED
+  splitMethod   String    @default("equal") // equal, fixed, percentage
+  recurrence    String    @default("none") // none, weekly, monthly, yearly
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  wallet          Wallet?                 @relation(fields: [walletId], references: [id], onDelete: SetNull)
-  walletGroup     WalletGroup?            @relation(fields: [walletGroupId], references: [id], onDelete: SetNull)
-  participants    SharedBillParticipant[]
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet       Wallet?                 @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  walletGroup  WalletGroup?            @relation(fields: [walletGroupId], references: [id], onDelete: SetNull)
+  participants SharedBillParticipant[]
 
   @@index([userId])
   @@index([walletId])
@@ -1429,23 +1441,23 @@ model SharedBill {
 }
 
 model SharedBillParticipant {
-  id             String     @id @default(cuid())
+  id             String    @id @default(cuid())
   sharedBillId   String
   userId         String?
   name           String
   email          String?
-  shareAmount    Float      @default(0)
+  shareAmount    Float     @default(0)
   sharePercent   Float?
-  paidAmount     Float      @default(0)
-  status         String     @default("unpaid") // unpaid, partial, paid, waived
-  ownerRole      String     @default("SHARED") // HIS, HERS, SHARED
+  paidAmount     Float     @default(0)
+  status         String    @default("unpaid") // unpaid, partial, paid, waived
+  ownerRole      String    @default("SHARED") // HIS, HERS, SHARED
   paidAt         DateTime?
   settlementNote String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  sharedBill     SharedBill @relation(fields: [sharedBillId], references: [id], onDelete: Cascade)
-  user           User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sharedBill SharedBill @relation(fields: [sharedBillId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([sharedBillId])
   @@index([userId])
@@ -1468,12 +1480,12 @@ model HouseholdInventoryItem {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  categoryId      String?
-  locationId      String?
+  categoryId String?
+  locationId String?
 
-  user      User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category  HouseholdInventoryCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  location  HouseholdInventoryLocation?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  user      User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  HouseholdInventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  location  HouseholdInventoryLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   movements HouseholdStockMovement[]
 
   @@index([userId])
@@ -1567,4 +1579,82 @@ model HouseholdShoppingListItem {
 
   @@index([userId])
   @@index([itemId])
+}
+
+/// Pemetaan Telegram user ID -> BudTrack user (suami/istri dalam satu grup).
+model TelegramActor {
+  id          String               @id @default(cuid())
+  telegramId  String               @unique
+  displayName String?
+  role        String               @default("MEMBER") // OWNER | MEMBER
+  /// Wallet tujuan default untuk capture dari akun ini (null = MAIN wallet).
+  defaultWalletName String?
+  userId      String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  captures    TelegramCaptureLog[]
+
+  @@index([userId])
+}
+
+/// Log setiap transaksi yang lahir dari chat, dipakai untuk /batal dan /sisa.
+model TelegramCaptureLog {
+  id            String         @id @default(cuid())
+  chatId        String
+  telegramId    String
+  actorId       String?
+  rawText       String
+  transactionId String?
+  amount        Float?
+  status        String         @default("COMMITTED") // COMMITTED | REVERTED
+  createdAt     DateTime       @default(now())
+  revertedAt    DateTime?
+  actor         TelegramActor? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([chatId, createdAt])
+  @@index([telegramId, createdAt])
+}
+
+model HealthMetric {
+  id       String   @id @default(cuid())
+  userId   String
+  walletId String? // Opsional: link ke Wallet sebagai identitas pemilik data (null = default/semua)
+  date     DateTime // Tanggal pengukuran (start of day UTC/local)
+
+  // Metrik Komposisi Tubuh (Timbangan Smart Scale BIA)
+  weight          Float? // Berat badan dalam kg (misal 67.3)
+  bmi             Float? // Body Mass Index (misal 23.3)
+  bodyFat         Float? // Persentase lemak tubuh % (misal 22.4)
+  bodyWater       Float? // Persentase air tubuh % (misal 51.3)
+  skeletalMuscle  Float? // Persentase otot rangka % (misal 45.9)
+  boneMass        Float? // Persentase tulang % (misal 4.0)
+  protein         Float? // Persentase protein % (misal 22.3)
+  muscleRate      Float? // Persentase otot total % (misal 73.6)
+  visceralFat     Int? // Indeks lemak visceral (misal 9)
+  subcutaneousFat Float? // Lemak subkutan dalam kg (misal 13.5)
+  leanBodyMass    Float? // Berat tubuh tanpa lemak dalam kg (misal 52.2)
+  bmr             Int? // Basal Metabolic Rate dalam kcal (misal 1671)
+  bodyAge         Int? // Usia metabolik (misal 28)
+  bodyScore       Int? // Skor kebugaran tubuh (misal 86)
+
+  // Metrik Smartwatch (Huawei Fit 4 / Apple Health)
+  steps            Int? // Total langkah harian
+  activeCalories   Float? // Kalori aktif terbakar (kcal)
+  restingHeartRate Int? // Detak jantung istirahat (bpm)
+  sleepHours       Float? // Total durasi tidur dalam jam
+  walkingDistance  Float? // Jarak tempuh jalan+lari dalam km
+  flightsClimbed   Int? // Jumlah tangga yang didaki
+
+  source     String // 'apple_health' | 'scale_report_image' | 'manual'
+  rawPayload String? // JSON cadangan semua data mentah jika ada metrik tambahan
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet? @relation(fields: [walletId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, date, walletId])
+  @@index([userId, date])
+  @@index([walletId])
 }

@@ -17,7 +17,7 @@ export function InsightRail({ summary, isLoading, onAsk, onRefresh }: InsightRai
   const insights = buildInsights(summary);
 
   return (
-    <aside className="border-t border-slate-200 bg-slate-50/80 p-4 xl:border-l xl:border-t-0 xl:p-5">
+    <aside className="hidden border-l border-slate-200 bg-slate-50/80 xl:block xl:p-5 dark:border-slate-800 dark:bg-slate-900/60">
       <div className="mb-4 flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">Pinned insights</h3>
@@ -30,14 +30,14 @@ export function InsightRail({ summary, isLoading, onAsk, onRefresh }: InsightRai
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         {isLoading && !summary ? (
-          Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-2xl bg-white" />)
+          Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-2xl bg-white dark:bg-slate-800" />)
         ) : insights.length > 0 ? (
           insights.map((insight) => (
             <button
               key={insight.id}
               type="button"
               onClick={() => onAsk(insight.prompt)}
-              className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${severityClasses(insight.severity)}`}
+              className={`group rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${severityClasses(insight.severity)}`}
             >
               <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide opacity-80">
                 <span className={`h-2 w-2 rounded-full ${severityDotClasses(insight.severity)}`} />
@@ -45,10 +45,13 @@ export function InsightRail({ summary, isLoading, onAsk, onRefresh }: InsightRai
               </div>
               <div className="text-xl font-bold">{insight.value}</div>
               {insight.detail && <div className="mt-1 text-xs opacity-80">{insight.detail}</div>}
+              <div className="mt-2 text-[10px] font-medium text-blue-400 opacity-0 transition group-hover:opacity-100">
+                Klik buat tanya detail ↗
+              </div>
             </button>
           ))
         ) : (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
             <Bot className="mb-2 h-5 w-5" />
             Pilih wallet buat munculin insight.
           </div>

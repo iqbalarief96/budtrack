@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma'
 import { sendEmail, getGroupNotificationEmailTemplate } from './email'
+import { sendTelegramNotification } from './telegram-notify'
 
 type NotificationType = 
   | 'NEW_TRANSACTION' 
@@ -124,7 +125,10 @@ export async function sendGroupNotification({
           }
         }
 
-        // TODO: In the future, we'll implement push notifications
+        // Kirim via Telegram jika email gagal atau sebagai fallback instan
+        await sendTelegramNotification(
+          `🔔 *BudTrack Alert: ${notificationConfig.subject}*\n\n${details || notificationConfig.defaultDetails}`
+        ).catch(() => {})
       } catch (memberError) {
         console.error(`Error processing notification for member ${member.userId}:`, memberError)
         results.failure++

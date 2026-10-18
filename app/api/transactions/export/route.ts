@@ -1,148 +1,99 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
 
-function escapeCsv(value: string): string {
-  if (value === null || value === undefined) {
-    return ''
-  }
+export const dynamic = 'force-dynamic'
 
-  const stringValue = String(value)
-  if (/[",\n]/.test(stringValue)) {
-    return `"${stringValue.replace(/"/g, '""')}"`
-  }
-
-  return stringValue
-}
-
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/transactions/export
+ * Export transaksi pengguna ke format CSV
+ * Query params opsional:
+ * - from: YYYY-MM-DD
+ * - to: YYYY-MM-DD
+ * - walletId: ID dompet
+ * - type: INCOME | EXPENSE
+ */
+export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
+    let userId = session?.user?.id
 
-    if (!session?.user?.id) {
+    // Fallback via Bearer token
+    if (!userId) {
+      const authHeader = req.headers.get('authorization')
+      const expectedKey = process.env.QUICK_CAPTURE_API_KEY
+      if (authHeader && authHeader.startsWith('Bearer ') && authHeader.slice(7).trim() === expectedKey) {
+        const defaultEmail = process.env.QUICK_CAPTURE_DEFAULT_USER || 'muhamad.iqbal70@gmail.com'
+        const u = await prisma.user.findFirst({ where: { OR: [{ id: defaultEmail }, { email: defaultEmail }] }, select: { id: true } })
+        if (u) userId = u.id
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const walletId = searchParams.get('walletId') || undefined
-    const type = searchParams.get('type') || undefined
-    const categoryId = searchParams.get('categoryId') || undefined
-    const startDate = searchParams.get('startDate') || undefined
-    const endDate = searchParams.get('endDate') || undefined
-    const minAmount = searchParams.get('minAmount') || undefined
-    const maxAmount = searchParams.get('maxAmount') || undefined
+    const { searchParams } = new URL(req.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+    const walletId = searchParams.get('wallet') || searchParams.get('walletId')
+    const type = searchParams.get('type')
 
-    const where: Prisma.TransactionWhereInput = {
-      userId: session.user.id,
-    }
-
-    if (walletId) {
-      where.walletId = walletId
-    }
-
-    if (type === 'INCOME' || type === 'EXPENSE') {
-      where.type = type
-    }
-
-    if (categoryId) {
-      where.categoryId = categoryId
-    }
-
-    if (startDate || endDate) {
+    const where: any = { userId }
+    if (walletId) where.walletId = walletId
+    if (type) where.type = type
+    if (from || to) {
       where.date = {}
-      if (startDate) {
-        const parsedStart = new Date(startDate)
-        if (!isNaN(parsedStart.getTime())) {
-          where.date.gte = parsedStart
-        }
-      }
-      if (endDate) {
-        const parsedEnd = new Date(endDate)
-        if (!isNaN(parsedEnd.getTime())) {
-          parsedEnd.setHours(23, 59, 59, 999)
-          where.date.lte = parsedEnd
-        }
-      }
-    }
-
-    if (minAmount || maxAmount) {
-      const amountFilter: Prisma.DecimalFilter = {}
-      if (minAmount) {
-        const parsedMin = parseFloat(minAmount)
-        if (!isNaN(parsedMin)) {
-          amountFilter.gte = new Prisma.Decimal(parsedMin)
-        }
-      }
-      if (maxAmount) {
-        const parsedMax = parseFloat(maxAmount)
-        if (!isNaN(parsedMax)) {
-          amountFilter.lte = new Prisma.Decimal(parsedMax)
-        }
-      }
-      if (Object.keys(amountFilter).length > 0) {
-        where.amount = amountFilter
+      if (from) where.date.gte = new Date(from)
+      if (to) {
+        const toDate = new Date(to)
+        toDate.setHours(23, 59, 59, 999)
+        where.date.lte = toDate
       }
     }
 
     const transactions = await prisma.transaction.findMany({
       where,
       include: {
-        category: true,
-        wallet: true,
+        category: { select: { name: true } },
+        wallet: { select: { name: true } },
       },
-      orderBy: [
-        { date: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: { date: 'desc' },
+      take: 10000,
     })
 
-    if (transactions.length === 0) {
-      return new Response(null, { status: 204 })
+    // Bangun CSV
+    const headers = ['Tanggal', 'Deskripsi', 'Kategori', 'Dompet', 'Tipe', 'Nominal']
+    const escapeCsv = (str: string | null | undefined): string => {
+      if (!str) return ''
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`
+      }
+      return str
     }
 
-    const headers = ['Date', 'Type', 'Amount', 'Description', 'Category', 'Wallet']
-    const rows = transactions.map((transaction) => {
-      const amountValue = Prisma.Decimal.isDecimal(transaction.amount)
-        ? transaction.amount.toString()
-        : String(transaction.amount ?? '')
+    const rows = transactions.map((t) => [
+      t.date.toISOString().slice(0, 10),
+      escapeCsv(t.description || ''),
+      escapeCsv(t.category?.name || 'Lain-lain'),
+      escapeCsv(t.wallet?.name || '-'),
+      t.type,
+      t.amount.toString(),
+    ].join(','))
 
-      return [
-        transaction.date.toISOString(),
-        transaction.type,
-        amountValue,
-        transaction.description ?? '',
-        transaction.category?.name ?? '',
-        transaction.wallet?.name ?? '',
-      ]
-    })
+    const csvContent = [headers.join(','), ...rows].join('\r\n')
+    const dateStr = new Date().toISOString().slice(0, 10)
 
-    const csvContent =
-      '\uFEFF' +
-      [headers, ...rows]
-        .map((row) => row.map(escapeCsv).join(','))
-        .join('\n')
-
-    const walletName = transactions[0]?.wallet?.name ?? 'all-wallets'
-    const slug = walletName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'all-wallets'
-    const dateSlug = new Date().toISOString().split('T')[0]
-    const fileName = `transactions-${slug}-${dateSlug}.csv`
-
-    return new Response(csvContent, {
+    return new NextResponse(csvContent, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
-        'Cache-Control': 'no-store',
+        'Content-Disposition': `attachment; filename="budtrack-transaksi-${dateStr}.csv"`,
       },
     })
-  } catch (error) {
-    console.error('Error exporting transactions:', error)
-    return NextResponse.json(
-      { error: 'Failed to export transactions' },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    console.error('Export transactions error:', error)
+    return NextResponse.json({ error: error.message || 'Gagal export data' }, { status: 500 })
   }
 }

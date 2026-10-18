@@ -233,6 +233,34 @@ export const __aiTest = {
   chatCompletionUrls,
 }
 
+const MAX_HISTORY_CHARS = 6000
+const MAX_HISTORY_MESSAGE_CHARS = 1200
+const MAX_PROMPT_CHARS = 24000
+
+function truncateMiddle(text: string, max: number): string {
+  if (text.length <= max) return text
+  const head = Math.floor(max * 0.6)
+  const tail = max - head - 20
+  return `${text.slice(0, head)}\n...[truncated]...\n${text.slice(-tail)}`
+}
+
+function trimHistory(history?: Array<{ role: 'user' | 'assistant', content: string }>) {
+  if (!history?.length) return []
+
+  const trimmed = history
+    .slice(-10)
+    .map((msg) => ({ ...msg, content: truncateMiddle(msg.content, MAX_HISTORY_MESSAGE_CHARS) }))
+
+  // Drop oldest turns until the serialized history fits the char budget.
+  while (trimmed.length > 1) {
+    const size = trimmed.reduce((sum, msg) => sum + msg.content.length, 0)
+    if (size <= MAX_HISTORY_CHARS) break
+    trimmed.shift()
+  }
+
+  return trimmed
+}
+
 export function buildChatbotPrompt(params: ChatbotParams): string {
   const { prompt, context, history } = params
 
@@ -250,11 +278,14 @@ export function buildChatbotPrompt(params: ChatbotParams): string {
   }
 
   if (history && history.length > 0) {
-    fullPrompt += "Conversation History:\n"
-    history.forEach((msg) => {
-      fullPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`
-    })
-    fullPrompt += "\n"
+    const safeHistory = trimHistory(history)
+    if (safeHistory.length > 0) {
+      fullPrompt += "Conversation History:\n"
+      safeHistory.forEach((msg) => {
+        fullPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`
+      })
+      fullPrompt += "\n"
+    }
   }
 
   fullPrompt += "BudTrack action proposal rules:\n"
@@ -266,7 +297,7 @@ export function buildChatbotPrompt(params: ChatbotParams): string {
   fullPrompt += "Tool JSON shape: {\"actions\":[{\"id\":\"...\",\"tool\":\"create_budget\",\"label\":\"...\",\"confidence\":0.8,\"reason\":\"...\",\"payload\":{...}}]}\n\n"
 
   fullPrompt += `User's Question: ${prompt}\n\nYour helpful response:`
-  return fullPrompt
+  return truncateMiddle(fullPrompt, MAX_PROMPT_CHARS)
 }
 
 async function* streamChatCompletion(params: AIRequestParams, messages: ChatMessage[]): AsyncGenerator<string> {

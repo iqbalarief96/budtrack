@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { sendTelegramNotification } from '@/lib/telegram-notify'
 import { dismissReminder, snoozeReminder } from '@/lib/bill/reminder-service'
 
 export const dynamic = 'force-dynamic'
@@ -269,6 +270,13 @@ export async function POST(request: NextRequest) {
           })
         }
       })
+
+      // Kirim setiap notifikasi reminder via Telegram
+      for (const payload of notifications) {
+        await sendTelegramNotification(
+          `🔔 *BudTrack Reminder: ${payload.title}*\n\n${payload.message}`
+        ).catch(() => {})
+      }
     }
 
     return NextResponse.json({

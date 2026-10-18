@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { FiPlus, FiFilter, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown, FiUpload, FiRefreshCw, FiDownload } from 'react-icons/fi'
+import { FiPlus, FiFilter, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown, FiUpload, FiRefreshCw, FiDownload, FiZap } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import TransactionModal from '../components/TransactionModal'
 import FilterModal from '../components/FilterModal'
@@ -21,6 +21,8 @@ import TransactionItemsList from '@/components/transactions/TransactionItemsList
 import AddTransactionItemDialog from '@/components/transactions/AddTransactionItemDialog';
 import { FixTransactionTypesButton } from '@/components/FixTransactionTypesButton';
 import { useQueryClient } from '@tanstack/react-query';
+import QuickTextModal from '../components/QuickTextModal';
+import WalletSelector from '../components/WalletSelector';
 
 
 
@@ -69,6 +71,9 @@ const TransactionsPage = () => {
   const queryClient = useQueryClient()
 
   const { selectedWallet, refreshWallets, wallets, selectedGroup, isGroupSelected } = useWallet()
+  const [isQuickModalOpen, setIsQuickModalOpen] = useState(false)
+
+  const openQuickModal = () => setIsQuickModalOpen(true)
 
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -1043,16 +1048,20 @@ const TransactionsPage = () => {
   return (
     <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
       {/* Header - Desktop */}
-      <div className="hidden md:flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">
-          Transactions - {displayName}
-          {isGroupSelected && selectedGroup && (
-            <span className="ml-2 text-sm font-normal text-purple-600 bg-purple-100 px-2 py-1 rounded-full">
-              {selectedGroup.wallets?.length || 0} wallets
-            </span>
-          )}
-        </h1>
-        <div className="flex gap-2">
+      <div className="hidden md:flex justify-between items-start gap-4 mb-8">
+        <div className="flex flex-col gap-3 min-w-[16rem]">
+          <h1 className="text-2xl font-bold">
+            Transactions - {displayName}
+            {isGroupSelected && selectedGroup && (
+              <span className="ml-2 text-sm font-normal text-purple-600 bg-purple-100 px-2 py-1 rounded-full">
+                {selectedGroup.wallets?.length || 0} wallets
+              </span>
+            )}
+          </h1>
+          {/* Switch wallet here without going back to the dashboard. */}
+          <WalletSelector className="w-72" />
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={() => setIsFilterModalOpen(true)}
             className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
@@ -1067,6 +1076,15 @@ const TransactionsPage = () => {
             <FiUpload className="mr-2" />
             Import
           </button>
+          <a
+            href="/api/transactions/export"
+            download
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+            title="Download CSV semua transaksi"
+          >
+            <FiDownload className="mr-2" />
+            Export CSV
+          </a>
           <button
             onClick={handleDeleteSelected}
             disabled={selectedCount === 0 || isBulkDeleting}
@@ -1100,6 +1118,14 @@ const TransactionsPage = () => {
           <ReceiptScanner onScanComplete={handleScanComplete} />
 
           <button
+            onClick={openQuickModal}
+            className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600"
+            title="Input cepat: ketik deskripsi, kategori otomatis"
+          >
+            <FiZap className="mr-2" />
+            Quick Input
+          </button>
+          <button
             onClick={() => {
               setEditingTransaction(null);
               setIsModalOpen(true);
@@ -1123,8 +1149,18 @@ const TransactionsPage = () => {
           )}
         </h1>
 
+        <WalletSelector className="mb-3" />
+
         {/* Action Buttons Row 1 */}
         <div className="flex gap-2 mb-2">
+          <button
+            onClick={openQuickModal}
+            className="flex-1 flex items-center justify-center px-3 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm font-medium"
+            title="Input cepat: ketik deskripsi, kategori otomatis"
+          >
+            <FiZap className="mr-1 h-4 w-4" />
+            Quick
+          </button>
           <button
             onClick={() => {
               setEditingTransaction(null);
@@ -1689,6 +1725,17 @@ const TransactionsPage = () => {
           initialData={editingTransaction || { type: initialType }}
         />
       )}
+
+      {/* One-line quick capture, same format as the iOS Shortcut */}
+      <QuickTextModal
+        isOpen={isQuickModalOpen}
+        onClose={() => setIsQuickModalOpen(false)}
+        onSaved={async () => {
+          await fetchTransactions(activeFilters)
+          await fetchAllTransactions()
+          await refreshWallets()
+        }}
+      />
 
       {/* Filter Modal */}
       <FilterModal

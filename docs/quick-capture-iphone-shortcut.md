@@ -201,6 +201,18 @@ DESKRIPSI-KATEGORI-DOMPET-JUMLAH
 
 **Income**: keyword `gaji`, `bonus`, `dividen`, `profit`, `pendapatan`, `hadiah`, `transfer masuk`, `THR` otomatis ke-detect sebagai INCOME.
 
+**Tanggal Kustom / Backdate (Bisa di depan atau belakang):**
+- **1 digit bulan:** `5 senin 9`, `5 9`, `5/9`, `5-9`
+- **2 digit bulan:** `5 senin 09`, `5 09`, `5/09`
+- **Nama bulan:** `5 sep`, `5 senin sep`, `5 september 2026`
+- **Tanggal saja (bulan ini):** `5 senin`, `senin 5`, `tgl 5`
+- **Kata relatif:** `kemarin`, `kemarin lusa`, `hari ini`
+- Contoh:
+  - `5 senin 9 - Kopi Kenangan-Makanan-Dompet Utama-28000`
+  - `Kopi Kenangan-Makanan-Dompet Utama-28000 - 5 senin 9`
+  - `Kopi Kenangan-Makanan-Dompet Utama-28000-5/9`
+  - `Kopi Kenangan-Makanan-Dompet Utama-28000-kemarin`
+
 ---
 
 ## 7. Troubleshooting Cepat
@@ -236,7 +248,7 @@ Kalau curl ini balik 200 tapi shortcut 401 → masalahnya di shortcut (header/ke
 ## 8. Limitasi yang Perlu Diingat
 
 - Cuma `POST`, nggak ada `GET`
-- **Nggak bisa set tanggal** — selalu pakai waktu server. Capture kemarin = tercatat hari ini
+- Tanggal opsional (kalau tidak ditulis, otomatis jam & hari saat ini)
 - Satu request = satu transaksi
 - Nggak ada endpoint edit/hapus — benerin dari UI BudTrack
 - Hook auto-savings & goal tracking tetap jalan kayak input dari UI

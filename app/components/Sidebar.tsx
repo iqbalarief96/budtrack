@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation'
 import {
   FiHome, FiDollarSign, FiCreditCard, FiPieChart,
   FiLogOut, FiMenu, FiX, FiBell, FiUser, FiSettings, FiTarget, FiTrendingUp, FiZap, FiFileText, FiRepeat,
-  FiBriefcase, FiUsers, FiHeart, FiChevronDown, FiChevronUp, FiSearch, FiCalendar
+  FiBriefcase, FiUsers, FiHeart, FiChevronDown, FiChevronUp, FiSearch, FiCalendar, FiActivity, FiPlus
 } from 'react-icons/fi'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect } from 'react'
 import { Session } from 'next-auth'
 import { Bot, CreditCard } from 'lucide-react'
 import AlertCenter from './AlertCenter'
+import { useOptionalTransactionModal } from '../providers/TransactionModalProvider'
 
 export interface SidebarProps {
   session: Session | null
@@ -32,6 +33,7 @@ interface MenuGroup {
 
 const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   const pathname = usePathname()
+  const transactionModal = useOptionalTransactionModal()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
@@ -58,8 +60,8 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
         { path: '/wallets', icon: <FiCreditCard size={20} />, label: 'Dompet' },
         { path: '/savings', icon: <FiTrendingUp size={20} />, label: 'Tabungan' },
         { path: '/credit-cards', icon: <CreditCard size={20} />, label: 'Credit Cards' },
-        { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring' },
-        { path: '/subscriptions', icon: <CreditCard size={20} />, label: 'Subscriptions' },
+        { path: '/recurring', icon: <FiRepeat size={20} />, label: 'Recurring (Tetap)' },
+        { path: '/subscriptions', icon: <CreditCard size={20} />, label: 'Subscriptions (Digital)' },
         { path: '/shared-bills', icon: <FiUsers size={20} />, label: 'Shared Bills' },
         { path: '/bills', icon: <FiBell size={20} />, label: 'Bills & Tagihan' },
       ]
@@ -86,6 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
       label: 'Analytics',
       defaultOpen: false,
       items: [
+        { path: '/health', icon: <FiActivity size={20} />, label: 'Kesehatan & Bugar' },
         { path: '/insights', icon: <FiTrendingUp size={20} />, label: 'Insights' },
         { path: '/monthly-review', icon: <FiFileText size={20} />, label: 'Monthly Review' },
         { path: '/spending-insights', icon: <FiZap size={20} />, label: 'Spending Insights' },
@@ -186,19 +189,28 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
   return (
     <>
       {/* Mobile Header */}
-      <div className="fixed top-0 left-0 right-0 h-16 bg-white border-b md:hidden z-50">
+      <div className="fixed top-0 left-0 right-0 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 md:hidden z-50">
         <div className="flex items-center justify-between px-4 h-full">
           <button
             onClick={toggleSidebar}
-            className="p-2 rounded-md text-gray-600 hover:bg-gray-100"
+            className="p-2 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             {isOpen ? <FiX size={24} /> : <FiMenu size={24} />}
           </button>
 
-          <h1 className="text-xl font-bold text-blue-600">BudTrack</h1>
+          <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">BudTrack</h1>
 
-          <div className="flex items-center space-x-4">
-            {/* AlertCenter in header for mobile */}
+          <div className="flex items-center space-x-2">
+            {transactionModal && (
+              <button
+                onClick={() => transactionModal.openTransactionModal()}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                title="Catat Transaksi"
+              >
+                <FiPlus size={16} />
+                <span>Transaksi</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -213,7 +225,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full bg-white shadow-lg transition-all duration-300 z-40 flex flex-col`}
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 shadow-lg transition-all duration-300 z-40 flex flex-col`}
         style={{
           width: isMobile
             ? '280px'
@@ -222,7 +234,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
         }}
       >
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b bg-gradient-to-r from-blue-600 to-blue-500">
+        <div className="flex justify-between items-center p-4 border-b border-blue-600/20 bg-gradient-to-r from-blue-600 to-blue-500">
           {!isCollapsed && (
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
@@ -234,7 +246,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
           {!isMobile && (
             <button
               onClick={toggleSidebar}
-              className="p-2 rounded-md hover:bg-blue-700 text-white transition-colors"
+              className="p-2 rounded-md hover:bg-blue-700 text-white transition-colors cursor-pointer"
             >
               {isCollapsed ? <FiMenu size={20} /> : <FiX size={20} />}
             </button>
@@ -242,17 +254,17 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
         </div>
 
         {/* User Profile Section */}
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40">
           {!isCollapsed || isMobile ? (
             <div className="flex items-center space-x-3">
               <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-full flex items-center justify-center font-semibold text-lg shadow-md">
                 {session?.user?.name?.charAt(0).toUpperCase() || <FiUser size={20} />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
                   {session?.user?.name || 'User'}
                 </p>
-                <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{session?.user?.email}</p>
               </div>
               <AlertCenter />
             </div>
@@ -265,9 +277,37 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
           )}
         </div>
 
+        {/* Quick Transaction Action Button */}
+        {transactionModal && (
+          <div className="p-3 border-b border-gray-200 dark:border-gray-800">
+            {!isCollapsed || isMobile ? (
+              <button
+                onClick={() => {
+                  if (isMobile) setIsOpen(false)
+                  transactionModal.openTransactionModal()
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-all shadow-xs active:scale-[0.98] cursor-pointer"
+              >
+                <FiPlus size={18} />
+                <span>Catat Transaksi</span>
+              </button>
+            ) : (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => transactionModal.openTransactionModal()}
+                  className="w-10 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-all shadow-xs active:scale-[0.98] cursor-pointer"
+                  title="Catat Transaksi"
+                >
+                  <FiPlus size={20} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Search Bar */}
         {(!isCollapsed || isMobile) && (
-          <div className="p-3 border-b">
+          <div className="p-3 border-b border-gray-200 dark:border-gray-800">
             <div className="relative">
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
               <input
@@ -275,7 +315,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
                 placeholder="Search menu..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 text-sm bg-white dark:bg-gray-800/80 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500"
               />
             </div>
           </div>
@@ -290,7 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
                 {(!isCollapsed || isMobile) && (
                   <button
                     onClick={() => toggleGroup(group.label)}
-                    className="flex items-center justify-between w-full px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                    className="flex items-center justify-between w-full px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
                   >
                     <span>{group.label}</span>
                     {openGroups.has(group.label) ? (
@@ -309,13 +349,13 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
                         key={item.path}
                         href={item.path}
                         onClick={closeSidebar}
-                        className={`flex items-center px-3 py-2.5 rounded-lg transition-all group
+                        className={`flex items-center px-3 py-2 rounded-lg transition-all group
                                     ${isActive(item.path)
-                                      ? 'bg-blue-50 text-blue-600 font-medium shadow-sm'
-                                      : 'text-gray-700 hover:bg-gray-100'}`}
+                                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-medium shadow-xs'
+                                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/60'}`}
                         title={isCollapsed && !isMobile ? item.label : undefined}
                       >
-                        <span className={`${isActive(item.path) ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-700'}`}>
+                        <span className={`${isActive(item.path) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200'}`}>
                           {item.icon}
                         </span>
                         {(!isCollapsed || isMobile) && (
@@ -336,14 +376,14 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
         </div>
 
         {/* Settings & Logout */}
-        <div className="p-3 border-t bg-gray-50 space-y-1">
+        <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40 space-y-1">
           <Link
             href="/settings"
             onClick={closeSidebar}
             className={`flex items-center px-3 py-2.5 rounded-lg transition-colors ${
               isActive('/settings')
-                ? 'bg-blue-50 text-blue-600 font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
+                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-medium'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/60'
             }`}
           >
             <FiSettings size={20} />
@@ -352,7 +392,7 @@ const Sidebar: React.FC<SidebarProps> = ({ session }) => {
 
           <button
             onClick={handleLogout}
-            className="flex items-center w-full px-3 py-2.5 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+            className="flex items-center w-full px-3 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors cursor-pointer"
           >
             <FiLogOut size={20} />
             {(!isCollapsed || isMobile) && <span className="ml-3 text-sm">Keluar</span>}

@@ -81,6 +81,33 @@ Aturan parsing:
 
 ---
 
+### Tanggal Kustom / Backdate (Opsional)
+
+Tanggal bisa ditaruh di **depan** atau di **belakang**:
+
+```
+[TANGGAL - ] DESKRIPSI-KATEGORI-DOMPET-JUMLAH [ - TANGGAL]
+```
+
+Variasi tanggal yang didukung:
+- **1 digit bulan:** `5 senin 9`, `5 9`, `5/9`, `5-9`
+- **2 digit bulan:** `5 senin 09`, `5 09`, `5/09`
+- **Nama bulan:** `5 sep`, `5 senin sep`, `5 september 2026`
+- **Tanggal saja (bulan ini):** `5 senin`, `senin 5`, `tgl 5`
+- **Kata relatif:** `kemarin`, `kemarin lusa`, `hari ini`
+- **Default (tanpa tanggal):** jam & hari saat request masuk
+
+Contoh:
+```
+5 senin 9 - Kopi Kenangan-Makanan-Dompet Utama-28000
+Kopi Kenangan-Makanan-Dompet Utama-28000 - 5 senin 9
+Kopi Kenangan-Makanan-Dompet Utama-28000-5/9
+Kopi Kenangan-Makanan-Dompet Utama-28000-kemarin
+```
+Jam transaksi kustom otomatis dikunci di **12:00:00 WIB** agar aman dari pergeseran zona waktu.
+
+---
+
 ## 3. Matching Wallet & Kategori
 
 **Wallet** — dicari urut:

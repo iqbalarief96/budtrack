@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function ChatbotPage() {
   return (
-    <main className="min-h-screen bg-slate-50 px-3 py-4 md:px-6 md:py-6">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 px-3 py-4 md:px-6 md:py-6">
       <div className="mx-auto max-w-7xl">
         <FinanceChatbot />
       </div>

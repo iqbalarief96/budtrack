@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Copy, Download, MoreHorizontal, RefreshCw, RotateCcw, Save, Send, Sparkles, User, WalletCards } from 'lucide-react';
+import { Bot, Copy, Download, MoreHorizontal, RefreshCw, RotateCcw, Save, Send, User, WalletCards } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useRouter } from 'next/navigation';
@@ -87,22 +87,45 @@ function MarkdownMessage({ content }: { content: string }) {
         ul: ({ children }) => <ul className="mb-4 ml-5 list-disc space-y-1.5">{children}</ul>,
         ol: ({ children }) => <ol className="mb-4 ml-5 list-decimal space-y-1.5">{children}</ol>,
         li: ({ children }) => <li className="pl-1 leading-7">{children}</li>,
-        strong: ({ children }) => <strong className="font-semibold text-slate-950">{children}</strong>,
+        strong: ({ children }) => <strong className="font-semibold text-slate-950 dark:text-slate-50">{children}</strong>,
         a: ({ children, href }) => <a className="text-blue-600 underline underline-offset-2" href={href} target="_blank" rel="noreferrer">{children}</a>,
         code: ({ children, className }) => className
           ? <code className={`${className} block overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-50`}>{children}</code>
           : <code className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[0.85em] font-medium text-slate-800">{children}</code>,
         pre: ({ children }) => <pre className="mb-4 overflow-x-auto rounded-xl bg-slate-950 p-0">{children}</pre>,
-        table: ({ children }) => <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full border-collapse text-sm">{children}</table></div>,
-        th: ({ children }) => <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold">{children}</th>,
-        td: ({ children }) => <td className="border-b border-slate-100 px-3 py-2 align-top">{children}</td>,
-        blockquote: ({ children }) => <blockquote className="mb-4 border-l-4 border-blue-200 pl-4 text-slate-600">{children}</blockquote>,
+        table: ({ children }) => <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"><table className="w-full border-collapse text-sm">{children}</table></div>,
+        th: ({ children }) => <th className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold dark:border-slate-800 dark:bg-slate-800/60">{children}</th>,
+        td: ({ children }) => <td className="border-b border-slate-100 px-3 py-2 align-top dark:border-slate-800">{children}</td>,
+        blockquote: ({ children }) => <blockquote className="mb-4 border-l-4 border-blue-200 pl-4 text-slate-600 dark:border-blue-900 dark:text-slate-300">{children}</blockquote>,
       }}
     >
       {content}
     </ReactMarkdown>
   );
 }
+
+const MAX_HISTORY_MESSAGES = 10
+const MAX_HISTORY_MESSAGE_CHARS = 1200
+const MAX_HISTORY_TOTAL_CHARS = 6000
+
+const truncateHistoryContent = (content: string) =>
+  content.length <= MAX_HISTORY_MESSAGE_CHARS
+    ? content
+    : `${content.slice(0, MAX_HISTORY_MESSAGE_CHARS)}\n...[truncated]...`;
+
+const trimHistoryForRequest = (history: ChatHistoryItem[]): ChatHistoryItem[] => {
+  const trimmed = history
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map((msg) => ({ ...msg, content: truncateHistoryContent(msg.content) }));
+
+  while (trimmed.length > 1) {
+    const size = trimmed.reduce((sum, msg) => sum + msg.content.length, 0);
+    if (size <= MAX_HISTORY_TOTAL_CHARS) break;
+    trimmed.shift();
+  }
+
+  return trimmed;
+};
 
 export default function FinanceChatbot() {
   const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage]);
@@ -121,7 +144,7 @@ export default function FinanceChatbot() {
   const summary = useChatbotSummary(selectedWallet?.id);
 
   const storageKey = useMemo(
-    () => selectedWallet ? `chat-history-${selectedWallet.id}` : null,
+    () => `chat-history-${selectedWallet?.id ?? 'all'}`,
     [selectedWallet]
   );
   const promptChips = useMemo(() => getContextPrompts(summary.data), [summary.data]);
@@ -185,10 +208,10 @@ export default function FinanceChatbot() {
     };
 
     const baseMessages = shouldAppendUser ? [...messages, userMessage] : messages.filter((msg) => msg.status !== 'streaming');
-    const nextHistory = [
+    const nextHistory = trimHistoryForRequest([
       ...chatHistory,
       ...(shouldAppendUser ? [{ role: 'user' as const, content: text }] : []),
-    ].slice(-10);
+    ]);
 
     setMessages(baseMessages);
     setChatHistory(nextHistory);
@@ -200,7 +223,7 @@ export default function FinanceChatbot() {
       const response = await fetch('/api/ai/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text, walletId: selectedWallet.id, history: nextHistory, stream: true }),
+        body: JSON.stringify({ prompt: text, walletId: selectedWallet?.id, history: nextHistory, stream: true }),
       });
 
       if (!response.ok) {
@@ -271,7 +294,7 @@ export default function FinanceChatbot() {
       setMessages(finalMessages);
       saveMessages(finalMessages);
 
-      const finalHistory = [...nextHistory, { role: 'assistant' as const, content: finalMessage.content }].slice(-10);
+      const finalHistory = trimHistoryForRequest([...nextHistory, { role: 'assistant' as const, content: finalMessage.content }]);
       setChatHistory(finalHistory);
       summary.refresh();
     } catch (error) {
@@ -310,8 +333,30 @@ export default function FinanceChatbot() {
   };
 
   const saveInsight = async (content: string) => {
-    await copyMessage(content);
-    toast({ title: 'Insight copied', description: 'Persistent insight save belum aktif. Gw salin dulu ke clipboard.' });
+    try {
+      const response = await fetch('/api/insights/chatbot-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: content,
+          walletId: selectedWallet?.id,
+          severity: 'medium',
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Gagal menyimpan insight');
+      }
+
+      toast({ title: 'Insight disimpan', description: 'Bisa lo liat lagi di halaman Insights.' });
+    } catch (error) {
+      toast({
+        title: 'Gagal menyimpan',
+        description: error instanceof Error ? error.message : 'Coba lagi sebentar lagi.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const exportChat = () => {
@@ -348,11 +393,11 @@ export default function FinanceChatbot() {
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-lg font-semibold text-slate-950">Finance Assistant</h2>
-                <Badge variant="secondary" className="rounded-full bg-emerald-50 text-emerald-700">AI</Badge>
+                <h2 className="truncate text-lg font-semibold text-slate-950 dark:text-slate-50">Finance Assistant</h2>
+
                 {summary.data && <Badge variant="outline" className="rounded-full">{summary.data.monthLabel}</Badge>}
               </div>
-              <p className="truncate text-sm text-slate-500">
+              <p className="truncate text-sm text-slate-500 dark:text-slate-400">
                 {summary.data
                   ? `${summary.data.walletName} • spent ${formatCompactCurrency(summary.data.totalExpense)} • balance ${formatCompactCurrency(summary.data.balance)}`
                   : selectedWallet ? `Context: ${selectedWallet.name}` : 'Pilih wallet buat jawaban personal'}
@@ -384,32 +429,38 @@ export default function FinanceChatbot() {
         <main className="grid flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_330px]">
           <div className="overflow-y-auto px-4 py-5 md:px-6">
             {hasOnlyWelcome && (
-              <div className="mb-6 max-w-5xl rounded-3xl border border-blue-100 bg-white/85 p-5 shadow-sm backdrop-blur md:p-6">
+              <div className="mb-6 max-w-5xl rounded-3xl border border-blue-100 bg-white/85 p-5 shadow-sm backdrop-blur md:p-6 dark:border-slate-800 dark:bg-slate-900/70">
                 <div className="mb-4 flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                    <Sparkles className="h-5 w-5" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+                    <Bot className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-slate-950">Tanya finansial pake data wallet lo</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Bisa minta rangkuman, audit spending, safe-to-spend, dana darurat, goal check, atau rekomendasi budget.
+                    <h3 className="font-semibold text-slate-950 dark:text-slate-50">Halo! Gw siap bantu baca kondisi keuangan lo.</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                      Rangkuman, audit spending, safe-to-spend, dana darurat, goal check, atau rekomendasi budget. Tinggal ketik, atau pilih salah satu di bawah.
                     </p>
                   </div>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {promptChips.map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => sendMessage(item.prompt)}
-                      disabled={disabled}
-                      className="group rounded-2xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <span className="text-xl">{item.icon}</span>
-                      <span className="mt-2 block text-sm font-medium text-slate-900 group-hover:text-blue-700">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
+
+                {summary.data && (
+                  <div className="mb-4 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                      <p className="text-[11px] font-medium text-emerald-700">Pemasukan {summary.data.monthLabel}</p>
+                      <p className="mt-0.5 text-base font-bold text-emerald-900">{formatCompactCurrency(summary.data.totalIncome)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-red-100 bg-red-50/60 px-3 py-2.5">
+                      <p className="text-[11px] font-medium text-red-700">Pengeluaran {summary.data.monthLabel}</p>
+                      <p className="mt-0.5 text-base font-bold text-red-900">{formatCompactCurrency(summary.data.totalExpense)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-3 py-2.5">
+                      <p className="text-[11px] font-medium text-blue-700">Safe to spend</p>
+                      <p className="mt-0.5 text-base font-bold text-blue-900">
+                        {typeof summary.data.safeToSpend === 'number' ? formatCompactCurrency(summary.data.safeToSpend) : '—'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 
@@ -421,7 +472,7 @@ export default function FinanceChatbot() {
                 return (
                   <article key={message.id} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
                     {!isUser && (
-                      <div className="mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 sm:flex">
+                      <div className="mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 sm:flex dark:bg-slate-800 dark:text-slate-300">
                         <Bot className="h-5 w-5" />
                       </div>
                     )}
@@ -429,7 +480,7 @@ export default function FinanceChatbot() {
                     <div className={`group max-w-[92%] ${isUser ? 'order-first md:max-w-[68%]' : 'md:max-w-[88%] xl:max-w-[92%]'}`}>
                       <div className={isUser
                         ? 'rounded-3xl rounded-br-lg bg-blue-600 px-4 py-3 text-white shadow-sm'
-                        : `rounded-3xl rounded-bl-lg border px-4 py-3 text-slate-800 shadow-sm ${message.status === 'error' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'}`}
+                        : `rounded-3xl rounded-bl-lg border px-4 py-3 text-slate-800 shadow-sm dark:text-slate-100 ${message.status === 'error' ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/50' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'}`}
                       >
                         {isUser ? (
                           <p className="whitespace-pre-wrap break-words leading-7">{message.content}</p>
@@ -481,8 +532,8 @@ export default function FinanceChatbot() {
                   <div className="hidden h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 sm:flex">
                     <Bot className="h-5 w-5" />
                   </div>
-                  <div className="rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="rounded-3xl rounded-bl-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                       <RefreshCw className="h-4 w-4 animate-spin" />
                       Lagi baca data wallet...
                     </div>
@@ -497,11 +548,11 @@ export default function FinanceChatbot() {
           <InsightRail summary={summary.data} isLoading={summary.isLoading} onAsk={sendMessage} onRefresh={summary.refresh} />
         </main>
 
-        <footer className="border-t border-slate-200 bg-white/90 p-3 backdrop-blur-xl md:p-4">
+        <footer className="border-t border-slate-200 bg-white/90 p-3 backdrop-blur-xl md:p-4 dark:border-slate-800 dark:bg-slate-900/90">
           {!selectedWallet && (
-            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200">
               <WalletCards className="h-4 w-4" />
-              Pilih wallet dulu buat aktifin chatbot.
+              Mode Semua Dompet: jawaban pakai agregat seluruh wallet lo.
             </div>
           )}
 
@@ -510,7 +561,7 @@ export default function FinanceChatbot() {
               event.preventDefault();
               sendMessage();
             }}
-            className="flex items-end gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 shadow-inner"
+            className="flex items-end gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 shadow-inner dark:border-slate-800 dark:bg-slate-950/60"
           >
             <Textarea
               ref={inputRef}
@@ -531,8 +582,23 @@ export default function FinanceChatbot() {
               {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
-          <p className="mt-2 px-2 text-xs text-slate-400">
-            Enter kirim, Shift+Enter baris baru. Jawaban AI bisa salah — cek angka penting sebelum dipakai.
+          {/* Persistent Prompt Chips (Dinamis berbasis ringkasan wallet) */}
+          <div className="mt-2 flex items-center gap-1.5 overflow-x-auto px-1 py-1 no-scrollbar">
+            {promptChips.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => sendMessage(item.prompt)}
+                disabled={disabled}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:border-blue-800 dark:hover:bg-blue-950/50 dark:hover:text-blue-300 cursor-pointer"
+              >
+                {item.icon && <span>{item.icon}</span>}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 px-2 text-xs text-slate-400 dark:text-slate-500">
+            Enter kirim, Shift+Enter baris baru. Jawaban AI bisa salah, cek angka penting sebelum dipakai.
           </p>
         </footer>
       </div>

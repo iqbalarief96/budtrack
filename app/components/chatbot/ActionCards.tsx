@@ -115,7 +115,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                 type="button"
                 size="sm"
                 variant="outline"
-                className="rounded-full bg-white"
+                className="rounded-full bg-white dark:bg-slate-800"
                 disabled={executingId === action.id || action.status === 'blocked'}
                 onClick={() => setReviewAction(action)}
                 title={disabledReason}
@@ -142,8 +142,8 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
           {reviewAction && (
             <div className="space-y-4">
               <div>
-                <div className="text-sm font-semibold text-slate-900">{reviewAction.label}</div>
-                <div className="mt-1 text-xs text-slate-500">Tool: {reviewAction.tool}</div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{reviewAction.label}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Tool: {reviewAction.tool}</div>
               </div>
 
               {reviewAction.inputIssues && reviewAction.inputIssues.length > 0 && (
@@ -154,7 +154,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                         <label key={issue.field} className="block text-sm text-amber-900">
                           <span className="font-medium">{issue.label}</span>
                           <select
-                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900 dark:border-amber-900 dark:bg-slate-800 dark:text-slate-100"
                             value={String(draftPayload(reviewAction)[issue.field] ?? '')}
                             onChange={(event) => updateDraft(reviewAction, issue.field, event.target.value)}
                           >
@@ -170,7 +170,7 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
                         <label key={issue.field} className="block text-sm text-amber-900">
                           <span className="font-medium">{issue.label}</span>
                           <input
-                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900 dark:border-amber-900 dark:bg-slate-800 dark:text-slate-100"
                             inputMode="numeric"
                             value={String(draftPayload(reviewAction)[issue.field] || '')}
                             onChange={(event) => updateDraft(reviewAction, issue.field, Number(event.target.value.replace(/\D/g, '')))}
@@ -186,9 +186,9 @@ export function ActionCards({ actions, onNavigate, onPrompt }: ActionCardsProps)
 
               <div className="max-h-72 overflow-auto rounded-2xl border border-slate-200">
                 {reviewPayload.map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-[140px_minmax(0,1fr)] border-b border-slate-100 px-3 py-2 text-sm last:border-b-0">
-                    <span className="font-medium text-slate-500">{key}</span>
-                    <span className="break-words text-slate-900">{String(value)}</span>
+                  <div key={key} className="grid grid-cols-[140px_minmax(0,1fr)] border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 dark:border-slate-800">
+                    <span className="font-medium text-slate-500 dark:text-slate-400">{key}</span>
+                    <span className="break-words text-slate-900 dark:text-slate-100">{String(value)}</span>
                   </div>
                 ))}
               </div>

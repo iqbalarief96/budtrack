@@ -28,9 +28,16 @@ function errorMessage(text: string) {
   }
 }
 
-async function verifyChatbotKey(provider: string, apiKey: string, selectedModel: string, customEndpoint?: string) {
+async function verifyChatbotKey(
+  provider: string,
+  apiKey: string,
+  selectedModel: string,
+  customEndpoint?: string
+) {
   const baseUrl = baseUrlFor(provider, customEndpoint)
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+
+  // Try normal non-streaming first
+  let response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -40,11 +47,33 @@ async function verifyChatbotKey(provider: string, apiKey: string, selectedModel:
     body: JSON.stringify({
       model: compactModel(provider, selectedModel),
       messages: [{ role: 'user', content: 'Reply with OK.' }],
-      max_tokens: 8,
+      max_tokens: 32,
       temperature: 0,
       stream: false,
     }),
   })
+
+  // If failed with 502 (e.g. streaming translation issue in proxy gateway like 9router-go), retry with stream: true
+  if (!response.ok && response.status === 502) {
+    try {
+      const streamResponse = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: compactModel(provider, selectedModel),
+          messages: [{ role: 'user', content: 'Reply with OK.' }],
+          max_tokens: 32,
+          stream: true,
+        }),
+      })
+      if (streamResponse.ok) {
+        return // Stream works, verification pass!
+      }
+    } catch (_) {}
+  }
 
   const text = await response.text()
   if (!response.ok) {
