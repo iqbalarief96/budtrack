@@ -1,19 +1,20 @@
 'use client'
 
 import React, { useEffect, useState, useRef } from 'react'
-import { FiArrowUpRight, FiArrowDownLeft, FiDollarSign, FiTrendingUp, FiAlertCircle, FiCalendar, FiEye } from 'react-icons/fi'
+import { FiArrowUpRight, FiArrowDownLeft, FiDollarSign, FiEye } from 'react-icons/fi'
 import { useWallet } from '../providers/WalletProvider'
 import WalletSelector from '../components/WalletSelector'
 import type { Budget } from '@/app/types/budget'
 import type { Category } from '@/app/types/category'
 import type { Wallet } from '@/app/types/wallet'
 import BudgetProgress from '@/components/budget/BudgetProgress'
-import EmergencyFundCard from '@/app/components/dashboard/EmergencyFundCard'
 import { Chart as ChartJS, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
 import TransactionModal from '@/app/components/TransactionModal'
 import { useRouter } from 'next/navigation'
-import CustomizableTabContent from '../components/dashboard/CustomizableTabContent'
+import DashboardWidgets from '@/app/components/dashboard/DashboardWidgets'
+import AttentionPanel, { type AttentionItem } from '@/app/components/dashboard/AttentionPanel'
+import { DashboardMetricsContext, type DashboardMetrics } from './DashboardMetricsContext'
 import WalletContributionChart from '@/app/components/dashboard/WalletContributionChart'
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
@@ -21,6 +22,7 @@ import { calculateTrend, type TrendResult } from '@/lib/trend'
 import {
   averageMonthlySurplus,
   buildTransferIndex,
+  classifyFlow,
   computeFlowTotals,
   computeHealthScore,
   monthlyFlows,
@@ -34,9 +36,6 @@ import {
 } from '@/lib/dashboard-metrics'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
-import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
-
-import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
 
 const CATEGORY_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#8AC926', '#1982C4', '#6A4C93', '#FF595E']
 const PERIOD_STORAGE_KEY = 'dashboardPeriod'
@@ -116,7 +115,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const { data: allTransactions = [], isLoading: isLoadingTransactions } = useTransactions()
   const { data: allBudgets = [], isLoading: isLoadingBudgets } = useBudgets()
   const { data: goals = [] } = useGoals(isGroupSelected ? undefined : selectedWallet?.id)
-  const { data: savingsData, isLoading: isLoadingSavings } = useEmergencyFund(selectedWallet?.id)
 
   // Group-specific data
   const [groupDashboardData, setGroupDashboardData] = useState<any>(null)
@@ -124,13 +122,10 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
   const [summary, setSummary] = useState({ total: 0, income: 0, expense: 0 })
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([])
-  const [chartData, setChartData] = useState({ income: 0, expense: 0 })
   const [recentBudgets, setRecentBudgets] = useState<BudgetWithRelations[]>([])
   const [showAllTransactions, setShowAllTransactions] = useState(false)
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false)
   const [transactionType, setTransactionType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
-  // State for dashboard items
-  const [showTips, setShowTips] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [transactionHistory, setTransactionHistory] = useState<Array<{
     month: string;
@@ -139,11 +134,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     expense: number;
   }>>([])
   const [spendingByCategory, setSpendingByCategory] = useState<{ name: string; amount: number; color: string }[]>([])
-  const [financialTips, setFinancialTips] = useState<{ id: number; title: string; description: string }[]>([
-    { id: 1, title: 'Tabungan Darurat', description: 'Sisihkan 20% penghasilan setiap bulan untuk dana darurat' },
-    { id: 2, title: 'Atur Budget', description: 'Tentukan batas maksimal untuk kategori pengeluaran non-esensial' },
-    { id: 3, title: 'Lacak Pengeluaran', description: 'Catat semua pengeluaran untuk identifikasi area yang bisa dihemat' },
-  ])
   const [subscriptionAlerts, setSubscriptionAlerts] = useState<SubscriptionAlert[]>([])
   const [isLoadingSubscriptionAlerts, setIsLoadingSubscriptionAlerts] = useState(false)
   const [sharedBillsSummary, setSharedBillsSummary] = useState({ outstandingAmount: 0, openCount: 0 })
@@ -288,38 +278,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
     fetchSafeToSpend()
   }, [isGroupSelected, selectedGroup?.id, scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Load saved widget state from localStorage on component initialization
-  const getSavedWidgets = () => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedWidgetsStr = localStorage.getItem('ringkasanWidgets');
-        console.log('Debug - Loading from localStorage:', savedWidgetsStr);
-
-        if (savedWidgetsStr) {
-          const parsedWidgets = JSON.parse(savedWidgetsStr);
-          console.log('Debug - Parsed widgets:', parsedWidgets);
-          return parsedWidgets;
-        }
-      } catch (error) {
-        console.error('Error loading saved widgets from localStorage:', error);
-      }
-    }
-    console.log('Debug - No widgets found in localStorage, returning empty array');
-    return [];
-  };
-
-  const [isEditModeRingkasan, setIsEditModeRingkasan] = useState(false);
-  const [ringkasanWidgets, setRingkasanWidgets] = useState<any[]>(getSavedWidgets());
-  const [widgetsInitialized, setWidgetsInitialized] = useState(false);
-
-  // Update localStorage whenever widgets change
-  useEffect(() => {
-    if (ringkasanWidgets.length > 0) {
-      console.log('Debug - Saving to localStorage:', ringkasanWidgets);
-      localStorage.setItem('ringkasanWidgets', JSON.stringify(ringkasanWidgets));
-    }
-  }, [ringkasanWidgets]);
 
   // Helper function to calculate date range from period
   const getDateRangeFromPeriod = (period: string): { startDate?: Date; endDate?: Date } => {
@@ -472,7 +430,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       })
     )
     setSummary({ total: flows.net, income: flows.income, expense: flows.expense })
-    setChartData({ income: flows.income, expense: flows.expense })
     setSpendingByCategory(flows.byCategory.map((c, i) => ({ ...c, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] })))
     setTransactionHistory(
       monthlyHistory.map((m) => ({ month: m.label, year: Number(m.key.slice(0, 4)), income: m.income, expense: m.expense }))
@@ -508,14 +465,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const savingsRate: number | null = isGroupSelected ? groupSavingsRate : flows.savingsRate
   const savedThisPeriod: number | null = isGroupSelected ? null : flows.saved
 
-  const calculateFinancialStats = () => {
-    if (scopeWalletIds.length === 0 && !isGroupSelected) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
-    const expenseRatio = summary.income > 0 ? (summary.expense / summary.income) * 100 : 0
-    const topCategory = spendingByCategory.length > 0 ? spendingByCategory[0] : null
-    return { savingsRate: savingsRate ?? 0, expenseRatio, topCategory }
-  }
-  const stats = calculateFinancialStats()
-
   // Source-of-truth balance: actual wallet/group balance, not period cashflow.
   const displayBalance = isGroupSelected
     ? (groupDashboardData?.totalBalance ?? summary.total)
@@ -540,26 +489,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     budgetUsage: filteredBudgets.length ? budgetUsage : null,
     txCount: transactionCount,
   })
-  const healthScore = health.score
-  const todayAction = negativeWallets.length
-    ? { title: 'Beresin saldo negatif', description: `${negativeWallets[0].name} perlu dicek/reconcile.`, href: '/wallets' }
-    : !filteredBudgets.length
-      ? { title: 'Buat budget pertama', description: 'Budget bikin dashboard lebih akurat.', href: '/budgets' }
-      : transactionCount < 5
-        ? { title: 'Tambah data transaksi', description: `Baru ${transactionCount} transaksi. Butuh 5+ buat insight.`, href: '/transactions' }
-        : budgetUsage > 90
-          ? { title: 'Rem pengeluaran', description: `Rata-rata budget udah kepakai ${budgetUsage}%.`, href: '/budgets' }
-          : budgetUsage === 0
-            ? { title: 'Cek kategori budget', description: 'Belum ada pengeluaran yang masuk ke budget. Kategorinya udah cocok?', href: '/budgets' }
-            : { title: 'Review budget', description: `Rata-rata pemakaian budget ${budgetUsage}%.`, href: '/budgets' }
-
-  // Data quality label
-  const dataQualityLabel = dataQualityScore >= 70 ? 'High' : dataQualityScore >= 40 ? 'Medium' : 'Low'
-  const dataQualityReason = transactionCount < 5
-    ? `Baru ${transactionCount} transaksi`
-    : !filteredBudgets.length
-      ? 'Belum ada budget'
-      : 'Data cukup'
+  const dataQualityLabel = dataQualityScore >= 70 ? 'Tinggi' : dataQualityScore >= 40 ? 'Sedang' : 'Rendah'
 
   // Safe-to-spend is computed server-side (see the fetchSafeToSpend effect): it
   // needs bills/recurring/credit-card data the dashboard doesn't load, and we
@@ -571,7 +501,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const safeBuffer = safeToSpendData?.buffer ?? 0
   const safeBalance = safeToSpendData?.balance ?? displayBalance
   const safeConfidence = safeToSpendData
-    ? (safeToSpendData.confidence === 'high' ? 'High' : safeToSpendData.confidence === 'medium' ? 'Medium' : 'Low')
+    ? (safeToSpendData.confidence === 'high' ? 'Tinggi' : safeToSpendData.confidence === 'medium' ? 'Sedang' : 'Rendah')
     : dataQualityLabel
 
   // Trend = this period vs the same elapsed span of the previous one
@@ -588,42 +518,173 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     .filter((x) => x.remaining > 0)
     .sort((a, b) => a.remaining - b.remaining)[0]
   const monthlySurplus = isGroupSelected ? null : averageMonthlySurplus(monthlyHistory, 3)
-  const goalProjection = !activeGoals.length
-    ? { label: 'Belum ada goal aktif', detail: 'Bikin goal biar bisa diproyeksiin.' }
-    : !projectionGoal
-      ? { label: 'Semua goal tercapai 🎉', detail: 'Mantap, target kebeli.' }
-      : monthlySurplus && monthlySurplus > 0
-        ? { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • ~${Math.ceil(projectionGoal.remaining / monthlySurplus)} bulan lagi (rata-rata sisa ${formatCurrency(monthlySurplus)}/bulan)` }
-        : { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • belum ada sisa bulanan buat proyeksi` }
-
-  // Smart Insight. Savings transfers are excluded from spendingByCategory, so
-  // "Savings" can no longer show up as the top spending category.
   const topSpendingCategory = spendingByCategory.length > 0 ? spendingByCategory[0] : null
-  const topShare = topSpendingCategory && summary.expense > 0 ? `, ${Math.round((topSpendingCategory.amount / summary.expense) * 100)}% dari pengeluaran` : ''
-  const smartInsight = transactionCount < 5
-    ? `Baru ${transactionCount} transaksi (${periodLabel.toLowerCase()}). Tambah ${Math.max(5 - transactionCount, 0)} lagi biar trend & insight akurat.`
-    : negativeWallets.length
-      ? `${negativeWallets[0].name} saldo negatif. Beresin dulu biar cashflow sehat.`
-      : budgetUsage > 90
-        ? `Budget kepakai ${budgetUsage}%. Rem pengeluaran kategori utama biar gak jebol.`
-        : topSpendingCategory
-          ? `${savingsRate !== null ? `Saving rate ${savingsRate.toFixed(0)}%. ` : ''}Pengeluaran terbesar (${periodLabel.toLowerCase()}): ${topSpendingCategory.name} ${formatCurrency(topSpendingCategory.amount)}${topShare}.`
-          : 'Cashflow stabil. Pertahankan dan mulai alokasi ke goal.'
 
-  // Monthly close checklist with computed emphasis
-  const monthlyCloseItems = [
-    { label: 'Reconcile saldo wallet', hot: negativeWallets.length > 0 },
-    { label: 'Review budget overspend', hot: budgetUsage > 90 },
-    { label: 'Bayar/settle shared bills', hot: sharedBillsSummary.outstandingAmount > 0 },
-    { label: 'Sisihkan ke goals', hot: netCashflow > 0 },
-  ]
+  // ---- "Perlu perhatian" ---------------------------------------------------
+  // One prioritized list instead of six cards. Ids of dismissible items carry
+  // the period, so a hidden tip comes back next period.
+  const periodKey = `${selectedPeriod}-${currentRange ? currentRange.start.toISOString().slice(0, 10) : 'all'}`
+  const periodLower = periodLabel.toLowerCase()
+  const budgetName = (b: { name?: string; category?: { name?: string } }) => b.category?.name || b.name || 'Budget'
+  const overBudgets = filteredBudgets.filter((b) => b.amount > 0 && (b.spent || 0) > b.amount)
+  const nearBudgets = filteredBudgets.filter((b) => b.amount > 0 && (b.spent || 0) <= b.amount && (b.spent || 0) / b.amount > 0.9)
+  const attentionItems: AttentionItem[] = []
 
-  // Upcoming obligations (merge subscriptions + shared bills + negative wallets)
-  const upcomingObligations = [
-    ...subscriptionAlerts.slice(0, 3).map((a) => ({ label: a.title, detail: `H-${a.daysLeft}`, amount: a.subscription.amount })),
-    ...(sharedBillsSummary.outstandingAmount > 0 ? [{ label: 'Shared bills outstanding', detail: `${sharedBillsSummary.openCount} open`, amount: sharedBillsSummary.outstandingAmount }] : []),
-    ...negativeWallets.slice(0, 2).map((w) => ({ label: `${w.name} negatif`, detail: 'reconcile', amount: w.balance })),
-  ].slice(0, 4)
+  negativeWallets.forEach((w) => attentionItems.push({
+    id: `negative-${w.id}`,
+    severity: 'high',
+    title: `Saldo ${w.name} minus ${formatCurrency(w.balance)}`,
+    detail: 'Cek & reconcile dulu biar angka dashboard akurat.',
+    href: '/wallets',
+    actionLabel: 'Cek dompet',
+  }))
+  if (overBudgets.length) attentionItems.push({
+    id: 'budget-over',
+    severity: 'high',
+    title: overBudgets.length === 1 ? `Budget ${budgetName(overBudgets[0])} jebol` : `${overBudgets.length} budget jebol`,
+    detail: overBudgets.slice(0, 3).map((b) => `${budgetName(b)} ${formatCurrency(b.spent || 0)} / ${formatCurrency(b.amount)}`).join(' • '),
+    href: '/budgets',
+    actionLabel: 'Lihat budget',
+  })
+  if (nearBudgets.length) attentionItems.push({
+    id: 'budget-near',
+    severity: 'medium',
+    title: nearBudgets.length === 1 ? `Budget ${budgetName(nearBudgets[0])} hampir habis` : `${nearBudgets.length} budget hampir habis`,
+    detail: nearBudgets.slice(0, 3).map((b) => `${budgetName(b)} ${Math.round(((b.spent || 0) / b.amount) * 100)}%`).join(' • '),
+    href: '/budgets',
+    actionLabel: 'Lihat budget',
+  })
+  if (safeToSpendData && obligationsTotal > safeBalance) attentionItems.push({
+    id: 'obligations-gap',
+    severity: 'high',
+    title: 'Saldo gak cukup buat kewajiban bulan ini',
+    detail: `Kewajiban ${formatCurrency(obligationsTotal)} vs saldo ${formatCurrency(safeBalance)}.`,
+    href: '/bills',
+    actionLabel: 'Cek tagihan',
+  })
+  else if (safeToSpendData && safeToSpend <= 0) attentionItems.push({
+    id: 'safe-zero',
+    severity: 'medium',
+    title: 'Gak ada sisa aman buat jajan bulan ini',
+    detail: 'Saldo udah habis kepotong kewajiban, cadangan goal & buffer. Tahan pengeluaran non-wajib dulu.',
+  })
+  if (savingsRate !== null && savingsRate < 0) attentionItems.push({
+    id: 'rate-negative',
+    severity: 'high',
+    title: `Pengeluaran ${periodLower} lebih gede dari pemasukan`,
+    detail: `Tekor ${formatCurrency(summary.expense - summary.income)}. Cek kategori terbesar di bawah.`,
+    href: '/transactions',
+    actionLabel: 'Transaksi',
+  })
+  else if (savingsRate !== null && savingsRate < 10 && transactionCount >= 5) attentionItems.push({
+    id: `rate-low-${periodKey}`,
+    severity: 'medium',
+    title: `Saving rate baru ${savingsRate.toFixed(0)}%`,
+    detail: 'Idealnya minimal 10–20% dari pemasukan.',
+    dismissible: true,
+  })
+  if (subscriptionAlerts.length) {
+    const soonest = Math.min(...subscriptionAlerts.map((a) => a.daysLeft))
+    attentionItems.push({
+      id: `subscriptions-${periodKey}`,
+      severity: soonest <= 3 ? 'medium' : 'info',
+      title: `${subscriptionAlerts.length} langganan jatuh tempo ≤ 14 hari`,
+      detail: subscriptionAlerts.slice(0, 3).map((a) => `${a.subscription.name} H-${a.daysLeft} (${formatCurrency(a.subscription.amount)})`).join(' • '),
+      href: '/subscriptions',
+      actionLabel: 'Kelola',
+      dismissible: soonest > 3,
+    })
+  }
+  if (sharedBillsSummary.outstandingAmount > 0) attentionItems.push({
+    id: 'shared-bills',
+    severity: 'medium',
+    title: `Shared bills belum beres: ${formatCurrency(sharedBillsSummary.outstandingAmount)}`,
+    detail: `${sharedBillsSummary.openCount} tagihan masih open.`,
+    href: '/shared-bills',
+    actionLabel: 'Settle',
+  })
+  if (transactionCount < 5 && (scopeWalletIds.length > 0 || isGroupSelected)) attentionItems.push({
+    id: `few-tx-${periodKey}`,
+    severity: 'info',
+    title: `Baru ${transactionCount} transaksi ${periodLower}`,
+    detail: 'Butuh minimal 5 biar tren & skor kesehatan akurat.',
+    href: '/transactions',
+    actionLabel: 'Catat',
+    dismissible: true,
+  })
+  if (!filteredBudgets.length && (scopeWalletIds.length > 0 || isGroupSelected)) attentionItems.push({
+    id: 'no-budget',
+    severity: 'info',
+    title: 'Belum ada budget',
+    detail: 'Bikin budget biar ada peringatan sebelum jebol.',
+    href: '/budgets',
+    actionLabel: 'Buat budget',
+    dismissible: true,
+  })
+  else if (filteredBudgets.length && budgetUsage === 0 && transactionCount >= 5) attentionItems.push({
+    id: `budget-unused-${periodKey}`,
+    severity: 'info',
+    title: 'Pengeluaran belum masuk budget mana pun',
+    detail: 'Kategori budget-nya udah cocok sama kategori transaksi?',
+    href: '/budgets',
+    actionLabel: 'Cek',
+    dismissible: true,
+  })
+  if (projectionGoal) attentionItems.push({
+    id: `goal-${projectionGoal.g.id}-${periodKey}`,
+    severity: 'info',
+    title: monthlySurplus && monthlySurplus > 0
+      ? `Goal ${projectionGoal.g.name}: ~${Math.ceil(projectionGoal.remaining / monthlySurplus)} bulan lagi`
+      : `Goal ${projectionGoal.g.name} belum kekejar`,
+    detail: monthlySurplus && monthlySurplus > 0
+      ? `Sisa ${formatCurrency(projectionGoal.remaining)} · rata-rata sisa ${formatCurrency(monthlySurplus)}/bulan (3 bulan terakhir)`
+      : `Sisa ${formatCurrency(projectionGoal.remaining)} · 3 bulan terakhir belum ada sisa buat dialokasiin`,
+    href: '/goals',
+    actionLabel: 'Goals',
+    dismissible: true,
+  })
+  if (topSpendingCategory && transactionCount >= 5) attentionItems.push({
+    id: `top-category-${periodKey}`,
+    severity: 'info',
+    title: `Pengeluaran terbesar: ${topSpendingCategory.name}`,
+    detail: `${formatCurrency(topSpendingCategory.amount)}${summary.expense > 0 ? ` (${Math.round((topSpendingCategory.amount / summary.expense) * 100)}% dari pengeluaran ${periodLower})` : ''}`,
+    href: '/transactions',
+    actionLabel: 'Lihat',
+    dismissible: true,
+  })
+  if (savingsRate !== null && savingsRate >= 20 && transactionCount >= 5) attentionItems.push({
+    id: `rate-good-${periodKey}`,
+    severity: 'positive',
+    title: `Saving rate ${savingsRate.toFixed(0)}%, mantap!`,
+    detail: savedThisPeriod ? `${formatCurrency(savedThisPeriod)} udah dipindah ke tabungan ${periodLower}.` : undefined,
+    dismissible: true,
+  })
+  const healthView = {
+    score: health.score,
+    label: health.label,
+    reasons: health.score === null ? [`Butuh min. 5 transaksi ${periodLower} (sekarang ${transactionCount})`] : health.reasons,
+  }
+
+  // ---- Widget metrics --------------------------------------------------------
+  // Shared with the widget grid so every widget agrees with the hero numbers.
+  const savedIds = React.useMemo(
+    () => new Set(filteredTransactions.filter((tx) => classifyFlow(tx as FlowTx, scopeSet, transferIndex) === 'saved').map((tx) => tx.id)),
+    [filteredTransactions, scopeSet, transferIndex]
+  )
+  const widgetMetrics = React.useMemo<DashboardMetrics | null>(() => {
+    if (isGroupSelected) return null
+    return {
+      period: selectedPeriod,
+      periodLabel,
+      range: currentRange,
+      previousLabel: trendPrevLabel,
+      flows,
+      previousFlows,
+      monthlyHistory,
+      transactions: [...filteredTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      savedIds,
+    }
+  }, [isGroupSelected, selectedPeriod, periodLabel, currentRange, trendPrevLabel, flows, previousFlows, monthlyHistory, filteredTransactions, savedIds])
 
   // Recent transaction anomaly helper
   const avgExpense = (() => {
@@ -729,7 +790,6 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
   return (
     <div className="space-y-6">
-      <SpendingAnomalyBanner />
       <div className={`bg-gradient-to-r ${isGroupSelected ? 'from-purple-700 to-purple-500' : 'from-blue-700 to-blue-500'} rounded-xl p-6 text-white shadow-lg`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
           <div>
@@ -809,7 +869,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 lg:col-span-3 hover:bg-white/20 transition-all duration-200">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-blue-100">Safe to spend</h3>
+                <h3 className="text-blue-100">Aman dibelanjakan</h3>
                 <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
                 {safeToSpendData?.perDay !== undefined && safeToSpendData.daysLeft ? (
                   <p className="mt-1 text-sm text-blue-50">
@@ -817,155 +877,60 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                   </p>
                 ) : null}
                 <p className="mt-2 text-xs text-blue-100">
-                  Saldo - kewajiban bulan ini - reserve - buffer
+                  Saldo − kewajiban bulan ini − cadangan goal − buffer
                 </p>
                 <div className="mt-3 grid gap-1 text-xs text-blue-50 sm:grid-cols-4">
                   <span>Saldo {formatCurrency(safeBalance)}</span>
                   <span>Kewajiban -{formatCurrency(obligationsTotal)}</span>
-                  <span>Reserve -{formatCurrency(goalReserve)}</span>
+                  <span>Cadangan goal -{formatCurrency(goalReserve)}</span>
                   <span>Buffer -{formatCurrency(safeBuffer)}</span>
                 </div>
               </div>
-              <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">Confidence: {safeConfidence}</span>
+              <span className="shrink-0 rounded-full bg-white/20 px-3 py-1 text-xs font-medium">Akurasi: {safeConfidence}</span>
             </div>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-2">
             <h3 className="text-blue-100">Pemasukan <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
             <p className="mt-1 text-2xl font-bold text-green-300">{formatCurrency(summary.income)}</p>
             <TrendBadge trend={incomeTrend} label={trendPrevLabel} />
           </div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-2">
             <h3 className="text-blue-100">Pengeluaran <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
             <p className="mt-1 text-2xl font-bold text-red-300">{formatCurrency(summary.expense)}</p>
             <TrendBadge trend={expenseTrend} invert label={trendPrevLabel} />
           </div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-2">
             <h3 className="text-blue-100">Ditabung <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
             <p className="mt-1 text-2xl font-bold text-sky-200">{savedThisPeriod === null ? '—' : formatCurrency(savedThisPeriod)}</p>
             <p className="mt-2 text-[11px] text-blue-100">
               Saving rate {savingsRate === null ? '—' : `${savingsRate.toFixed(1)}%`}
             </p>
           </div>
-
-          <button type="button" onClick={() => router.push(todayAction.href)} className="rounded-xl bg-white p-4 text-left text-blue-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md lg:col-span-3">
-            <p className="text-sm font-medium text-blue-600">Today action</p>
-            <p className="mt-1 text-xl font-semibold">{todayAction.title}</p>
-            <p className="mt-1 text-sm text-blue-700">{todayAction.description}</p>
-          </button>
         </div>
       </div>
 
-      {/* Decision row: Financial Health + Smart Insight */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500">Financial Health</p>
-          <div className="mt-1 flex items-baseline gap-2">
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore ?? '—'}</p>
-            {healthScore !== null ? (
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                {health.label}
-              </span>
-            ) : (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Belum cukup data</span>
-            )}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">
-            {healthScore !== null
-              ? health.reasons.join(' • ')
-              : <>Butuh minimal 5 transaksi di periode ini (sekarang {transactionCount})</>}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-5 shadow-sm lg:col-span-2">
-          <div className="flex items-center gap-2 text-blue-700">
-            <FiTrendingUp />
-            <p className="text-sm font-semibold">Smart Insight</p>
-          </div>
-          <p className="mt-2 text-sm text-blue-950">{smartInsight}</p>
-        </div>
-      </div>
-
-      {/* Upcoming Obligations + Monthly Close + Goal Projection */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-              <FiAlertCircle className="text-amber-500" /> Upcoming Obligations
-            </h2>
-            <button onClick={() => router.push('/subscriptions')} className="text-xs font-medium text-blue-600 hover:underline">Kelola</button>
-          </div>
-          <div className="mt-3 space-y-2">
-            {isLoadingSubscriptionAlerts ? (
-              <p className="text-sm text-gray-500">Loading…</p>
-            ) : upcomingObligations.length === 0 ? (
-              <p className="text-sm text-gray-500">No upcoming obligations dalam 14 hari. </p>
-            ) : (
-              upcomingObligations.map((ob, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border border-gray-100 dark:border-gray-700 p-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{ob.label}</p>
-                    <p className="text-xs text-gray-500">{ob.detail}</p>
-                  </div>
-                  <span className={`text-sm font-semibold ${ob.amount < 0 ? 'text-red-600' : 'text-gray-900 dark:text-white'}`}>{formatCurrency(ob.amount)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <FiCalendar className="text-blue-500" /> Monthly Close
-          </h2>
-          <div className="mt-3 space-y-2">
-            {monthlyCloseItems.map((item, i) => (
-              <div key={i} className={`flex items-center gap-2 rounded-lg p-2.5 text-sm ${item.hot ? 'bg-amber-50 text-amber-800' : 'text-gray-700 dark:text-gray-300'}`}>
-                <span className={`flex h-4 w-4 items-center justify-center rounded border ${item.hot ? 'border-amber-400' : 'border-gray-300'}`}>{item.hot ? '!' : ''}</span>
-                {item.label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <button type="button" onClick={() => router.push('/goals')} className="rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <FiTrendingUp className="text-green-500" /> Goal Projection
-          </h2>
-          <p className="mt-3 text-base font-semibold text-gray-900 dark:text-white">{goalProjection.label}</p>
-          <p className="mt-1 text-sm text-gray-500">{goalProjection.detail}</p>
-        </button>
-      </div>
+      <AttentionPanel
+        items={attentionItems}
+        health={healthView}
+        anomalyWalletId={!isGroupSelected && dashboardScope?.kind === 'wallet' ? dashboardScope.walletId : undefined}
+      />
 
       {/* Tab Navigation */}
       <div className="border-b">
         <nav className="flex space-x-4 relative">
-          <div className="flex items-center">
-            <button
-              className={`py-2 px-1 text-base font-medium border-b-2 transition-colors duration-150 ${
-                activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('overview')}
-            >
-              Ringkasan
-            </button>
-
-            {activeTab === 'overview' && (
-              <button
-                onClick={() => setIsEditModeRingkasan(!isEditModeRingkasan)}
-                className="ml-2 text-indigo-600 hover:text-indigo-800 focus:outline-none"
-                title={isEditModeRingkasan ? "Selesai Edit" : "Edit Ringkasan"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                </svg>
-              </button>
-            )}
-          </div>
+          <button
+            className={`py-2 px-1 text-base font-medium border-b-2 transition-colors duration-150 ${
+              activeTab === 'overview'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Ringkasan
+          </button>
 
           <button
             className={`py-2 px-1 text-base font-medium border-b-2 transition-colors duration-150 ${
@@ -1007,32 +972,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && (
           <div>
-            {/* Customizable content for Ringkasan */}
-            <CustomizableTabContent
-              isEditMode={isEditModeRingkasan}
-              onSaveChanges={(widgets) => {
-                console.log('Debug - onSaveChanges called with widgets:', widgets);
-
-                // Check if widgets is valid
-                if (!widgets || !Array.isArray(widgets)) {
-                  console.error('Invalid widgets data received:', widgets);
-                  return;
-                }
-
-                // Simpan ke state lokal
-                setRingkasanWidgets(widgets);
-
-                // Simpan ke localStorage untuk persistensi
-                localStorage.setItem('ringkasanWidgets', JSON.stringify(widgets));
-                console.log('Debug - Saved widgets to localStorage during onSaveChanges');
-
-                // Tutup mode edit
-                setIsEditModeRingkasan(false);
-              }}
-              onCancelEdit={() => setIsEditModeRingkasan(false)}
-              selectedWalletId={selectedWallet?.id}
-              initialWidgets={ringkasanWidgets}
-            />
+            <DashboardMetricsContext.Provider value={widgetMetrics}>
+              <DashboardWidgets selectedWalletId={isGroupSelected ? undefined : selectedWallet?.id} />
+            </DashboardMetricsContext.Provider>
           </div>
         )}
 

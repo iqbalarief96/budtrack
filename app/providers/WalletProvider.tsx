@@ -323,7 +323,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     const n = dashboardScopeWalletIds.length;
     switch (dashboardScope.type) {
       case 'ALL': return `Semua Dompet (${n})`;
-      case 'MAIN': return `Dompet Utama (${n})`;
+      case 'MAIN': return `Semua dompet utama (${n})`;
       case 'SAVINGS': return `Tabungan (${n})`;
       case 'INVESTMENT': return `Investasi (${n})`;
       default: return 'Dompet';

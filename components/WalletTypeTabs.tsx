@@ -16,7 +16,8 @@ export function WalletTypeTabs() {
 
   const tabs: { label: string; value: WalletTypeFilter; count: number }[] = [
     { label: 'Semua', value: 'ALL', count: counts.all },
-    { label: 'Dompet Utama', value: 'MAIN', count: counts.main },
+    // "Utama" (not "Dompet Utama"): users often name a wallet "Dompet Utama" too.
+    { label: 'Utama', value: 'MAIN', count: counts.main },
     { label: 'Tabungan', value: 'SAVINGS', count: counts.savings },
     { label: 'Investasi', value: 'INVESTMENT', count: counts.investment },
   ];
@@ -57,8 +58,8 @@ export function WalletTypeTabs() {
       })}
 
       {activeWallet && (
-        <span className="flex items-center gap-1 pl-4 pr-2 py-2 rounded-lg font-medium text-sm whitespace-nowrap bg-blue-600 text-white">
-          {activeWallet.name}
+        <span className="flex items-center gap-1 pl-4 pr-2 py-2 rounded-lg font-medium text-sm whitespace-nowrap bg-blue-600 text-white" title="Lagi lihat 1 dompet">
+          <span aria-hidden>💳</span> {activeWallet.name}
           <button
             type="button"
             aria-label="Tutup tampilan dompet ini"
