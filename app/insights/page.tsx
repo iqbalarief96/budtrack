@@ -22,6 +22,18 @@ import { FaChartLine, FaChartPie, FaChartBar } from 'react-icons/fa'
 import { Pie } from 'react-chartjs-2'
 import ReactMarkdown from 'react-markdown'
 import ComparativeSummaryCard from '../components/ComparativeSummaryCard'
+import { SmartAnalysisCards, DeepAnalysis } from './components/SmartAnalysisCards'
+import type { SmartAnalysis, SmartAnalysisFacts } from '@/lib/smart-analysis'
+
+// Saved Smart Analysis. v2 = structured cards + long markdown; legacy saved
+// entries only have `summary` (+ `analysis`) markdown.
+type AnalysisResult = {
+  version?: 2
+  structured?: SmartAnalysis | null
+  facts?: SmartAnalysisFacts | null
+  summary: string | null
+  analysis: string | null
+}
 
 // Register ChartJS components
 ChartJS.register(
@@ -138,15 +150,15 @@ const InsightsPage = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [chartData, setChartData] = useState<ChartData | null>(null)
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
-  const [smartAnalysis, setSmartAnalysis] = useState<string | null>(null)
+  // Prompts + facts for Smart Analysis, built server-side by /api/insights/analyze.
+  const [structuredPrompt, setStructuredPrompt] = useState<string | null>(null)
+  const [deepAnalysisPrompt, setDeepAnalysisPrompt] = useState<string | null>(null)
+  const [analysisFacts, setAnalysisFacts] = useState<SmartAnalysisFacts | null>(null)
+  const [analysisWarning, setAnalysisWarning] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [selectedPeriod, setSelectedPeriod] = useState<TrendGrouping>('month')
-  const [analysisResult, setAnalysisResult] = useState<{
-    summary: string | null;
-    analysis: string | null;
-  }>({ summary: null, analysis: null })
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult>({ summary: null, analysis: null })
   const [dateRange, setDateRange] = useState(() => getDefaultRangeForPeriod('month'))
   
   // Group-specific insights data
@@ -285,7 +297,7 @@ const InsightsPage = () => {
   }
 
   // Save analysis to localStorage
-  const saveAnalysisToStorage = (analysis: { summary: string | null; analysis: string | null }) => {
+  const saveAnalysisToStorage = (analysis: AnalysisResult) => {
     const storageKey = isGroupSelected && selectedGroup 
       ? `financial-analysis-group-${selectedGroup.id}`
       : selectedWallet 
@@ -353,8 +365,9 @@ const InsightsPage = () => {
 
       setChartData(data.data)
       
-      setAiAnalysis(data.summaryPrompt)
-      setSmartAnalysis(data.smartAnalysisPrompt)
+      setStructuredPrompt(data.structuredPrompt ?? null)
+      setDeepAnalysisPrompt(data.deepAnalysisPrompt ?? null)
+      setAnalysisFacts(data.facts ?? null)
     } catch (err) {
       if (lastFetchKeyRef.current === fetchKey) {
         setError(err instanceof Error ? err.message : 'An error occurred')
@@ -371,6 +384,7 @@ const InsightsPage = () => {
 
     setIsGenerating(true)
     setGenerationError(null)
+    setAnalysisWarning(null)
     try {
       const response = await fetch('/api/insights/generate', {
         method: 'POST',
@@ -378,8 +392,9 @@ const InsightsPage = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          summaryPrompt: aiAnalysis,
-          analysisPrompt: smartAnalysis,
+          structuredPrompt,
+          deepAnalysisPrompt,
+          categoryNames: (analysisFacts?.categories ?? []).map((c) => c.name),
         }),
       })
 
@@ -389,9 +404,18 @@ const InsightsPage = () => {
         throw new Error(data.error || 'Failed to generate analysis')
       }
 
-      const newAnalysis = {
-        summary: data.summary,
-        analysis: data.analysis
+      // Cards failed but the long analysis worked: say so instead of silently
+      // showing only the markdown.
+      if (!data.structured && data.warnings?.structured) {
+        setAnalysisWarning(`Ringkasan kartu gagal dibuat (${data.warnings.structured}). Yang tampil analisis lengkap.`)
+      }
+
+      const newAnalysis: AnalysisResult = {
+        version: 2,
+        structured: data.structured ?? null,
+        facts: analysisFacts,
+        summary: null,
+        analysis: data.analysis ?? null,
       }
       
       setAnalysisResult(newAnalysis)
@@ -784,7 +808,7 @@ const InsightsPage = () => {
               <div className="flex gap-2">
                 <button
                   onClick={generateAnalysis}
-                  disabled={isGenerating}
+                  disabled={isGenerating || (!structuredPrompt && !deepAnalysisPrompt)}
                   className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm flex items-center gap-1 hover:bg-blue-700 disabled:bg-blue-300"
                 >
                   {isGenerating ? (
@@ -795,11 +819,11 @@ const InsightsPage = () => {
                   ) : (
                     <>
                       <FiRefreshCw className="w-4 h-4" />
-                      {analysisResult.summary ? 'Refresh Analysis' : 'Generate Analysis'}
+                      {(analysisResult.structured || analysisResult.summary || analysisResult.analysis) ? 'Refresh Analysis' : 'Generate Analysis'}
                     </>
                   )}
                 </button>
-                {analysisResult.summary && (
+                {(analysisResult.structured || analysisResult.summary || analysisResult.analysis) && (
                   <button
                     onClick={clearSavedAnalysis}
                     className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm flex items-center gap-1 hover:bg-gray-300"
@@ -827,59 +851,26 @@ const InsightsPage = () => {
               </div>
             )}
 
-            {(analysisResult.summary || analysisResult.analysis) ? (
-              <div className="space-y-6">
-                {/* Summary Section */}
-                <div className="prose max-w-none">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Ringkasan Keuangan</h4>
-                  <div className="space-y-4 text-gray-700 bg-gray-50 rounded-lg p-4">
-                    {analysisResult.summary ? (
-                      <ReactMarkdown 
-                        components={{
-                          p: ({node, ...props}) => <p className="my-1 leading-relaxed" {...props} />,
-                          h1: ({node, ...props}) => <h1 className="text-lg font-bold my-2" {...props} />,
-                          h2: ({node, ...props}) => <h2 className="text-md font-semibold my-2" {...props} />,
-                          h3: ({node, ...props}) => <h3 className="text-md font-semibold my-2 text-gray-800" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
-                          li: ({node, ...props}) => <li className="leading-relaxed" {...props} />
-                        }}
-                      >
-                        {analysisResult.summary}
-                      </ReactMarkdown>
-                    ) : (
-                      <p className="text-gray-500 text-center">No summary available</p>
-                    )}
-                  </div>
-                </div>
+            {analysisWarning && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{analysisWarning}</div>
+            )}
 
-                {/* Smart Analysis Section */}
-                <div className="prose max-w-none mt-6">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">Analisis Mendalam</h4>
-                  <div className="space-y-4 text-gray-700 bg-blue-50 rounded-lg p-4">
-                    {analysisResult.analysis ? (
-                      <ReactMarkdown 
-                        components={{
-                          p: ({node, ...props}) => <p className="my-1 leading-relaxed" {...props} />,
-                          h1: ({node, ...props}) => <h1 className="text-lg font-bold my-2" {...props} />,
-                          h2: ({node, ...props}) => <h2 className="text-md font-semibold my-2 text-blue-800" {...props} />,
-                          h3: ({node, ...props}) => <h3 className="text-md font-semibold text-blue-700 my-2" {...props} />,
-                          h4: ({node, ...props}) => <h4 className="text-sm font-semibold uppercase tracking-wide text-blue-600 mt-3 mb-1" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
-                          li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-                          blockquote: ({node, ...props}) => (
-                            <blockquote className="border-l-4 border-blue-200 pl-4 italic text-blue-900/90 my-3" {...props} />
-                          )
-                        }}
-                      >
-                        {analysisResult.analysis}
-                      </ReactMarkdown>
-                    ) : (
-                      <p className="text-gray-500 text-center">No analysis available</p>
-                    )}
+            {(analysisResult.structured || analysisResult.summary || analysisResult.analysis) ? (
+              <div className="space-y-4">
+                {analysisResult.structured ? (
+                  <SmartAnalysisCards analysis={analysisResult.structured} facts={analysisResult.facts ?? analysisFacts} />
+                ) : analysisResult.summary ? (
+                  <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700">
+                    <p className="mb-2 text-xs text-gray-500">Format lama. Klik Refresh Analysis buat versi baru.</p>
+                    <ReactMarkdown>{analysisResult.summary}</ReactMarkdown>
                   </div>
-                </div>
+                ) : null}
+                {analysisResult.analysis && (
+                  <DeepAnalysis
+                    markdown={analysisResult.analysis}
+                    defaultOpen={!analysisResult.structured && !analysisResult.summary}
+                  />
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
