@@ -2,12 +2,20 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import {
+  buildDeepAnalysisPrompt,
+  buildSmartAnalysisFacts,
+  buildStructuredAnalysisPrompt,
+  isSavingsTransaction,
+  percentChange,
+} from '@/lib/smart-analysis'
 
 interface Transaction {
   type: string
   amount: number
   category?: {
     name: string
+    type?: string | null
   }
   description?: string
   date: Date
@@ -222,131 +230,6 @@ function resolveDateRanges(
   }
 }
 
-function generateSummaryPrompt(
-  data: {
-    totalIncome: number
-    totalExpense: number
-    netSavings: number
-    topExpenses: Array<{ category: string; amount: number; percentage: number }>
-    periodTrend: {
-      incomeChange: number
-      expenseChange: number
-    }
-  },
-  context: {
-    summaryTitle: string
-    previousLabel: string
-    displayName: string
-    labelSingular: string
-  }
-) {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(amount)
-  }
-
-  return `Sebagai seorang financial advisor profesional, buatkan ringkasan keuangan singkat dan informatif berdasarkan data berikut:
-
-# Ringkasan Keuangan ${context.summaryTitle}
-
-## Data Keuangan (${context.displayName})
-- Total Pemasukan: ${formatCurrency(data.totalIncome)}
-- Total Pengeluaran: ${formatCurrency(data.totalExpense)}
-- Total Tabungan: ${formatCurrency(data.netSavings)}
-
-## Top 3 Pengeluaran Terbesar
-${data.topExpenses.map(exp => `- ${exp.category}: ${formatCurrency(exp.amount)} (${exp.percentage.toFixed(1)}%)`).join('\n')}
-
-## Perubahan dari ${context.previousLabel}
-- Pemasukan: ${data.periodTrend.incomeChange.toFixed(1)}%
-- Pengeluaran: ${data.periodTrend.expenseChange.toFixed(1)}%
-
-Berikan ringkasan dalam format berikut:
-
-1. **Kondisi Keuangan**: Overview kondisi keuangan secara umum
-2. **Highlight**: Pengeluaran yang perlu perhatian khusus
-3. **Rekomendasi**: Saran berdasarkan tren
-
-*Gunakan bahasa Jaksel Gaul, tapi jangan ada kata jaksel/kata kata yg norak. Fokus pada insight yang paling relevan.*`
-}
-
-function generateSmartAnalysisPrompt(
-  data: {
-    transactions: Transaction[]
-    monthlyData: Record<string, { income: number; expense: number }>
-    categories: Record<string, number>
-    periodTotals: {
-      income: number
-      expense: number
-      savings: number
-    }
-  },
-  context: {
-    displayName: string
-    labelSingular: string
-  }
-) {
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(amount)
-  }
-
-  const months = Object.keys(data.monthlyData)
-  const avgIncome = months.length > 0
-    ? months.reduce((sum, month) => sum + data.monthlyData[month].income, 0) / months.length
-    : 0
-  const avgExpense = months.length > 0
-    ? months.reduce((sum, month) => sum + data.monthlyData[month].expense, 0) / months.length
-    : 0
-
-  const totalExpense = data.periodTotals.expense || 1
-  const categoryPercentages = Object.entries(data.categories)
-    .map(([category, amount]) => ({
-      category,
-      percentage: ((amount / totalExpense) * 100).toFixed(1)
-    }))
-    .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage))
-
-  return `Sebagai seorang financial analyst profesional, lakukan analisis mendalam terhadap data keuangan berikut:
-
-# ANALISIS KEUANGAN MENDALAM (${context.displayName.toUpperCase()})
-
-## RINGKASAN PERIODE
-- Total Pemasukan: ${formatCurrency(data.periodTotals.income)}
-- Total Pengeluaran: ${formatCurrency(data.periodTotals.expense)}
-- Total Tabungan: ${formatCurrency(data.periodTotals.savings)}
-
-## RATA-RATA PER ${context.labelSingular.toUpperCase()}
-- Pemasukan: ${formatCurrency(avgIncome)}
-- Pengeluaran: ${formatCurrency(avgExpense)}
-
-## DISTRIBUSI PENGELUARAN
-${categoryPercentages.map(cat => `- ${cat.category}: ${cat.percentage}%`).join('\n')}
-
-### 1. ANALISIS POLA PENGELUARAN
-- Identifikasi kategori pengeluaran yang perlu perhatian khusus
-- Analisis apakah distribusi pengeluaran sudah ideal
-- Rekomendasi untuk optimasi pengeluaran
-
-### 2. ANALISIS TABUNGAN & KESEHATAN FINANSIAL
-- Evaluasi rasio tabungan terhadap pemasukan
-- Rekomendasi target tabungan yang ideal
-- Saran untuk meningkatkan kesehatan finansial
-
-### 3. REKOMENDASI STRATEGIS
-- 2-3 langkah konkret untuk perbaikan keuangan
-- Identifikasi potensi penghematan
-- Saran alokasi dana yang lebih efektif
-
-*Berikan analisis dalam format yang terstruktur dengan poin-poin yang jelas. Gunakan bahasa Jaksel Gaul, tapi jangan ada kata jaksel/kata kata yg norak.*`
-}
-
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -385,7 +268,8 @@ export async function POST(request: Request) {
       include: {
         category: {
           select: {
-            name: true
+            name: true,
+            type: true
           }
         }
       }
@@ -394,7 +278,7 @@ export async function POST(request: Request) {
     const transactions: Transaction[] = transactionsRaw.map(t => ({
       type: t.type,
       amount: t.amount,
-      category: t.category ? { name: t.category.name } : undefined,
+      category: t.category ? { name: t.category.name, type: t.category.type } : undefined,
       description: t.description || undefined,
       date: t.date
     }))
@@ -438,23 +322,11 @@ export async function POST(request: Request) {
     // Build trend series
     const trendSeries = buildTrendSeries(monthlyMap, trendStart, summaryEnd, selectedPeriod)
 
-    const incomeChange = trendSeries.income.length >= 2
-      ? (() => {
-          const prev = trendSeries.income[trendSeries.income.length - 2]
-          const curr = trendSeries.income[trendSeries.income.length - 1]
-          if (prev === 0) return curr > 0 ? 100 : 0
-          return ((curr - prev) / Math.abs(prev)) * 100
-        })()
-      : 0
-
-    const expenseChange = trendSeries.expense.length >= 2
-      ? (() => {
-          const prev = trendSeries.expense[trendSeries.expense.length - 2]
-          const curr = trendSeries.expense[trendSeries.expense.length - 1]
-          if (prev === 0) return curr > 0 ? 100 : 0
-          return ((curr - prev) / Math.abs(prev)) * 100
-        })()
-      : 0
+    // null = no previous-period baseline (previously reported as a fake +100%)
+    const lastTwo = (series: number[]) =>
+      series.length >= 2 ? percentChange(series[series.length - 2], series[series.length - 1]) : null
+    const incomeChange = lastTwo(trendSeries.income)
+    const expenseChange = lastTwo(trendSeries.expense)
 
     const summaryCategoryTotals = summaryTransactions
       .filter(t => t.type === 'EXPENSE' && t.category)
@@ -497,37 +369,47 @@ export async function POST(request: Request) {
         return acc
       }, {})
 
-    const topExpenses = categoryBreakdown
-      .slice(0, 3)
-      .map(cat => ({
-        category: cat.name,
-        amount: cat.amount,
-        percentage: cat.percentage
-      }))
-
     const periodContext = PERIOD_CONFIG[selectedPeriod]
 
-    const summaryPrompt = generateSummaryPrompt({
+    // Average per SELECTED period (month/quarter/year): trendSeries is already
+    // aggregated per period, so average its buckets (not raw months).
+    const avgPeriods = trendSeries.income.length
+    const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
+    const avgIncome = mean(trendSeries.income)
+    const avgExpense = mean(trendSeries.expense)
+
+    // Savings transfers per transaction, with the same rule the transaction
+    // flow uses to auto-route into a savings wallet (incl. generic categories
+    // whose description says "tabungan"), plus category type SAVINGS.
+    const summaryExpenses = summaryTransactions.filter(t => t.type === 'EXPENSE')
+    const savingsTransfers = summaryExpenses
+      .filter(t => isSavingsTransaction({ description: t.description, categoryName: t.category?.name, categoryType: t.category?.type }))
+      .reduce((sum, t) => sum + t.amount, 0)
+    const savingsCategoryNames = Array.from(new Set(
+      summaryExpenses
+        .filter(t => (t.category?.type || '').toUpperCase() === 'SAVINGS' && t.category?.name)
+        .map(t => t.category!.name)
+    ))
+
+    // Single set of server-computed facts feeds BOTH prompts and the UI, so
+    // the cards and the long analysis can't disagree on numbers.
+    const facts = buildSmartAnalysisFacts({
+      periodLabel: periodContext.summaryTitle,
+      previousLabel: periodContext.previousLabel,
+      unitLabel: periodContext.labelSingular,
       totalIncome,
       totalExpense,
-      netSavings,
-      topExpenses,
-      periodTrend: {
-        incomeChange,
-        expenseChange
-      }
-    }, periodContext)
-
-    const smartAnalysisPrompt = generateSmartAnalysisPrompt({
-      transactions,
-      monthlyData: sortedMonthlyData,
-      categories: summaryCategoryTotals,
-      periodTotals: {
-        income: totalIncome,
-        expense: totalExpense,
-        savings: netSavings
-      }
-    }, periodContext)
+      categoryTotals: summaryCategoryTotals,
+      incomeChange,
+      expenseChange,
+      avgIncome,
+      avgExpense,
+      avgPeriods,
+      savingsCategoryNames,
+      savingsTransfers,
+    })
+    const structuredPrompt = buildStructuredAnalysisPrompt(facts)
+    const deepAnalysisPrompt = buildDeepAnalysisPrompt(facts)
 
     return NextResponse.json({
       data: {
@@ -549,8 +431,12 @@ export async function POST(request: Request) {
         expensesByCategory: summaryCategoryTotals,
         monthlyData: sortedMonthlyData
       },
-      summaryPrompt,
-      smartAnalysisPrompt
+      facts,
+      structuredPrompt,
+      deepAnalysisPrompt,
+      // Legacy alias: a client bundle loaded before this deploy sends this as
+      // `analysisPrompt` to /generate (which still accepts it).
+      smartAnalysisPrompt: deepAnalysisPrompt
     })
 
   } catch (error) {
