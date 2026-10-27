@@ -33,8 +33,12 @@ export async function processReceipt(
         googleVisionCredentials?: string | null;
         providerApiKey?: string | null;
         customEndpoint?: string | null;
+        /** Model chosen in Settings; used whenever we talk to the user's own provider. */
+        selectedModel?: string | null;
     }
 ): Promise<ReceiptData> {
+    const isCustomProvider = keys.defaultProvider === 'custom' && !!keys.customEndpoint;
+
     // Check if Google Cloud Vision + AI hybrid is requested
     if (model === 'google-vision-ai' || model === 'google-vision-deepseek') {
         console.log('[RECEIPT-SCANNER] Using Google Cloud Vision + AI hybrid');
@@ -45,16 +49,24 @@ export async function processReceipt(
         
         const hybridApiKey = keys.providerApiKey || keys.defaultApiKey;
         if (!hybridApiKey) {
-            throw new Error('DeepSeek API key belum disetup. Silakan setup di Settings.');
+            throw new Error('API key AI belum disetup. Silakan setup di Settings.');
         }
+
+        // The OCR text is parsed by the user's configured provider. Only DeepSeek
+        // is guaranteed to have 'deepseek-chat'; any other provider (incl. a
+        // Custom Endpoint) must use the model chosen in Settings.
+        const hybridProvider = keys.defaultProvider || 'deepseek';
+        const hybridModel = hybridProvider === 'deepseek'
+            ? 'deepseek-chat' // unchanged behaviour for DeepSeek users
+            : (keys.selectedModel || 'deepseek-chat');
         
         try {
             const receiptData = await processReceiptWithGoogleVisionAI(
                 imageBase64,
                 keys.googleVisionCredentials,
-                keys.defaultProvider || 'deepseek',
+                hybridProvider,
                 hybridApiKey,
-                'deepseek-chat',
+                hybridModel,
                 keys.customEndpoint
             );
             
@@ -75,7 +87,7 @@ export async function processReceipt(
             console.warn('[RECEIPT-SCANNER] Google Vision credentials not configured');
             
             // Check if we have fallback API keys
-            if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+            if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey && !keys.providerApiKey) {
                 throw new Error(
                     'Google Vision credentials belum diupload. ' +
                     'Silakan upload credentials di Settings → AI & Integrations, ' +
@@ -102,7 +114,7 @@ export async function processReceipt(
                 console.error('[RECEIPT-SCANNER] Google Vision failed:', error);
                 
                 // Check if we have fallback API keys
-                if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+                if (!keys.defaultApiKey && !keys.openaiApiKey && !keys.geminiApiKey && !keys.providerApiKey) {
                     // No fallback available, throw the error
                     throw new Error(
                         'Google Vision gagal: ' + (error instanceof Error ? error.message : 'Unknown error') +
@@ -120,15 +132,35 @@ export async function processReceipt(
         }
     }
 
-    // Determine which key to use based on the model
-    let apiKey = keys.defaultApiKey;
+    // Determine which key to use based on the model. providerApiKey is the
+    // active provider's dedicated key (falling back to the legacy apiKey), so
+    // users who only set e.g. openrouterApiKey still get a key here.
+    const defaultKey = keys.providerApiKey || keys.defaultApiKey;
+    let apiKey = defaultKey;
     let provider = keys.defaultProvider || 'openrouter';
+    let customEndpoint: string | null = null;
 
     // Check if model is meant for OpenRouter (has :free suffix or other OpenRouter-specific suffixes)
     const isOpenRouterModel = model.includes(':free') || model.includes(':extended');
 
+    // Explicit "use my Custom Endpoint" option from the receipt scanner.
+    if (model === 'custom-endpoint') {
+        if (!isCustomProvider) {
+            throw new Error('Custom Endpoint belum diatur. Pilih provider "Custom Endpoint" dan isi URL-nya di Settings.');
+        }
+        if (!keys.selectedModel) {
+            throw new Error('Model AI belum dipilih di Settings.');
+        }
+    }
+
     // Choose API key and provider based on model
-    if (!isOpenRouterModel && model.includes('gpt') && keys.openaiApiKey) {
+    if (model === 'custom-endpoint') {
+        apiKey = keys.providerApiKey || keys.defaultApiKey;
+        provider = 'custom';
+        customEndpoint = keys.customEndpoint ?? null;
+        model = keys.selectedModel as string;
+        console.log('[DEBUG] Using Custom Endpoint (model from Settings)');
+    } else if (!isOpenRouterModel && model.includes('gpt') && keys.openaiApiKey) {
         // Use direct OpenAI API for GPT models if OpenAI key is configured
         apiKey = keys.openaiApiKey;
         provider = 'openai';
@@ -138,9 +170,19 @@ export async function processReceipt(
         apiKey = keys.geminiApiKey;
         provider = 'google';
         console.log('[DEBUG] Using direct Gemini API for Gemini model');
-    } else if (keys.defaultApiKey) {
+    } else if (isCustomProvider && (keys.providerApiKey || keys.defaultApiKey)) {
+        // Fallback to the user's Custom Endpoint. The scanner's model ids are
+        // OpenRouter/OpenAI/Google ids that won't exist there, so use the model
+        // chosen in Settings. (Previously this fell through to OpenRouter with
+        // the custom endpoint's key, which always failed.)
+        apiKey = keys.providerApiKey || keys.defaultApiKey;
+        provider = 'custom';
+        customEndpoint = keys.customEndpoint ?? null;
+        if (keys.selectedModel) model = keys.selectedModel;
+        console.log('[DEBUG] Falling back to Custom Endpoint (model from Settings)');
+    } else if (defaultKey) {
         // Use OpenRouter/DeepSeek for free models or as fallback
-        apiKey = keys.defaultApiKey;
+        apiKey = defaultKey;
         provider = keys.defaultProvider || 'openrouter';
         console.log('[DEBUG] Using default API key (OpenRouter/DeepSeek)');
     }
@@ -222,7 +264,8 @@ Balas HANYA dengan JSON yang valid, tanpa backticks atau penjelasan tambahan.
             imageBase64,
             provider,
             apiKey,
-            model
+            model,
+            customEndpoint
         });
 
         console.log('[RECEIPT-SCANNER] Raw AI response:', response);
