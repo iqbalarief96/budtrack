@@ -45,8 +45,14 @@ export default function SafeToSpendCard() {
         setIsLoading(true);
         setError(null);
 
+        // Empty resolved type scope: no data, don't hit the all-wallets endpoint.
+        if (!isGroupSelected && !isAllWalletsScope && dashboardScope?.kind === 'type' && dashboardScopeWalletIds.length === 0) {
+          setData(null);
+          return;
+        }
         const params = new URLSearchParams();
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id);
+        else if (dashboardScope?.kind === 'wallet') params.set('walletId', dashboardScope.walletId);
         else if (isAllWalletsScope) { /* no param → all wallets */ }
         else if (dashboardScopeWalletIds.length > 0) params.set('walletIds', dashboardScopeWalletIds.join(','));
 

@@ -203,8 +203,14 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   useEffect(() => {
     const fetchSharedBillsSummary = async () => {
       try {
+        // Empty resolved type scope: no outstanding bills, skip the all-wallets call.
+        if (!isGroupSelected && !isAllWalletsScope && dashboardScope?.kind === 'type' && scopeWalletIds.length === 0) {
+          setSharedBillsSummary({ outstandingAmount: 0, openCount: 0 })
+          return
+        }
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        else if (dashboardScope?.kind === 'wallet') params.set('walletId', dashboardScope.walletId)
         else if (isAllWalletsScope) { /* no param → all wallets (includes wallet-less bills) */ }
         else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
@@ -228,8 +234,15 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   useEffect(() => {
     const fetchSafeToSpend = async () => {
       try {
+        // Empty resolved type scope (e.g. "Investasi (0)"): no data, and do NOT
+        // fall through to the param-less all-wallets endpoint.
+        if (!isGroupSelected && !isAllWalletsScope && dashboardScope?.kind === 'type' && scopeWalletIds.length === 0) {
+          setSafeToSpendData(null)
+          return
+        }
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        else if (dashboardScope?.kind === 'wallet') params.set('walletId', dashboardScope.walletId)
         else if (isAllWalletsScope) { /* no param → all wallets (includes wallet-less obligations) */ }
         else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
@@ -397,10 +410,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       const groupWalletIds = selectedGroup.wallets.map(w => w.walletId)
       return allBudgets?.filter(budget => groupWalletIds.includes(budget.walletId)) || []
     }
-    if (scopeWalletIds.length > 0 && allBudgets) {
-      return allBudgets.filter(budget => scopeSet.has(budget.walletId))
-    }
-    return allBudgets || []
+    // Non-group: always scope to the active wallet set. An empty set (e.g. an
+    // empty type tab) returns no budgets instead of leaking every wallet's.
+    return (allBudgets || []).filter(budget => scopeSet.has(budget.walletId))
   }, [isGroupSelected, selectedGroup, scopeKey, allBudgets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Calculate totals and filter transactions when wallet or transaction data changes
