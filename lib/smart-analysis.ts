@@ -1,4 +1,9 @@
 import { z } from 'zod'
+// Savings classification lives in a dependency-free module so the client
+// dashboard can share it without bundling zod.
+import { isSavingsCategoryName, isSavingsTransaction } from './savings/classify'
+
+export { isSavingsCategoryName, isSavingsTransaction }
 
 /**
  * Smart Financial Analysis (Insights page).
@@ -42,30 +47,6 @@ export type SmartAnalysisFacts = {
   avgExpense: number
   avgPeriods: number
   categories: SmartAnalysisCategory[]
-}
-
-// Keep this narrow on purpose: generic words like "rumah" would mis-flag
-// everyday categories such as "Kebutuhan Rumah".
-const SAVINGS_CATEGORY_PATTERN =
-  /\b(tabungan|nabung|menabung|saving|savings|investasi|investment|reksa ?dana|reksadana|saham|deposito|dana darurat|emergency fund|emas|logam mulia|crypto|kripto)\b/i
-
-export function isSavingsCategoryName(name: string): boolean {
-  return SAVINGS_CATEGORY_PATTERN.test(name)
-}
-
-// Same rule the transaction flow uses to auto-route an expense into a savings
-// wallet (lib/savings/auto-route.ts), so analysis and routing agree.
-const SAVINGS_TRANSFER_TEXT = /saving|savings|tabungan|menabung/i
-
-/** True when an EXPENSE is really money moved into savings/investments. */
-export function isSavingsTransaction(tx: {
-  description?: string | null
-  categoryName?: string | null
-  categoryType?: string | null
-}): boolean {
-  if ((tx.categoryType || '').toUpperCase() === 'SAVINGS') return true
-  if (tx.categoryName && isSavingsCategoryName(tx.categoryName)) return true
-  return SAVINGS_TRANSFER_TEXT.test(`${tx.description || ''} ${tx.categoryName || ''}`)
 }
 
 /** Percentage change, or null when the previous value is 0 (no baseline). */

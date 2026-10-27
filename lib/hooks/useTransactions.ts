@@ -19,7 +19,12 @@ export interface Transaction {
   wallet?: {
     id: string
     name: string
+    type?: string
   }
+  /** Set on both legs of an auto-routed savings transfer. */
+  transferPairId?: string | null
+  /** Set on the savings-wallet (income) leg; points to the source expense. */
+  migrationSourceTransactionId?: string | null
 }
 
 export function useTransactions(filters?: {

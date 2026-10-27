@@ -7,6 +7,7 @@ import {
   resolveSafeToSpendScope,
   type SafeToSpendMode,
 } from '@/lib/safeToSpend/upcomingObligations'
+import { isSavingsTransaction } from '@/lib/savings/classify'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,14 +54,14 @@ export async function GET(request: NextRequest) {
       where: { userId, walletId: { in: scope.walletIds }, type: { in: ['expense', 'EXPENSE'] } },
       _sum: { amount: true },
     }),
-    prisma.transaction.aggregate({
+    prisma.transaction.findMany({
       where: {
         userId,
         walletId: { in: scope.walletIds },
         type: { in: ['expense', 'EXPENSE'] },
         date: { gte: new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000) },
       },
-      _sum: { amount: true },
+      select: { amount: true, description: true, transferPairId: true, category: { select: { name: true, type: true } } },
     }),
     prisma.transaction.count({
       where: {
@@ -74,11 +75,20 @@ export async function GET(request: NextRequest) {
   // Subtract raw aggregates (don't round each side first) so this matches
   // /api/wallets exactly; computeSafeToSpend rounds the final displayed value.
   const balance = (incomeAgg._sum.amount || 0) - (expenseAgg._sum.amount || 0)
-  // Buffer = roughly one week of recent spending, so safe-to-spend keeps a
-  // small cushion instead of draining to zero.
-  const buffer = Math.round((recentExpenses._sum.amount || 0) / 4)
+  // Buffer = a small cushion: 3 days of recent CONSUMPTION, capped at 10% of
+  // the balance. (It used to be a full week of spending incl. savings
+  // transfers, which ate ~90% of the balance near month-end.)
+  const consumption28d = recentExpenses
+    .filter((t) => !t.transferPairId && !isSavingsTransaction({ description: t.description, categoryName: t.category?.name, categoryType: t.category?.type }))
+    .reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
+  const avgDailyConsumption = consumption28d / 28
+  const buffer = Math.round(Math.max(0, Math.min(3 * avgDailyConsumption, 0.1 * Math.max(balance, 0))))
   const confidence = txThisMonth >= 10 ? 'high' : txThisMonth >= 3 ? 'medium' : 'low'
 
   const result = await computeSafeToSpend(scope, { balance, mode, buffer, now, confidence })
-  return NextResponse.json(result)
+
+  // Days left in the horizon (end of month), today included.
+  const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1
+  const perDay = Math.floor(result.safeToSpend / Math.max(daysLeft, 1))
+  return NextResponse.json({ ...result, daysLeft, perDay })
 }
