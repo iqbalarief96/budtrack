@@ -29,6 +29,11 @@ export type WalletTypeFilter = 'ALL' | 'MAIN' | 'SAVINGS' | 'INVESTMENT'
 // Define selection mode - either individual wallet or group
 export type SelectionMode = 'wallet' | 'group'
 
+// Dashboard scope: either an aggregate of a wallet TYPE, or one specific wallet.
+export type DashboardScope =
+  | { kind: 'type'; type: WalletTypeFilter }
+  | { kind: 'wallet'; walletId: string }
+
 // Define the wallet context type
 type WalletContextType = {
   wallets: Wallet[]
@@ -52,6 +57,12 @@ type WalletContextType = {
   refreshGroups: () => Promise<void>
   walletGroups: WalletGroup[]
   isLoadingGroups: boolean
+  // Dashboard scope (type aggregate vs single wallet). Default = last-used MAIN wallet.
+  dashboardScope: DashboardScope | null
+  viewWalletType: (type: WalletTypeFilter) => void
+  viewWallet: (walletId: string) => void
+  dashboardScopeWalletIds: string[]
+  dashboardScopeLabel: string
 }
 
 // Create the context with default values
@@ -77,6 +88,11 @@ const WalletContext = createContext<WalletContextType>({
   refreshGroups: async () => {},
   walletGroups: [],
   isLoadingGroups: false,
+  dashboardScope: null,
+  viewWalletType: () => {},
+  viewWallet: () => {},
+  dashboardScopeWalletIds: [],
+  dashboardScopeLabel: '',
 })
 
 // Custom hook to use the wallet context
@@ -86,6 +102,10 @@ export const useWallet = () => useContext(WalletContext)
 const LOCAL_STORAGE_KEY = 'selectedWalletId'
 const WALLET_TYPE_FILTER_KEY = 'walletTypeFilter'
 const SELECTED_GROUP_KEY = 'selectedWalletGroupId'
+// Last individually-selected MAIN wallet — the dashboard's default landing scope.
+const LAST_MAIN_WALLET_KEY = 'lastMainWalletId'
+
+const isMainWallet = (w?: { type?: string } | null) => !!w && (w.type === 'MAIN' || !w.type)
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   // Use React Query hook
@@ -96,6 +116,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   const [selectedGroup, setSelectedGroupState] = useState<WalletGroup | null>(null)
   const [walletGroups, setWalletGroups] = useState<WalletGroup[]>([])
   const [isLoadingGroups, setIsLoadingGroups] = useState(false)
+  const [dashboardScope, setDashboardScope] = useState<DashboardScope | null>(null)
 
   // Derived state for selection mode
   const selectionMode: SelectionMode = selectedGroup ? 'group' : 'wallet'
@@ -180,11 +201,29 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [])
   
-  // Function to set selected wallet and persist to localStorage
+  // Function to set selected wallet and persist to localStorage. Picking a
+  // specific wallet also scopes the dashboard to it and (for MAIN wallets)
+  // records it as the default landing scope.
   const setSelectedWalletAndPersist = (wallet: Wallet) => {
     console.log('[DEBUG] Setting selected wallet:', wallet);
     setSelectedWallet(wallet);
     localStorage.setItem(LOCAL_STORAGE_KEY, wallet.id);
+    setDashboardScope({ kind: 'wallet', walletId: wallet.id });
+    if (isMainWallet(wallet)) localStorage.setItem(LAST_MAIN_WALLET_KEY, wallet.id);
+  };
+
+  // Scope the dashboard to a wallet TYPE (aggregate of all wallets of that type).
+  const viewWalletType = (type: WalletTypeFilter) => {
+    setDashboardScope({ kind: 'type', type });
+    setWalletTypeFilterState(type);
+    localStorage.setItem(WALLET_TYPE_FILTER_KEY, type);
+  };
+
+  // Scope the dashboard to one specific wallet (and keep selectedWallet in sync).
+  const viewWallet = (walletId: string) => {
+    const wallet = wallets.find((w) => w.id === walletId);
+    if (wallet) setSelectedWalletAndPersist(wallet);
+    else setDashboardScope({ kind: 'wallet', walletId });
   };
 
   // Function to set wallet type filter and persist
@@ -218,6 +257,8 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     setSelectedWallet(wallet);
     localStorage.setItem(LOCAL_STORAGE_KEY, wallet.id);
     localStorage.removeItem(SELECTED_GROUP_KEY);
+    setDashboardScope({ kind: 'wallet', walletId: wallet.id });
+    if (isMainWallet(wallet)) localStorage.setItem(LAST_MAIN_WALLET_KEY, wallet.id);
   }, []);
 
   // Clear group selection and revert to wallet
@@ -251,6 +292,44 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     return wallets.filter(w => w.type === walletTypeFilter);
   }, [wallets, walletTypeFilter]);
 
+  // Default dashboard scope (option B): land on the last-used MAIN wallet, even
+  // if the most recent individual selection was a non-MAIN wallet.
+  useEffect(() => {
+    if (wallets.length === 0 || dashboardScope !== null) return;
+    const mains = wallets.filter(isMainWallet);
+    const lastMainId = localStorage.getItem(LAST_MAIN_WALLET_KEY);
+    const target =
+      (lastMainId && mains.find((w) => w.id === lastMainId)) ||
+      mains.find((w) => w.isDefault) ||
+      mains[0] ||
+      wallets[0];
+    if (target) setDashboardScope({ kind: 'wallet', walletId: target.id });
+  }, [wallets, dashboardScope]);
+
+  // Resolve the scope to a concrete set of wallet ids.
+  const dashboardScopeWalletIds = React.useMemo((): string[] => {
+    if (!dashboardScope) return selectedWallet ? [selectedWallet.id] : [];
+    if (dashboardScope.kind === 'wallet') return [dashboardScope.walletId];
+    if (dashboardScope.type === 'ALL') return wallets.map((w) => w.id);
+    if (dashboardScope.type === 'MAIN') return wallets.filter(isMainWallet).map((w) => w.id);
+    return wallets.filter((w) => w.type === dashboardScope.type).map((w) => w.id);
+  }, [dashboardScope, wallets, selectedWallet]);
+
+  const dashboardScopeLabel = React.useMemo((): string => {
+    if (!dashboardScope) return selectedWallet?.name ?? '';
+    if (dashboardScope.kind === 'wallet') {
+      return wallets.find((w) => w.id === dashboardScope.walletId)?.name ?? 'Dompet';
+    }
+    const n = dashboardScopeWalletIds.length;
+    switch (dashboardScope.type) {
+      case 'ALL': return `Semua Dompet (${n})`;
+      case 'MAIN': return `Dompet Utama (${n})`;
+      case 'SAVINGS': return `Tabungan (${n})`;
+      case 'INVESTMENT': return `Investasi (${n})`;
+      default: return 'Dompet';
+    }
+  }, [dashboardScope, wallets, selectedWallet, dashboardScopeWalletIds]);
+
   // Load wallet type filter from localStorage on mount
   useEffect(() => {
     const savedFilter = localStorage.getItem(WALLET_TYPE_FILTER_KEY) as WalletTypeFilter
@@ -282,6 +361,11 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         refreshGroups,
         walletGroups,
         isLoadingGroups,
+        dashboardScope,
+        viewWalletType,
+        viewWallet,
+        dashboardScopeWalletIds,
+        dashboardScopeLabel,
       }}
     >
       {children}

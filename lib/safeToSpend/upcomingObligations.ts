@@ -36,8 +36,16 @@ export function endOfCurrentMonth(now = new Date()): Date {
  */
 export async function resolveSafeToSpendScope(
   userId: string,
-  opts: { walletId?: string | null; walletGroupId?: string | null }
+  opts: { walletId?: string | null; walletGroupId?: string | null; walletIds?: string[] | null }
 ): Promise<SafeToSpendScope> {
+  if (opts.walletIds && opts.walletIds.length > 0) {
+    const owned = await prisma.wallet.findMany({
+      where: { id: { in: opts.walletIds }, userId },
+      select: { id: true },
+    })
+    return { userId, walletIds: owned.map((w) => w.id), isAllWallets: false }
+  }
+
   if (opts.walletId) {
     const wallet = await prisma.wallet.findFirst({
       where: { id: opts.walletId, userId },

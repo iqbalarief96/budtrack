@@ -13,11 +13,21 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const sharedBills = await listSharedBills(session.user.id, {
+    // `walletIds` (comma-separated) scopes the summary to a set of wallets
+    // (e.g. a dashboard wallet-type aggregate). Falls back to single walletId.
+    const walletIdsParam = searchParams.get('walletIds')
+    const walletIdSet = walletIdsParam
+      ? new Set(walletIdsParam.split(',').filter(Boolean))
+      : null
+
+    let sharedBills = await listSharedBills(session.user.id, {
       status: searchParams.get('status'),
-      walletId: searchParams.get('walletId'),
+      walletId: walletIdSet ? null : searchParams.get('walletId'),
       walletGroupId: searchParams.get('walletGroupId'),
     })
+    if (walletIdSet) {
+      sharedBills = sharedBills.filter((bill) => bill.walletId && walletIdSet.has(bill.walletId))
+    }
 
     const summary = sharedBills.reduce(
       (acc, bill) => {
