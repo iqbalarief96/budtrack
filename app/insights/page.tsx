@@ -408,6 +408,8 @@ const InsightsPage = () => {
       // showing only the markdown.
       if (!data.structured && data.warnings?.structured) {
         setAnalysisWarning(`Ringkasan kartu gagal dibuat (${data.warnings.structured}). Yang tampil analisis lengkap.`)
+      } else if (data.structured && !data.analysis && data.warnings?.analysis) {
+        setAnalysisWarning(`Analisis lengkap gagal dibuat (${data.warnings.analysis}). Coba Refresh Analysis lagi.`)
       }
 
       const newAnalysis: AnalysisResult = {

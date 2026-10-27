@@ -37,8 +37,10 @@ export type SmartAnalysisFacts = {
   /** % change vs the previous period, or null when there is no baseline. */
   incomeChange: number | null
   expenseChange: number | null
+  /** Average per selected period (month/quarter/year) over `avgPeriods` periods. */
   avgIncome: number
   avgExpense: number
+  avgPeriods: number
   categories: SmartAnalysisCategory[]
 }
 
@@ -49,6 +51,21 @@ const SAVINGS_CATEGORY_PATTERN =
 
 export function isSavingsCategoryName(name: string): boolean {
   return SAVINGS_CATEGORY_PATTERN.test(name)
+}
+
+// Same rule the transaction flow uses to auto-route an expense into a savings
+// wallet (lib/savings/auto-route.ts), so analysis and routing agree.
+const SAVINGS_TRANSFER_TEXT = /saving|savings|tabungan|menabung/i
+
+/** True when an EXPENSE is really money moved into savings/investments. */
+export function isSavingsTransaction(tx: {
+  description?: string | null
+  categoryName?: string | null
+  categoryType?: string | null
+}): boolean {
+  if ((tx.categoryType || '').toUpperCase() === 'SAVINGS') return true
+  if (tx.categoryName && isSavingsCategoryName(tx.categoryName)) return true
+  return SAVINGS_TRANSFER_TEXT.test(`${tx.description || ''} ${tx.categoryName || ''}`)
 }
 
 /** Percentage change, or null when the previous value is 0 (no baseline). */
@@ -68,11 +85,20 @@ export function buildSmartAnalysisFacts(input: {
   expenseChange: number | null
   avgIncome: number
   avgExpense: number
+  avgPeriods: number
+  /** Category names whose category type is SAVINGS. */
+  savingsCategoryNames?: string[]
+  /**
+   * Savings transfers computed per transaction (incl. generic categories with
+   * a savings description). Falls back to summing savings categories.
+   */
+  savingsTransfers?: number
 }): SmartAnalysisFacts {
   const totalExpense = Math.max(0, input.totalExpense)
   const totalIncome = Math.max(0, input.totalIncome)
   const netSavings = totalIncome - totalExpense
   const denom = totalExpense > 0 ? totalExpense : 1
+  const savingsTypeNames = new Set(input.savingsCategoryNames ?? [])
 
   const categories = Object.entries(input.categoryTotals)
     .filter(([, amount]) => amount > 0)
@@ -80,9 +106,11 @@ export function buildSmartAnalysisFacts(input: {
       name,
       amount: Math.round(amount),
       percentage: (amount / denom) * 100,
-      isSavings: isSavingsCategoryName(name),
+      isSavings: isSavingsCategoryName(name) || savingsTypeNames.has(name),
     }))
     .sort((a, b) => b.amount - a.amount)
+
+  const categorySavings = categories.filter((c) => c.isSavings).reduce((s, c) => s + c.amount, 0)
 
   return {
     periodLabel: input.periodLabel,
@@ -92,11 +120,14 @@ export function buildSmartAnalysisFacts(input: {
     totalExpense: Math.round(totalExpense),
     netSavings: Math.round(netSavings),
     savingsRate: totalIncome > 0 ? (netSavings / totalIncome) * 100 : null,
-    savingsTransfers: Math.round(categories.filter((c) => c.isSavings).reduce((s, c) => s + c.amount, 0)),
+    // Per-transaction figure when provided (catches generic categories with a
+    // savings description); never less than what savings categories add up to.
+    savingsTransfers: Math.round(Math.min(totalExpense, Math.max(input.savingsTransfers ?? 0, categorySavings))),
     incomeChange: input.incomeChange,
     expenseChange: input.expenseChange,
     avgIncome: Math.round(input.avgIncome),
     avgExpense: Math.round(input.avgExpense),
+    avgPeriods: input.avgPeriods,
     categories,
   }
 }
@@ -130,7 +161,7 @@ ANGKA RESMI (ini satu-satunya sumber angka):
 - Saving rate (net / pemasukan): ${pct(f.savingsRate)}
 - Perubahan pemasukan: ${signedPct(f.incomeChange)}
 - Perubahan pengeluaran: ${signedPct(f.expenseChange)}
-- Rata-rata per ${f.unitLabel}: pemasukan ${rupiah(f.avgIncome)}, pengeluaran ${rupiah(f.avgExpense)}
+- Rata-rata per ${f.unitLabel}: ${f.avgPeriods > 0 ? `pemasukan ${rupiah(f.avgIncome)}, pengeluaran ${rupiah(f.avgExpense)} (dari ${f.avgPeriods} ${f.unitLabel} terakhir)` : 'n/a'}
 
 PENGELUARAN PER KATEGORI:
 ${categoryLines || '- (belum ada pengeluaran)'}`

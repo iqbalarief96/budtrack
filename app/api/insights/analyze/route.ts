@@ -6,6 +6,7 @@ import {
   buildDeepAnalysisPrompt,
   buildSmartAnalysisFacts,
   buildStructuredAnalysisPrompt,
+  isSavingsTransaction,
   percentChange,
 } from '@/lib/smart-analysis'
 
@@ -14,6 +15,7 @@ interface Transaction {
   amount: number
   category?: {
     name: string
+    type?: string | null
   }
   description?: string
   date: Date
@@ -266,7 +268,8 @@ export async function POST(request: Request) {
       include: {
         category: {
           select: {
-            name: true
+            name: true,
+            type: true
           }
         }
       }
@@ -275,7 +278,7 @@ export async function POST(request: Request) {
     const transactions: Transaction[] = transactionsRaw.map(t => ({
       type: t.type,
       amount: t.amount,
-      category: t.category ? { name: t.category.name } : undefined,
+      category: t.category ? { name: t.category.name, type: t.category.type } : undefined,
       description: t.description || undefined,
       date: t.date
     }))
@@ -368,9 +371,25 @@ export async function POST(request: Request) {
 
     const periodContext = PERIOD_CONFIG[selectedPeriod]
 
-    const monthValues = Object.values(sortedMonthlyData)
-    const avgIncome = monthValues.length ? monthValues.reduce((s, m) => s + m.income, 0) / monthValues.length : 0
-    const avgExpense = monthValues.length ? monthValues.reduce((s, m) => s + m.expense, 0) / monthValues.length : 0
+    // Average per SELECTED period (month/quarter/year): trendSeries is already
+    // aggregated per period, so average its buckets (not raw months).
+    const avgPeriods = trendSeries.income.length
+    const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
+    const avgIncome = mean(trendSeries.income)
+    const avgExpense = mean(trendSeries.expense)
+
+    // Savings transfers per transaction, with the same rule the transaction
+    // flow uses to auto-route into a savings wallet (incl. generic categories
+    // whose description says "tabungan"), plus category type SAVINGS.
+    const summaryExpenses = summaryTransactions.filter(t => t.type === 'EXPENSE')
+    const savingsTransfers = summaryExpenses
+      .filter(t => isSavingsTransaction({ description: t.description, categoryName: t.category?.name, categoryType: t.category?.type }))
+      .reduce((sum, t) => sum + t.amount, 0)
+    const savingsCategoryNames = Array.from(new Set(
+      summaryExpenses
+        .filter(t => (t.category?.type || '').toUpperCase() === 'SAVINGS' && t.category?.name)
+        .map(t => t.category!.name)
+    ))
 
     // Single set of server-computed facts feeds BOTH prompts and the UI, so
     // the cards and the long analysis can't disagree on numbers.
@@ -385,6 +404,9 @@ export async function POST(request: Request) {
       expenseChange,
       avgIncome,
       avgExpense,
+      avgPeriods,
+      savingsCategoryNames,
+      savingsTransfers,
     })
     const structuredPrompt = buildStructuredAnalysisPrompt(facts)
     const deepAnalysisPrompt = buildDeepAnalysisPrompt(facts)
@@ -411,7 +433,10 @@ export async function POST(request: Request) {
       },
       facts,
       structuredPrompt,
-      deepAnalysisPrompt
+      deepAnalysisPrompt,
+      // Legacy alias: a client bundle loaded before this deploy sends this as
+      // `analysisPrompt` to /generate (which still accepts it).
+      smartAnalysisPrompt: deepAnalysisPrompt
     })
 
   } catch (error) {
