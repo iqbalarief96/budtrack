@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { withComputedBalances } from '@/lib/walletBalance';
 import { netWorthCalculator } from './calculator';
 import type {
   NetWorthSnapshot,
@@ -29,10 +30,9 @@ export class SnapshotService {
 
     // Fetch user's wallets and debts
     const [wallets, debts] = await Promise.all([
-      prisma.wallet.findMany({
-        where: { userId },
-        select: { id: true, name: true, balance: true, type: true },
-      }),
+      prisma.wallet
+        .findMany({ where: { userId }, select: { id: true, name: true, type: true } })
+        .then(withComputedBalances),
       prisma.debt.findMany({
         where: { userId },
         select: {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { calculateWalletBalances } from '@/lib/walletBalance'
 import { netWorthCalculator } from '@/lib/net-worth/calculator'
 import { snapshotService } from '@/lib/net-worth/snapshot-service'
 import type { NetWorthResponse } from '@/app/types/net-worth'
@@ -99,7 +100,7 @@ export async function GET() {
 
     const userId = session.user.id
 
-    const [wallets, debts, creditCards, walletGroups] = await Promise.all([
+    const [rawWallets, debts, creditCards, rawWalletGroups] = await Promise.all([
       prisma.wallet.findMany({
         where: { userId },
         select: { id: true, name: true, balance: true, type: true, currencyCode: true },
@@ -117,6 +118,18 @@ export async function GET() {
         include: { wallets: { include: { wallet: { select: { id: true, name: true, balance: true, type: true } } } } },
       }),
     ])
+
+    // Balances from transactions (the Wallet.balance column drifts).
+    const balances = await calculateWalletBalances([
+      ...rawWallets.map((w) => w.id),
+      ...rawWalletGroups.flatMap((g) => g.wallets.map((m) => m.wallet.id)),
+    ])
+    const bal = (id: string) => balances.get(id) ?? 0
+    const wallets = rawWallets.map((w) => ({ ...w, balance: bal(w.id) }))
+    const walletGroups = rawWalletGroups.map((g) => ({
+      ...g,
+      wallets: g.wallets.map((m) => ({ ...m, wallet: { ...m.wallet, balance: bal(m.wallet.id) } })),
+    }))
 
     const creditCardDebts = creditCards.map((card) => ({
       id: card.id,

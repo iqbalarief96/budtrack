@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma'
+import { withComputedBalances } from '@/lib/walletBalance'
 import { createQuickCaptureTransaction } from '@/lib/quick-capture'
 
 /**
@@ -429,7 +430,7 @@ async function buildSummary(userId: string): Promise<string> {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
   const [budgets, wallets] = await Promise.all([
     prisma.budget.findMany({ where: { userId, endDate: { gte: now } }, include: { category: true }, orderBy: { endDate: 'asc' }, take: 8 }).catch(() => [] as any[]),
-    prisma.wallet.findMany({ where: { userId, type: 'MAIN' }, select: { id: true, name: true, balance: true, currencyCode: true }, orderBy: { isDefault: 'desc' } }),
+    prisma.wallet.findMany({ where: { userId, type: 'MAIN' }, select: { id: true, name: true, currencyCode: true }, orderBy: { isDefault: 'desc' } }).then(withComputedBalances),
   ])
   const lines: string[] = ['📊 *Ringkasan Bulan Ini*', '', '*Saldo Dompet*']
   for (const w of wallets) lines.push(`• ${md(w.name)}: ${rupiah(w.balance)}`)

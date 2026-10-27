@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { calculateWalletBalance, calculateWalletBalances } from '@/lib/walletBalance';
 import { calculateTransactionBalance } from '@/lib/safeToSpendSummary';
 import { computeSafeToSpend } from '@/lib/safeToSpend/upcomingObligations';
 
@@ -27,25 +28,28 @@ export async function GET(request: NextRequest) {
   if (walletId) {
     const found = await prisma.wallet.findFirst({
       where: { id: walletId, userId: user.id },
-      select: { id: true, name: true, balance: true },
+      select: { id: true, name: true },
     });
     if (!found) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
-    wallet = found;
+    wallet = { ...found, balance: await calculateWalletBalance(found.id) };
     walletFilter = { walletId };
     scopeWalletIds = [found.id];
     isAllWallets = false;
   } else {
     const wallets = await prisma.wallet.findMany({
       where: { userId: user.id },
-      select: { id: true, balance: true },
+      select: { id: true },
     });
     if (wallets.length === 0) {
       return NextResponse.json({ error: 'No wallets found' }, { status: 404 });
     }
+    const balances = await calculateWalletBalances(wallets.map((w) => w.id));
+    let total = 0;
+    balances.forEach((v) => { total += v; });
     wallet = {
       id: null,
       name: 'Semua Dompet',
-      balance: wallets.reduce((sum, w) => sum + w.balance, 0),
+      balance: total,
     };
     walletFilter = { walletId: { in: wallets.map((w) => w.id) } };
     scopeWalletIds = wallets.map((w) => w.id);

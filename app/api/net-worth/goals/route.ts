@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { withComputedBalances } from '@/lib/walletBalance'
 import { netWorthGoalService } from '@/lib/net-worth/goal-service'
 import { netWorthCalculator } from '@/lib/net-worth/calculator'
 import type { NetWorthGoalsResponse, NetWorthGoalResponse } from '@/app/types/net-worth'
@@ -26,10 +27,7 @@ export async function GET() {
 
     // Calculate current net worth for progress calculation
     const [wallets, debts] = await Promise.all([
-      prisma.wallet.findMany({
-        where: { userId },
-        select: { id: true, name: true, balance: true, type: true },
-      }),
+      prisma.wallet.findMany({ where: { userId }, select: { id: true, name: true, type: true } }).then(withComputedBalances),
       prisma.debt.findMany({
         where: { userId },
         select: {
@@ -132,10 +130,7 @@ export async function POST(request: NextRequest) {
 
     // Calculate initial progress
     const [wallets, debts] = await Promise.all([
-      prisma.wallet.findMany({
-        where: { userId: session.user.id },
-        select: { id: true, name: true, balance: true, type: true },
-      }),
+      prisma.wallet.findMany({ where: { userId: session.user.id }, select: { id: true, name: true, type: true } }).then(withComputedBalances),
       prisma.debt.findMany({
         where: { userId: session.user.id },
         select: {

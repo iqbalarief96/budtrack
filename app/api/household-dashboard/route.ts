@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { withComputedBalances } from '@/lib/walletBalance'
 
 function startOfMonth(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), 1)
@@ -48,11 +49,11 @@ export async function GET(request: NextRequest) {
     const monthEnd = endOfMonth(today)
     const dueSoonUntil = addDays(today, 14)
 
-    const ownedWallets = await prisma.wallet.findMany({
+    const ownedWallets = await withComputedBalances(await prisma.wallet.findMany({
       where: { userId },
-      select: { id: true, name: true, balance: true, currencyCode: true, color: true, type: true },
+      select: { id: true, name: true, currencyCode: true, color: true, type: true },
       orderBy: { name: 'asc' },
-    })
+    }))
 
     let scopedWalletIds = ownedWallets.map((wallet) => wallet.id)
     let scope: any = { type: 'all', name: 'All wallets' }
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
     scopedWalletIds = uniq(scopedWalletIds)
     const walletWhere = scopedWalletIds.length ? { in: scopedWalletIds } : { in: ['__no_wallets__'] }
 
-    const [transactions, budgets, bills, subscriptions, sharedBills, goals, walletGroups] = await Promise.all([
+    const [transactions, budgets, bills, subscriptions, sharedBills, goals, rawWalletGroups] = await Promise.all([
       prisma.transaction.findMany({
         where: { userId, walletId: walletWhere, date: { gte: monthStart, lte: monthEnd } },
         include: { category: { select: { id: true, name: true, color: true, type: true } }, wallet: { select: { id: true, name: true } } },
@@ -115,11 +116,19 @@ export async function GET(request: NextRequest) {
       }),
       prisma.walletGroup.findMany({
         where: { userId },
-        include: { wallets: { include: { wallet: { select: { id: true, name: true, balance: true, color: true } } } } },
+        include: { wallets: { include: { wallet: { select: { id: true, name: true, color: true } } } } },
         orderBy: { name: 'asc' },
       }),
     ])
 
+    // Group wallets get the same transaction-derived balances as owned wallets.
+    const groupBalances = new Map(
+      (await withComputedBalances(rawWalletGroups.flatMap((g) => g.wallets.map((m) => m.wallet)))).map((w) => [w.id, w.balance])
+    )
+    const walletGroups = rawWalletGroups.map((g) => ({
+      ...g,
+      wallets: g.wallets.map((m) => ({ ...m, wallet: { ...m.wallet, balance: groupBalances.get(m.wallet.id) ?? 0 } })),
+    }))
     const scopedWallets = ownedWallets.filter((wallet) => scopedWalletIds.includes(wallet.id))
     const balance = scopedWallets.reduce((sum, wallet) => sum + Number(wallet.balance || 0), 0)
     const income = transactions.filter((tx) => normalizeType(tx.type) === 'income').reduce((sum, tx) => sum + tx.amount, 0)

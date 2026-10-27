@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { withComputedBalances } from '@/lib/walletBalance'
 import { WalletSchema } from '@/lib/validators'
 import { z } from 'zod'
 import {
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') // MAIN, SAVINGS, INVESTMENT
 
-    // Fetch wallets with aggregated balance from transactions
+    // Fetch wallets; balances are computed from transactions below
     const wallets = await prisma.wallet.findMany({
       where: {
         userId: session.user.id,
@@ -41,38 +42,9 @@ export async function GET(request: Request) {
       }
     })
     
-    // Calculate balance for each wallet using aggregation (much faster than fetching all transactions)
-    const walletsWithBalance = await Promise.all(
-      wallets.map(async (wallet) => {
-        // Use aggregation to calculate balance - this is much faster than fetching all transactions
-        const incomeSum = await prisma.transaction.aggregate({
-          where: {
-            walletId: wallet.id,
-            type: { in: ['income', 'INCOME'] }
-          },
-          _sum: {
-            amount: true
-          }
-        })
-
-        const expenseSum = await prisma.transaction.aggregate({
-          where: {
-            walletId: wallet.id,
-            type: { in: ['expense', 'EXPENSE'] }
-          },
-          _sum: {
-            amount: true
-          }
-        })
-
-        const calculatedBalance = (incomeSum._sum.amount || 0) - (expenseSum._sum.amount || 0)
-
-        return {
-          ...wallet,
-          balance: calculatedBalance
-        }
-      })
-    )
+    // Balance = income − expense from transactions (one grouped query for all
+    // wallets). The Wallet.balance column is a drifting legacy cache.
+    const walletsWithBalance = await withComputedBalances(wallets)
 
     return successResponse(walletsWithBalance)
   } catch (error) {

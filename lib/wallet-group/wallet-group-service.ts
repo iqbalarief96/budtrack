@@ -499,7 +499,10 @@ export async function addWalletToGroup(
     },
   })
 
-  return member as WalletGroupMember
+  return {
+    ...member,
+    wallet: { ...member.wallet, balance: await calculateWalletBalance(member.walletId) },
+  } as WalletGroupMember
 }
 
 /**
@@ -572,7 +575,12 @@ export async function getGroupWallets(
     orderBy: { addedAt: 'asc' },
   })
 
-  return members as WalletGroupMember[]
+  // Transaction-derived balances, same as getGroupById().
+  const balanceMap = await calculateWalletBalances(members.map((m) => m.walletId))
+  return members.map((m) => ({
+    ...m,
+    wallet: { ...m.wallet, balance: balanceMap.get(m.walletId) ?? 0 },
+  })) as WalletGroupMember[]
 }
 
 /**

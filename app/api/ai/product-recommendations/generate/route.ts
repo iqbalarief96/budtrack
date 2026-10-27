@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { withComputedBalances } from '@/lib/walletBalance';
 import { generateAIResponse } from '@/lib/ai';
 import { resolveAIConfig } from '@/lib/ai-settings';
 
@@ -35,6 +36,8 @@ export async function POST() {
         { status: 404 }
       );
     }
+    // Balance from transactions, not the drifting Wallet.balance column.
+    user.wallets = await withComputedBalances(user.wallets);
 
     // Check if AI settings are configured
     const aiConfig = resolveAIConfig(user.settings);

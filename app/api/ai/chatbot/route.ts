@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { calculateWalletBalance, withComputedBalances } from '@/lib/walletBalance';
 import { generateChatbotResponse, parseChatbotToolCalls, streamChatbotResponse } from '@/lib/ai';
 import { getAiActionValidationContext } from '@/lib/ai/actions/context';
 import { detectSuggestedActions } from '@/lib/ai/actions/detect';
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
     // Get wallet data if walletId is provided
     let wallet: { id: string; name: string; balance: number } | null = null;
     if (walletId) {
-      wallet = await prisma.wallet.findFirst({
+      const found = await prisma.wallet.findFirst({
         where: {
           id: walletId,
           userId: user.id,
@@ -85,9 +86,9 @@ export async function POST(request: NextRequest) {
         select: {
           id: true,
           name: true,
-          balance: true,
         },
       });
+      wallet = found ? { ...found, balance: await calculateWalletBalance(found.id) } : null;
 
       if (!wallet) {
         return new NextResponse(
@@ -502,11 +503,11 @@ async function getCrossDomainSnapshot(userId: string) {
 async function getFinancialData(userId: string, walletId?: string) {
   try {
     // Get all user wallets or specific wallet
-    const wallets = await prisma.wallet.findMany({
+    const wallets = await withComputedBalances(await prisma.wallet.findMany({
       where: walletId
         ? { id: walletId, userId }
         : { userId },
-    });
+    }));
 
     // Handle no wallets case
     if (wallets.length === 0) {
