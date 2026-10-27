@@ -4,62 +4,32 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatCurrency } from '@/lib/utils';
-import { Wallet, TrendingDown, Calendar, Target, Shield, DollarSign } from 'lucide-react';
+import { Wallet, Calendar, Target, Shield, DollarSign, Repeat, CreditCard, Users } from 'lucide-react';
 import { useWallet } from '@/app/providers/WalletProvider';
 
-interface SafeToSpendData {
-  walletId: string;
-  walletName: string;
-  totalBalance: number;
-  upcomingBills: number;
-  budgetAllocations: number;
-  savingsGoals: number;
-  emergencyBuffer: number;
-  safeToSpend: number;
-  currencyCode: string;
-  breakdown: {
-    upcomingBillsDetails: Array<{
-      name: string;
-      amount: number;
-      nextDate: Date;
-      daysUntilDue: number;
-    }>;
-    budgetDetails: Array<{
-      categoryName: string;
-      budgetAmount: number;
-      spent: number;
-      remaining: number;
-    }>;
-    goalDetails: Array<{
-      goalName: string;
-      target: number;
-      current: number;
-      remaining: number;
-    }>;
-    emergencyFundDetails: {
-      targetAmount: number;
-      currentBalance: number;
-      shortfall: number;
-    } | null;
-  };
-}
+type ObligationBreakdown = {
+  bills: number;
+  recurring: number;
+  subscriptions: number;
+  creditCards: number;
+  sharedBills: number;
+  total: number;
+};
 
-interface AllWalletsSafeToSpend {
-  wallets: SafeToSpendData[];
-  totals: {
-    totalBalance: number;
-    upcomingBills: number;
-    budgetAllocations: number;
-    savingsGoals: number;
-    emergencyBuffer: number;
-    safeToSpend: number;
-  };
-  primaryCurrency: string;
-}
+type SafeToSpendResult = {
+  safeToSpend: number;
+  balance: number;
+  expectedIncome: number;
+  goalReserve: number;
+  buffer: number;
+  obligations: ObligationBreakdown;
+  mode: 'conservative' | 'forward';
+  confidence: 'low' | 'medium' | 'high';
+};
 
 export default function SafeToSpendCard() {
   const { selectedWallet } = useWallet();
-  const [safeToSpendData, setSafeToSpendData] = useState<SafeToSpendData | AllWalletsSafeToSpend | null>(null);
+  const [data, setData] = useState<SafeToSpendResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -70,31 +40,30 @@ export default function SafeToSpendCard() {
         setIsLoading(true);
         setError(null);
 
-        let response;
-        if (selectedWallet) {
-          // Fetch for specific wallet
-          response = await fetch(`/api/wallets/${selectedWallet.id}/safe-to-spend`);
-        } else {
-          // Fetch for all wallets
-          response = await fetch('/api/safe-to-spend');
-        }
+        const params = new URLSearchParams();
+        if (selectedWallet?.id) params.set('walletId', selectedWallet.id);
 
+        const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`);
         if (!response.ok) {
-          throw new Error('Failed to fetch safe-to-spend data');
+          // 404 = no wallets in scope yet; treat as empty, not an error.
+          if (response.status === 404) {
+            setData(null);
+          } else {
+            throw new Error('Failed to fetch safe-to-spend data');
+          }
+          return;
         }
-
-        const data = await response.json();
-        setSafeToSpendData(data);
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error fetching safe-to-spend:', error);
+        setData(await response.json());
+      } catch (err) {
+        console.error('Error fetching safe-to-spend:', err);
         setError('Gagal memuat data safe-to-spend');
+      } finally {
         setIsLoading(false);
       }
     };
 
     fetchSafeToSpend();
-  }, [selectedWallet]);
+  }, [selectedWallet?.id]);
 
   if (isLoading) {
     return (
@@ -128,69 +97,31 @@ export default function SafeToSpendCard() {
     );
   }
 
-  if (!safeToSpendData) {
+  if (!data) {
     return null;
   }
 
-  // Check if this is all wallets data or single wallet data
-  const isAllWallets = 'totals' in safeToSpendData && 'wallets' in safeToSpendData;
-
-  let displayData: {
-    balance: number;
-    upcomingBills: number;
-    budgetAllocations: number;
-    savingsGoals: number;
-    emergencyBuffer: number;
-    safeToSpend: number;
-    currency: string;
-  };
-
-  if (isAllWallets) {
-    const allWalletsData = safeToSpendData as AllWalletsSafeToSpend;
-    displayData = {
-      balance: allWalletsData.totals.totalBalance,
-      upcomingBills: allWalletsData.totals.upcomingBills,
-      budgetAllocations: allWalletsData.totals.budgetAllocations,
-      savingsGoals: allWalletsData.totals.savingsGoals,
-      emergencyBuffer: allWalletsData.totals.emergencyBuffer,
-      safeToSpend: allWalletsData.totals.safeToSpend,
-      currency: allWalletsData.primaryCurrency,
-    };
-  } else {
-    const singleWalletData = safeToSpendData as SafeToSpendData;
-    displayData = {
-      balance: singleWalletData.totalBalance,
-      upcomingBills: singleWalletData.upcomingBills,
-      budgetAllocations: singleWalletData.budgetAllocations,
-      savingsGoals: singleWalletData.savingsGoals,
-      emergencyBuffer: singleWalletData.emergencyBuffer,
-      safeToSpend: singleWalletData.safeToSpend,
-      currency: singleWalletData.currencyCode,
-    };
-  }
-
-  const totalAllocated =
-    displayData.upcomingBills +
-    displayData.budgetAllocations +
-    displayData.savingsGoals +
-    displayData.emergencyBuffer;
-
-  const safeToSpendPercentage = displayData.balance > 0
-    ? Math.round((displayData.safeToSpend / displayData.balance) * 100)
+  const totalAllocated = data.obligations.total + data.goalReserve + data.buffer;
+  const safeToSpendPercentage = data.balance > 0
+    ? Math.round((data.safeToSpend / data.balance) * 100)
     : 0;
 
-  // Determine color based on safe-to-spend percentage
   const getStatusColor = () => {
     if (safeToSpendPercentage >= 30) return 'text-green-600';
     if (safeToSpendPercentage >= 10) return 'text-yellow-600';
     return 'text-red-600';
   };
 
-  const getProgressColor = () => {
-    if (safeToSpendPercentage >= 30) return 'bg-green-500';
-    if (safeToSpendPercentage >= 10) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
+  const confidenceLabel =
+    data.confidence === 'high' ? 'Tinggi' : data.confidence === 'medium' ? 'Sedang' : 'Rendah';
+
+  const obligationRows: Array<{ icon: React.ReactNode; label: string; amount: number }> = [
+    { icon: <Calendar className="h-3.5 w-3.5 text-orange-600" />, label: 'Tagihan', amount: data.obligations.bills },
+    { icon: <Repeat className="h-3.5 w-3.5 text-blue-600" />, label: 'Transaksi berulang', amount: data.obligations.recurring },
+    { icon: <DollarSign className="h-3.5 w-3.5 text-purple-600" />, label: 'Langganan', amount: data.obligations.subscriptions },
+    { icon: <CreditCard className="h-3.5 w-3.5 text-rose-600" />, label: 'Minimum kartu kredit', amount: data.obligations.creditCards },
+    { icon: <Users className="h-3.5 w-3.5 text-teal-600" />, label: 'Shared bills', amount: data.obligations.sharedBills },
+  ].filter((r) => r.amount > 0);
 
   return (
     <Card>
@@ -211,25 +142,23 @@ export default function SafeToSpendCard() {
       <CardContent className="space-y-4">
         {/* Main safe-to-spend amount */}
         <div className="text-center py-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg">
-          <p className="text-sm text-gray-600 mb-1">Aman untuk dibelanjakan</p>
+          <p className="text-sm text-gray-600 mb-1">Aman untuk dibelanjakan sampai akhir bulan</p>
           <p className={`text-3xl font-bold ${getStatusColor()}`}>
-            {formatCurrency(displayData.safeToSpend, displayData.currency)}
+            {formatCurrency(data.safeToSpend)}
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            {safeToSpendPercentage}% dari total saldo
+            {safeToSpendPercentage}% dari total saldo • akurasi {confidenceLabel.toLowerCase()}
           </p>
         </div>
 
         {/* Progress bar */}
         <div className="space-y-2">
           <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Saldo yang dialokasikan</span>
-            <span className="font-medium">
-              {formatCurrency(totalAllocated, displayData.currency)}
-            </span>
+            <span className="text-gray-500">Saldo yang sudah dialokasikan</span>
+            <span className="font-medium">{formatCurrency(totalAllocated)}</span>
           </div>
           <Progress
-            value={displayData.balance > 0 ? (totalAllocated / displayData.balance) * 100 : 0}
+            value={data.balance > 0 ? Math.min(100, (totalAllocated / data.balance) * 100) : 0}
             className="h-2"
           />
         </div>
@@ -240,106 +169,61 @@ export default function SafeToSpendCard() {
             <Wallet className="h-4 w-4 text-blue-600 mt-0.5" />
             <div>
               <p className="text-gray-500">Total Saldo</p>
-              <p className="font-medium">{formatCurrency(displayData.balance, displayData.currency)}</p>
+              <p className="font-medium">{formatCurrency(data.balance)}</p>
             </div>
           </div>
 
           <div className="flex items-start gap-2">
             <Calendar className="h-4 w-4 text-orange-600 mt-0.5" />
             <div>
-              <p className="text-gray-500">Tagihan</p>
-              <p className="font-medium">{formatCurrency(displayData.upcomingBills, displayData.currency)}</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2">
-            <TrendingDown className="h-4 w-4 text-purple-600 mt-0.5" />
-            <div>
-              <p className="text-gray-500">Budget</p>
-              <p className="font-medium">{formatCurrency(displayData.budgetAllocations, displayData.currency)}</p>
+              <p className="text-gray-500">Kewajiban bulan ini</p>
+              <p className="font-medium">{formatCurrency(data.obligations.total)}</p>
             </div>
           </div>
 
           <div className="flex items-start gap-2">
             <Target className="h-4 w-4 text-green-600 mt-0.5" />
             <div>
-              <p className="text-gray-500">Goals</p>
-              <p className="font-medium">{formatCurrency(displayData.savingsGoals, displayData.currency)}</p>
+              <p className="text-gray-500">Reserve goal</p>
+              <p className="font-medium">{formatCurrency(data.goalReserve)}</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Shield className="h-4 w-4 text-yellow-600 mt-0.5" />
+            <div>
+              <p className="text-gray-500">Buffer kas</p>
+              <p className="font-medium">{formatCurrency(data.buffer)}</p>
             </div>
           </div>
         </div>
 
-        {displayData.emergencyBuffer > 0 && (
-          <div className="flex items-start gap-2 text-sm p-2 bg-yellow-50 rounded">
-            <Shield className="h-4 w-4 text-yellow-600 mt-0.5" />
-            <div>
-              <p className="text-gray-500">Dana Darurat Kurang</p>
-              <p className="font-medium">{formatCurrency(displayData.emergencyBuffer, displayData.currency)}</p>
-            </div>
-          </div>
+        {data.expectedIncome > 0 && (
+          <p className="text-xs text-gray-500">
+            + perkiraan pemasukan {formatCurrency(data.expectedIncome)} (mode forward)
+          </p>
         )}
 
-        {/* Detailed breakdown */}
-        {showDetails && !isAllWallets && (
-          <div className="pt-4 border-t space-y-3">
-            {(safeToSpendData as SafeToSpendData).breakdown.upcomingBillsDetails.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">Tagihan 30 Hari Ke Depan:</p>
-                <div className="space-y-1">
-                  {(safeToSpendData as SafeToSpendData).breakdown.upcomingBillsDetails.slice(0, 3).map((bill, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-xs">
-                      <span className="text-gray-600">
-                        {bill.name} <span className="text-gray-400">({bill.daysUntilDue}h)</span>
-                      </span>
-                      <span className="font-medium">{formatCurrency(bill.amount, displayData.currency)}</span>
-                    </div>
-                  ))}
-                  {(safeToSpendData as SafeToSpendData).breakdown.upcomingBillsDetails.length > 3 && (
-                    <p className="text-xs text-gray-400">
-                      +{(safeToSpendData as SafeToSpendData).breakdown.upcomingBillsDetails.length - 3} tagihan lainnya
-                    </p>
-                  )}
+        {/* Detailed obligations breakdown */}
+        {showDetails && (
+          <div className="pt-4 border-t space-y-2">
+            <p className="text-xs font-medium text-gray-600">Rincian kewajiban (jatuh tempo bulan ini):</p>
+            {obligationRows.length > 0 ? (
+              obligationRows.map((row, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs">
+                  <span className="flex items-center gap-1.5 text-gray-600">
+                    {row.icon}
+                    {row.label}
+                  </span>
+                  <span className="font-medium">{formatCurrency(row.amount)}</span>
                 </div>
-              </div>
+              ))
+            ) : (
+              <p className="text-xs text-gray-400">Tidak ada kewajiban yang jatuh tempo bulan ini.</p>
             )}
-
-            {(safeToSpendData as SafeToSpendData).breakdown.budgetDetails.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">Budget Aktif:</p>
-                <div className="space-y-1">
-                  {(safeToSpendData as SafeToSpendData).breakdown.budgetDetails.slice(0, 3).map((budget, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-xs">
-                      <span className="text-gray-600">{budget.categoryName}</span>
-                      <span className="font-medium">{formatCurrency(budget.remaining, displayData.currency)}</span>
-                    </div>
-                  ))}
-                  {(safeToSpendData as SafeToSpendData).breakdown.budgetDetails.length > 3 && (
-                    <p className="text-xs text-gray-400">
-                      +{(safeToSpendData as SafeToSpendData).breakdown.budgetDetails.length - 3} budget lainnya
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {(safeToSpendData as SafeToSpendData).breakdown.goalDetails.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">Savings Goals:</p>
-                <div className="space-y-1">
-                  {(safeToSpendData as SafeToSpendData).breakdown.goalDetails.slice(0, 3).map((goal, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-xs">
-                      <span className="text-gray-600">{goal.goalName}</span>
-                      <span className="font-medium">{formatCurrency(goal.remaining, displayData.currency)}</span>
-                    </div>
-                  ))}
-                  {(safeToSpendData as SafeToSpendData).breakdown.goalDetails.length > 3 && (
-                    <p className="text-xs text-gray-400">
-                      +{(safeToSpendData as SafeToSpendData).breakdown.goalDetails.length - 3} goals lainnya
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
+            <p className="text-[11px] text-gray-400 pt-1">
+              Budget sengaja tidak dikurangi: budget adalah rencana belanja, bukan kewajiban.
+            </p>
           </div>
         )}
 

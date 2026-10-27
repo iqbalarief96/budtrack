@@ -13,9 +13,8 @@ export const dynamic = 'force-dynamic'
 /**
  * GET /api/safe-to-spend/breakdown?walletId=&walletGroupId=&mode=
  *
- * Authoritative safe-to-spend for the dashboard hero card and the chatbot.
- * (The sibling /api/safe-to-spend returns the older per-wallet widget shape
- * consumed by SafeToSpendCard; keep both until that widget is migrated.)
+ * The single authoritative safe-to-spend source, used by the dashboard hero
+ * card, the SafeToSpendCard widget, and (via computeSafeToSpend) the chatbot.
  *
  * Formula: balance (+ expected income in forward mode) − upcoming obligations
  *          − goal reserve − buffer.
