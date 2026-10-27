@@ -132,8 +132,11 @@ export async function processReceipt(
         }
     }
 
-    // Determine which key to use based on the model
-    let apiKey = keys.defaultApiKey;
+    // Determine which key to use based on the model. providerApiKey is the
+    // active provider's dedicated key (falling back to the legacy apiKey), so
+    // users who only set e.g. openrouterApiKey still get a key here.
+    const defaultKey = keys.providerApiKey || keys.defaultApiKey;
+    let apiKey = defaultKey;
     let provider = keys.defaultProvider || 'openrouter';
     let customEndpoint: string | null = null;
 
@@ -177,9 +180,9 @@ export async function processReceipt(
         customEndpoint = keys.customEndpoint ?? null;
         if (keys.selectedModel) model = keys.selectedModel;
         console.log('[DEBUG] Falling back to Custom Endpoint (model from Settings)');
-    } else if (keys.defaultApiKey) {
+    } else if (defaultKey) {
         // Use OpenRouter/DeepSeek for free models or as fallback
-        apiKey = keys.defaultApiKey;
+        apiKey = defaultKey;
         provider = keys.defaultProvider || 'openrouter';
         console.log('[DEBUG] Using default API key (OpenRouter/DeepSeek)');
     }
