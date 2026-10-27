@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiPlus, FiChevronLeft, FiEdit2, FiTrash2, FiCheck, FiX, FiShoppingBag } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 
 // Define GiftStatus type
 type GiftStatus = 'not-started' | 'pending' | 'completed';
@@ -28,7 +28,7 @@ interface Gift {
 const demoGifts: Gift[] = [
   {
     id: '1',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Cincin Pernikahan',
     quantity: 2,
     estimatedCost: 15000000,
@@ -39,7 +39,7 @@ const demoGifts: Gift[] = [
   },
   {
     id: '2',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Seperangkat Alat Sholat',
     quantity: 1,
     estimatedCost: 1000000,
@@ -50,7 +50,7 @@ const demoGifts: Gift[] = [
   },
   {
     id: '3',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Perhiasan Set',
     quantity: 1,
     estimatedCost: 8000000,
@@ -76,10 +76,11 @@ export default function GiftsPage() {
     notes: null
   });
   
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
   
   // Fetch gifts data from API
   useEffect(() => {
+    if (!weddingId) return;
     const fetchGifts = async () => {
       try {
         setIsLoading(true);
@@ -125,6 +126,10 @@ export default function GiftsPage() {
   const totalActualCost = gifts.reduce((sum, gift) => sum + (gift.actualCost || 0), 0);
   
   const handleSaveGift = async () => {
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     if (newGift.name) {
       try {
         setIsLoading(true);
@@ -203,6 +208,7 @@ export default function GiftsPage() {
   };
   
   const handleDeleteGift = async (id: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus seserahan ini?')) return;
     
     try {
@@ -262,6 +268,19 @@ export default function GiftsPage() {
     }
   };
   
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">

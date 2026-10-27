@@ -13,11 +13,19 @@ import { z } from 'zod'
 export const MAX_MONEY_AMOUNT = 1_000_000_000_000 // Rp 1 triliun
 
 const moneyAmount = (label: string) =>
-  z.coerce
-    .number({ invalid_type_error: `${label} must be a number` })
-    .finite(`${label} must be a finite number`)
-    .positive(`${label} must be positive`)
-    .max(MAX_MONEY_AMOUNT, `${label} is too large`)
+  z
+    // Only numbers and non-blank numeric strings may be coerced. Plain
+    // z.coerce.number() would also accept booleans (true -> 1), null, arrays...
+    .union([z.number(), z.string().trim().min(1, `${label} is required`)], {
+      errorMap: () => ({ message: `${label} must be a number` }),
+    })
+    .pipe(
+      z.coerce
+        .number({ invalid_type_error: `${label} must be a number` })
+        .finite(`${label} must be a finite number`)
+        .positive(`${label} must be positive`)
+        .max(MAX_MONEY_AMOUNT, `${label} is too large`)
+    )
 
 /**
  * Transaction validation schema

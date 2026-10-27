@@ -625,7 +625,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const goalReserve = calculateGoalReserve({ balance: displayBalance, remainingGoalAmount: totalRemainingGoal })
   // displayBalance is the actual wallet balance (already net of expenses), so
   // reserve only budget that is still unspent — not expenses that already happened.
-  const remainingBudget = calculateRemainingBudget(filteredBudgets)
+  // Only budgets whose period covers today; expired/future budgets must not
+  // reserve money. (`spent` here is computed live by /api/budgets.)
+  const nowForBudgets = new Date()
+  const remainingBudget = calculateRemainingBudget(
+    filteredBudgets.filter((b) => new Date(b.startDate) <= nowForBudgets && nowForBudgets <= new Date(b.endDate))
+  )
   const safeToSpend = calculateMonthlySafeToSpend({
     balance: displayBalance,
     remainingBudget,

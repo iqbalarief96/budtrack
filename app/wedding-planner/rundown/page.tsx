@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiCalendar, FiClock, FiMapPin, FiUsers, FiChevronLeft, FiX, FiCheck } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 
 // Interface aligned with Prisma Rundown Schema
 interface RundownItem {
@@ -86,10 +86,11 @@ export default function RundownPage() {
   const [currentItem, setCurrentItem] = useState(emptyRundownItem);
   const [formDate, setFormDate] = useState<string>(new Date().toISOString().split('T')[0]); // State for the date part of the form
 
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
 
   // Fetch Rundown Items Function
   const fetchRundownItems = async () => {
+    if (!weddingId) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -125,6 +126,7 @@ export default function RundownPage() {
   };
 
   useEffect(() => {
+    if (!weddingId) return;
     fetchRundownItems();
   }, [weddingId]);
 
@@ -214,6 +216,10 @@ export default function RundownPage() {
   // --- CRUD Operations ---
   const handleSaveRundownItem = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     setIsSaving(true);
     setError(null);
 
@@ -303,6 +309,7 @@ export default function RundownPage() {
   };
 
   const handleDeleteItem = async (itemId: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus item rundown ini?')) return;
 
     setIsLoading(true);
@@ -331,6 +338,19 @@ export default function RundownPage() {
   const sortedDates = Object.keys(groupedRundown).sort();
 
   // --- Render ---
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -444,7 +464,7 @@ export default function RundownPage() {
       )}
 
       {/* Loading State */}
-      {isLoading && (
+      {(isLoading || weddingLoading) && (
         <div className="text-center py-10 text-gray-500">Memuat rundown...</div>
       )}
 

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiPlus, FiChevronLeft, FiEdit2, FiTrash2, FiCheck, FiPackage, FiDollarSign, FiUsers } from 'react-icons/fi';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 
 // Define SouvenirStatus type for UI
 type SouvenirStatus = 'not-started' | 'in-progress' | 'completed';
@@ -68,8 +68,7 @@ export default function SouvenirsPage() {
     targetAudience: 'all'
   });
   
-  // Contoh weddingId - dalam aplikasi nyata ini akan diambil dari context atau route
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
   
   // Helper function to convert API souvenir to UI souvenir
   const mapAPIToUISouvenir = (apiSouvenir: APISouvenir): UISouvenir => {
@@ -119,6 +118,7 @@ export default function SouvenirsPage() {
   
   // Fungsi untuk fetch data souvenirs dari API
   const fetchSouvenirs = async () => {
+    if (!weddingId) return;
     setIsLoading(true);
     try {
       const response = await fetch(`/api/wedding/${weddingId}/souvenir`);
@@ -142,6 +142,7 @@ export default function SouvenirsPage() {
   
   // Panggil fetchSouvenirs saat komponen di-mount
   useEffect(() => {
+    if (!weddingId) return;
     fetchSouvenirs();
   }, [weddingId]);
   
@@ -155,6 +156,10 @@ export default function SouvenirsPage() {
   const completedPercentage = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   
   const handleSaveSouvenir = async () => {
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     if (newSouvenir.name && newSouvenir.quantity > 0) {
       try {
         // Calculate totals
@@ -266,6 +271,7 @@ export default function SouvenirsPage() {
   };
   
   const handleDeleteSouvenir = async (id: string) => {
+    if (!weddingId) return;
     try {
       const response = await fetch(`/api/wedding/${weddingId}/souvenir/${id}`, {
         method: 'DELETE'
@@ -346,6 +352,19 @@ export default function SouvenirsPage() {
     }
   };
   
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -369,7 +388,7 @@ export default function SouvenirsPage() {
       )}
       
       {/* Loading indicator */}
-      {isLoading ? (
+      {isLoading || weddingLoading ? (
         <div className="bg-white rounded-lg shadow p-6 mb-6 text-center py-8">
           <div className="animate-pulse flex flex-col items-center">
             <div className="h-8 w-8 mb-4 rounded-full bg-indigo-200"></div>

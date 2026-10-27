@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateRemainingBudget, calculateTransactionBalance } from '@/lib/safeToSpendSummary';
 import { listSharedBills } from '@/lib/shared-bills/shared-bill-service';
+import { calculateBudgetDetails, isActiveBudget } from '@/lib/budgetCalculations';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,16 @@ export async function GET(request: NextRequest) {
         startDate: { lte: end },
         endDate: { gte: start },
       },
-      select: { amount: true, spent: true },
+      select: {
+        id: true,
+        userId: true,
+        walletId: true,
+        categoryId: true,
+        amount: true,
+        spent: true,
+        startDate: true,
+        endDate: true,
+      },
     }),
     prisma.goal.findMany({
       where: { userId: user.id, isArchived: false, status: { not: 'COMPLETED' } },
@@ -119,10 +129,18 @@ export async function GET(request: NextRequest) {
     return sum + Math.max(0, bill.totalAmount - paidAmount);
   }, 0);
   // calculatedBalance is already net of this month's expenses; only reserve
-  // what is still budgeted-but-unspent.
+  // what is still budgeted-but-unspent. The persisted `budget.spent` column is
+  // often stale (0), so recompute spending from transactions like /api/budgets
+  // does, and only count budgets whose period covers today.
+  const activeBudgetsWithSpending = await Promise.all(
+    budgets.filter(isActiveBudget).map(async (budget) => ({
+      amount: budget.amount,
+      spent: (await calculateBudgetDetails(budget)).spent,
+    }))
+  );
   const safeToSpend = calculateMonthlySafeToSpend({
     balance: calculatedBalance,
-    remainingBudget: calculateRemainingBudget(budgets),
+    remainingBudget: calculateRemainingBudget(activeBudgetsWithSpending),
     outstandingBills,
     goalReserve,
   });

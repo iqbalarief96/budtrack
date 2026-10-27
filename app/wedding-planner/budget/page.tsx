@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { FiPlus, FiChevronLeft, FiEdit2, FiTrash2, FiDollarSign, FiPieChart, FiCreditCard, FiRefreshCw } from 'react-icons/fi';
 import Link from 'next/link';
 import toast, { Toaster } from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from '../constants';
 
 // Demo data
 const initialBudgetCategories = [
@@ -775,11 +774,16 @@ export default function BudgetPage() {
 
   // Fungsi untuk sinkronisasi ulang budget
   const handleSyncBudget = async () => {
+    const weddingId = wedding?.id;
+    if (!weddingId) {
+      toast.error('Wedding tidak ditemukan. Silakan buat wedding terlebih dahulu.');
+      return;
+    }
     setIsSyncing(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/wedding-budget/sync?weddingId=${DEMO_WEDDING_ID}`, {
+      const response = await fetch(`/api/wedding-budget/sync?weddingId=${weddingId}`, {
         method: 'POST'
       });
 
@@ -789,7 +793,7 @@ export default function BudgetPage() {
       }
 
       // Refresh data menggunakan fungsi fetchWeddingBudget yang sudah ada
-      await fetchWeddingBudget(DEMO_WEDDING_ID);
+      await fetchWeddingBudget(weddingId);
       toast.success('Budget berhasil disinkronisasi');
     } catch (err) {
       console.error('Error syncing budget:', err);
