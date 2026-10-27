@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup — BudTrack Dashboard: Trend KPI + Dual-bar</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  .trend-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; }
+  .chart-wrap { position: relative; height: 280px; }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <!-- Fake sidebar hint -->
+  <div class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-0.5 rounded">MOCKUP</span>
+      <span class="text-xs text-gray-500">Konsep trend KPI + dual-bar chart di dashboard BudTrack (data asli Dompet Utama, per Jul 2026)</span>
+    </div>
+
+    <!-- Hero dark section like current dashboard -->
+    <div class="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 shadow-lg">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p class="text-blue-100 text-sm">Dashboard</p>
+          <h1 class="text-white text-2xl font-bold mt-1">Ringkasan Keuangan</h1>
+          <p class="text-blue-100 text-sm mt-1">Dompet Utama • Juli 2026</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg">Bulan ini</span>
+          <span class="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg cursor-pointer hover:bg-white/20">Minggu</span>
+          <span class="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg cursor-pointer hover:bg-white/20">Kuartal</span>
+        </div>
+      </div>
+
+      <!-- KPI cards with trend -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        <!-- Total Saldo -->
+        <div class="bg-white/10 backdrop-blur rounded-xl p-4 min-w-0">
+          <p class="text-blue-100 text-xs">Total Saldo</p>
+          <p class="text-white text-2xl font-bold mt-1 whitespace-nowrap">Rp 10.988.340</p>
+          <p class="text-blue-100 text-xs mt-1">Dompet Utama</p>
+        </div>
+        <!-- Pemasukan -->
+        <div class="bg-white/10 backdrop-blur rounded-xl p-4 min-w-0">
+          <p class="text-blue-100 text-xs">Pemasukan</p>
+          <p class="text-white text-2xl font-bold mt-1 whitespace-nowrap">Rp 6.657.900</p>
+          <div class="mt-2">
+            <span class="trend-badge bg-red-500/20 text-red-200">
+              ▼ 43,9% <span class="opacity-70 font-normal">vs Jun Rp 11,88 jt</span>
+            </span>
+          </div>
+        </div>
+        <!-- Pengeluaran -->
+        <div class="bg-white/10 backdrop-blur rounded-xl p-4 min-w-0">
+          <p class="text-blue-100 text-xs">Pengeluaran</p>
+          <p class="text-white text-2xl font-bold mt-1 whitespace-nowrap">Rp 5.026.555</p>
+          <div class="mt-2">
+            <span class="trend-badge bg-emerald-500/20 text-emerald-200">
+              ▼ 60,9% <span class="opacity-70 font-normal">vs Jun Rp 12,86 jt</span>
+            </span>
+          </div>
+        </div>
+        <!-- Net cashflow -->
+        <div class="bg-white/10 backdrop-blur rounded-xl p-4 min-w-0">
+          <p class="text-blue-100 text-xs">Net Cashflow</p>
+          <p class="text-white text-2xl font-bold mt-1 whitespace-nowrap">+Rp 1.631.345</p>
+          <div class="mt-2">
+            <span class="trend-badge bg-emerald-500/20 text-emerald-200">
+              ▲ membaik <span class="opacity-70 font-normal">vs Jun −Rp 981 rb</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row: Dual-bar chart + balance/CTA card -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
+      <!-- Chart -->
+      <div class="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-semibold text-gray-900">Pemasukan vs Pengeluaran</h2>
+            <p class="text-xs text-gray-500 mt-0.5">6 bulan terakhir • Dompet Utama</p>
+          </div>
+          <div class="flex gap-3 text-xs text-gray-500">
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block"></span> Pemasukan</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block"></span> Pengeluaran</span>
+          </div>
+        </div>
+        <div class="chart-wrap mt-4">
+          <canvas id="cashflowChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Balance + CTA -->
+      <div class="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-5 shadow-sm text-white flex flex-col justify-between">
+        <div>
+          <p class="text-gray-300 text-xs">Total Aset (semua dompet)</p>
+          <p class="text-3xl font-bold mt-1">Rp 129,6 jt</p>
+          <p class="text-gray-400 text-xs mt-1">6 dompet • updated Jul 2026</p>
+        </div>
+        <div class="mt-6 space-y-2">
+          <a href="/reports" class="block w-full text-center bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg py-2.5 transition-colors">Unduh Laporan</a>
+          <button class="w-full text-center bg-white/10 hover:bg-white/20 text-gray-200 text-sm font-medium rounded-lg py-2.5 transition-colors">Lihat Net Worth</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Note: current vs proposed -->
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mt-6 text-sm text-amber-800">
+      <p class="font-semibold">Yang berubah di mockup ini:</p>
+      <ul class="list-disc list-inside mt-1 space-y-0.5 text-amber-700">
+        <li>Trend badge (+/− %) di tiap KPI, pakai data bulan sebelumnya (sekarang: cuma angka polos)</li>
+        <li>Dual-bar chart Pemasukan vs Pengeluaran side-by-side (sekarang: single-series 6 bulan)</li>
+        <li>Card CTA "Unduh Laporan" → /reports (sekarang: gak ada jalan pintas export dari dashboard)</li>
+      </ul>
+    </div>
+  </div>
+
+<script>
+  const labels = ['Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul'];
+  const income = [6412600, 12213400, 5587233, 9157900, 11875270, 6657900];
+  const expense = [6120890, 12692498, 5957994, 8687688, 12856768, 5026555];
+
+  new Chart(document.getElementById('cashflowChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Pemasukan', data: income, backgroundColor: '#10b981', borderRadius: 6, maxBarThickness: 26 },
+        { label: 'Pengeluaran', data: expense, backgroundColor: '#f87171', borderRadius: 6, maxBarThickness: 26 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}: Rp ${new Intl.NumberFormat('id-ID').format(ctx.raw)}`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6b7280' } },
+        y: {
+          grid: { color: '#f3f4f6' },
+          beginAtZero: true,
+          suggestedMax: Math.max(...income, ...expense) * 1.1,
+          ticks: {
+            color: '#9ca3af',
+            callback: (v) => `Rp ${v >= 1e6 ? (v / 1e6).toFixed(1) + ' jt' : v}`,
+          },
+        },
+      },
+    },
+  });
+</script>
+</body>
+</html>

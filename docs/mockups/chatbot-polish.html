@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Chatbot Polish (BudTrack)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 24px;
+  }
+  .mockbar {
+    max-width: 1200px; margin: 0 auto 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .mockbar h1 { font-size: 15px; font-weight: 600; color: #334155; }
+  .mockbar .sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .seg { display: flex; background: #e2e8f0; border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: 0; background: transparent; padding: 6px 14px; border-radius: 8px;
+    font-size: 12px; font-weight: 600; color: #475569; cursor: pointer;
+  }
+  .seg button.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+
+  .card {
+    max-width: 1200px; margin: 0 auto;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 24px;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06); overflow: hidden;
+    min-height: 660px;
+  }
+  .chat-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 20px; border-bottom: 1px solid #e2e8f0; background: rgba(255,255,255,.9);
+  }
+  .chat-header .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .bot-icon {
+    width: 44px; height: 44px; border-radius: 14px; background: #2563eb; color: #fff;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(37,99,235,.25);
+  }
+  .chat-header h2 { font-size: 17px; font-weight: 600; color: #020617; }
+  .chat-header .meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .badge-ai { background: #d1fae5; color: #047857; }
+  .badge-month { background: #fff; border: 1px solid #e2e8f0; color: #475569; }
+  .chat-header .actions { display: flex; align-items: center; gap: 4px; color: #64748b; }
+  .iconbtn { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 0; background: transparent; color: #64748b; }
+  .iconbtn:hover { background: #f1f5f9; color: #0f172a; }
+
+  .body { display: grid; grid-template-columns: minmax(0,1fr) 330px; min-height: 0; }
+  .thread { display: flex; flex-direction: column; min-height: 0; }
+  .msgs { flex: 1; overflow-y: auto; padding: 20px; background: linear-gradient(180deg, #eff6ff 0%, #ffffff 140px); }
+
+  .welcome-card {
+    max-width: 720px; margin: 0 auto; background: rgba(255,255,255,.92);
+    border: 1px solid #dbeafe; border-radius: 20px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(15,23,42,.05);
+  }
+  .welcome-card .greet { display: flex; gap: 12px; }
+  .welcome-card .avatar {
+    width: 40px; height: 40px; border-radius: 12px; background: #eff6ff; color: #2563eb;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .welcome-card p { font-size: 14px; line-height: 1.6; color: #334155; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 0; }
+  .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11px; color: #64748b; }
+  .stat .v { font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+  .stat .d { font-size: 11px; margin-top: 2px; }
+  .d-up { color: #047857; } .d-down-bad { color: #b91c1c; } .d-flat { color: #64748b; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .chip {
+    border: 1px solid #dbeafe; background: #eff6ff; color: #1d4ed8;
+    font-size: 12px; font-weight: 500; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .chip:hover { background: #dbeafe; }
+
+  .msg { display: flex; gap: 10px; max-width: 720px; margin: 0 auto 14px; }
+  .msg.user { justify-content: flex-end; }
+  .bubble { padding: 10px 14px; font-size: 14px; line-height: 1.55; border-radius: 16px; max-width: 85%; }
+  .bubble.user { background: #2563eb; color: #fff; border-bottom-right-radius: 6px; }
+  .bubble.ai {
+    background: #fff; border: 1px solid #e2e8f0; color: #1e293b;
+    border-bottom-left-radius: 6px; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .bubble.ai p { margin-bottom: 6px; }
+  .bubble.ai p:last-child { margin-bottom: 0; }
+
+  .answer-card {
+    border: 1px solid #e2e8f0; border-left: 3px solid #2563eb; border-radius: 12px;
+    padding: 12px 14px; margin-top: 10px; background: #f8fafc;
+  }
+  .answer-card .ac-title { font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+  .answer-card .row { display: flex; justify-content: space-between; font-size: 12.5px; color: #475569; padding: 3px 0; }
+  .answer-card .row b { color: #0f172a; }
+  .action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .action-btn {
+    border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8;
+    font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .action-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .typing { display: flex; gap: 4px; padding: 6px 2px; }
+  .typing span { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; animation: blink 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+
+  .compose { border-top: 1px solid #e2e8f0; background: #fff; padding: 12px 16px; }
+  .compose-box {
+    display: flex; align-items: flex-end; gap: 10px; max-width: 720px; margin: 0 auto;
+    border: 1px solid #e2e8f0; border-radius: 16px; padding: 8px 10px; background: #f8fafc;
+  }
+  .compose-box textarea {
+    flex: 1; border: 0; background: transparent; resize: none; outline: none;
+    font: inherit; font-size: 13.5px; color: #0f172a; min-height: 24px; padding: 4px 0;
+  }
+  .compose-box textarea::placeholder { color: #94a3b8; }
+  .send-btn {
+    width: 38px; height: 38px; border-radius: 12px; background: #2563eb; color: #fff;
+    border: 0; display: flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(37,99,235,.3); flex-shrink: 0;
+  }
+  .send-btn:disabled { background: #cbd5e1; box-shadow: none; cursor: not-allowed; }
+  .compose-hint { max-width: 720px; margin: 8px auto 0; display: flex; gap: 8px; }
+  .hint-chip {
+    font-size: 11.5px; color: #64748b; border: 1px solid #e2e8f0; background: #fff;
+    padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  }
+  .hint-chip:hover { color: #1d4ed8; border-color: #bfdbfe; }
+
+  .rail { border-left: 1px solid #e2e8f0; background: #f8fafc; padding: 18px 16px; overflow-y: auto; }
+  .rail h3 { font-size: 13px; font-weight: 600; color: #0f172a; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .rail .rail-sub { font-size: 11.5px; color: #64748b; margin-bottom: 14px; }
+  .insight {
+    display: flex; gap: 10px; padding: 10px; border-bottom: 1px solid #eef2f7;
+    width: 100%; text-align: left; background: transparent; border-top: 0; border-left: 0; border-right: 0;
+    cursor: pointer; font: inherit; color: inherit; border-radius: 10px; transition: background .12s;
+  }
+  .insight:last-child { border-bottom: 0; }
+  .insight:hover { background: #eef2f7; }
+  .insight .hint { font-size: 10.5px; color: #93c5fd; margin-top: 3px; font-weight: 500; opacity: 0; transition: opacity .12s; }
+  .insight:hover .hint { opacity: 1; }
+  .insight .ic {
+    width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .ic-emerald { background: #d1fae5; color: #047857; }
+  .ic-amber { background: #fef3c7; color: #b45309; }
+  .ic-blue { background: #dbeafe; color: #1d4ed8; }
+  .ic-slate { background: #e2e8f0; color: #475569; }
+  .insight .t { font-size: 12.5px; font-weight: 600; color: #0f172a; }
+  .insight .d { font-size: 11.5px; color: #64748b; margin-top: 2px; line-height: 1.45; }
+  .prog { height: 6px; background: #e2e8f0; border-radius: 999px; margin-top: 6px; overflow: hidden; }
+  .prog > div { height: 100%; background: #2563eb; border-radius: 999px; }
+
+  @media (max-width: 1280px) {
+    .body { grid-template-columns: 1fr; }
+    .rail { display: none; }
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="mockbar">
+    <div>
+      <h1>Mockup — Chatbot Polish · BudTrack</h1>
+      <div class="sub">Adaptasi dari needmcp wireframe «chat-app-layout» → fokus: empty state, compose, mobile rail. Data: Juli 2026 asli.</div>
+    </div>
+    <div class="seg">
+      <button id="segEmpty" class="active" onclick="showState('empty')">Empty State</button>
+      <button id="segConv" onclick="showState('conv')">Conversation</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chat-header">
+      <div class="left">
+        <div class="bot-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="4" r="1"/><path d="M2 14h2M20 14h2M8 13v2M16 13v2"/></svg>
+        </div>
+        <div>
+          <h2>Finance Assistant</h2>
+          <div class="meta">
+            <span class="badge badge-ai">AI</span>
+            <span class="badge badge-month">Juli 2026</span>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="iconbtn" title="Reset chat">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <button class="iconbtn" title="Menu">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="thread">
+        <div class="msgs">
+          <!-- EMPTY STATE -->
+          <div id="stateEmpty">
+            <div class="welcome-card">
+              <div class="greet">
+                <div class="avatar">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-16 0"/><circle cx="12" cy="11" r="8"/><path d="M12 3v8"/><path d="M8 14l4 3 4-3"/></svg>
+                </div>
+                <div>
+                  <p><b>Halo, Iqbal!</b> Gw siap bantu baca kondisi keuangan lo: budget, spending, saving, goal, sampai pola transaksi. Tinggal ketik, atau pilih salah satu di bawah 👇</p>
+                  <div class="stats">
+                    <div class="stat">
+                      <div class="k">Pemasukan Juli</div>
+                      <div class="v">Rp 6,66 jt</div>
+                      <div class="d d-down-bad">▼ 43,9% vs Jun</div>
+                    </div>
+                    <div class="stat">
+                      <div class="k">Pengeluaran Juli</div>
+                      <div class="v">Rp 5,03 jt</div>
+                      <div class="d d-up">▼ 60,9% vs Jun · hemat!</div>
+                    </div>
+                    <div class="stat">
+                      <div class="k">Safe to spend</div>
+                      <div class="v">± Rp 4,2 jt</div>
+                      <div class="d d-flat">setelah goal & expense</div>
+                    </div>
+                  </div>
+                  <div class="chips">
+                    <span class="chip">Cek budget bulan ini</span>
+                    <span class="chip">Mau nabung berapa?</span>
+                    <span class="chip">Tagihan belum bayar?</span>
+                    <span class="chip">Rekomendasi pengeluaran</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONVERSATION STATE -->
+          <div id="stateConv" class="hidden">
+            <div class="msg user">
+              <div class="bubble user">Gimana pengeluaran gw bulan Juli? Aman nggak?</div>
+            </div>
+            <div class="msg">
+              <div class="bot-icon" style="width:34px;height:34px;border-radius:10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="4" r="1"/></svg>
+              </div>
+              <div class="bubble ai">
+                <p>Pengeluaran Juli lo <b>Rp 5,03 jt</b> — <b style="color:#047857">turun 60,9%</b> dibanding Juni. Ini bulan paling hemat dalam 6 bulan terakhir. 👍</p>
+                <div class="answer-card">
+                  <div class="ac-title">Top 3 kategori pengeluaran Juli</div>
+                  <div class="row"><span>Makanan & Minuman</span><b>Rp 1,18 jt</b></div>
+                  <div class="row"><span>Transportasi</span><b>Rp 860 rb</b></div>
+                  <div class="row"><span>Belanja</span><b>Rp 640 rb</b></div>
+                </div>
+                <div class="action-row">
+                  <button class="action-btn primary">Lihat transaksi</button>
+                  <button class="action-btn">Buat budget</button>
+                  <button class="action-btn">Unduh laporan</button>
+                </div>
+              </div>
+            </div>
+            <div class="msg">
+              <div class="bot-icon" style="width:34px;height:34px;border-radius:10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="4" r="1"/></svg>
+              </div>
+              <div class="bubble ai">
+                <p>Bonus: <b>Dana Darurat</b> lo udah <b>Rp 5,5 jt dari target Rp 15 jt</b> (37%). Mau gw bantu itung target nabung bulanan biar kelar 6 bulan?</p>
+                <div class="typing"><span></span><span></span><span></span></div>
+              </div>
+            </div>
+            <div id="dynamicMsgs"></div>
+          </div>
+        </div>
+
+        <div class="compose">
+          <div class="compose-box">
+            <textarea rows="1" placeholder="Tanya kondisi keuangan lo…"></textarea>
+            <button class="send-btn">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+            </button>
+          </div>
+          <div class="compose-hint">
+            <span class="hint-chip">Contoh: “Berapa sisa aman minggu ini?”</span>
+            <span class="hint-chip">“Cek tagihan yang belum dibayar”</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail">
+        <h3>Insight Juli</h3>
+        <div class="rail-sub">Otomatis dari data lo · bulan berjalan</div>
+
+        <div class="insight" onclick="askInsight('Apa insight pengeluaran Juli?')">
+          <div class="ic ic-emerald">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          </div>
+          <div>
+            <div class="t">Pengeluaran hemat</div>
+            <div class="d">Turun 60,9% vs Juni — paling rendah 6 bulan.</div>
+            <div class="hint">klik → tanya detail ↗</div>
+          </div>
+        </div>
+
+        <div class="insight" onclick="askInsight('Kenapa income Juli turun?')">
+          <div class="ic ic-amber">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6 6 4-4 8 8"/><path d="M14 7h7v7"/></svg>
+          </div>
+          <div>
+            <div class="t">Income turun</div>
+            <div class="d">Pemasukan 43,9% lebih kecil dari Juni — waspadai cashflow.</div>
+            <div class="hint">klik → tanya detail ↗</div>
+          </div>
+        </div>
+
+        <div class="insight" onclick="askInsight('Progress Dana Darurat gimana?')">
+          <div class="ic ic-blue">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+          </div>
+          <div>
+            <div class="t">Dana Darurat · 37%</div>
+            <div class="d">Rp 5,5 jt / Rp 15 jt tercapai.</div>
+            <div class="prog"><div style="width:37%"></div></div>
+            <div class="hint">klik → tanya detail ↗</div>
+          </div>
+        </div>
+
+        <div class="insight" onclick="askInsight('Saldo aman berapa sekarang?')">
+          <div class="ic ic-slate">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div>
+            <div class="t">Saldo Dompet Utama</div>
+            <div class="d">Rp 10,99 jt tersedia setelah expense bulan ini.</div>
+            <div class="hint">klik → tanya detail ↗</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function showState(s) {
+    document.getElementById('stateEmpty').classList.toggle('hidden', s !== 'empty');
+    document.getElementById('stateConv').classList.toggle('hidden', s !== 'conv');
+    document.getElementById('segEmpty').classList.toggle('active', s === 'empty');
+    document.getElementById('segConv').classList.toggle('active', s === 'conv');
+  }
+
+  function askInsight(prompt) {
+    showState('conv');
+    const box = document.getElementById('dynamicMsgs');
+    // user bubble
+    const u = document.createElement('div');
+    u.className = 'msg user';
+    u.innerHTML = '<div class="bubble user">' + prompt + '</div>';
+    box.appendChild(u);
+    // typing
+    const t = document.createElement('div');
+    t.className = 'msg';
+    t.id = 'typingRow';
+    t.innerHTML = '<div class="bot-icon" style="width:34px;height:34px;border-radius:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="4" r="1"/></svg></div><div class="bubble ai"><div class="typing"><span></span><span></span><span></span></div></div>';
+    box.appendChild(t);
+    box.scrollIntoView({ block: 'end' });
+    // simulated answer
+    setTimeout(() => {
+      t.remove();
+      const a = document.createElement('div');
+      a.className = 'msg';
+      a.innerHTML = '<div class="bot-icon" style="width:34px;height:34px;border-radius:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="4" r="1"/></svg></div><div class="bubble ai"><p>Ini jawaban simulasi untuk: <b>' + prompt + '</b> — pas implement, bagian ini diisi model finansial BudTrack dari data lo (same flow kayak existing).</p></div>';
+      box.appendChild(a);
+      box.scrollIntoView({ block: 'end' });
+    }, 900);
+  }
+</script>
+</body>
+</html>

@@ -54,3 +54,9 @@ playwright-report/
 # DB backups
 *.db.bak-*
 prisma/dev.db
+
+# Local env backups and DB snapshots (contain secrets/user data)
+.env.bak-*
+.env.pre-*
+.env.production.bak-*
+prisma/_db_snapshots_*/
