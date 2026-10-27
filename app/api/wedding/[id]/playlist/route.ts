@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // GET all playlist items for a specific wedding
 export async function GET(
@@ -7,6 +8,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const weddingId = params.id;
     
     if (!weddingId) {
@@ -42,6 +45,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const weddingId = params.id;
     
     if (!weddingId) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // GET a specific moodboard
 export async function GET(
@@ -7,6 +8,8 @@ export async function GET(
   { params }: { params: { id: string; moodboardId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, moodboardId } = params;
 
     if (!weddingId || !moodboardId) {
@@ -16,7 +19,7 @@ export async function GET(
       );
     }
 
-    const moodboard = await prisma.moodboard.findUnique({
+    const moodboard = await prisma.moodboard.findFirst({
       where: {
         id: moodboardId,
         weddingId: weddingId,
@@ -46,6 +49,8 @@ export async function PUT(
   { params }: { params: { id: string; moodboardId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, moodboardId } = params;
 
     if (!weddingId || !moodboardId) {
@@ -124,6 +129,8 @@ export async function DELETE(
   { params }: { params: { id: string; moodboardId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, moodboardId } = params;
 
     if (!weddingId || !moodboardId) {

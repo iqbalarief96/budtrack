@@ -42,11 +42,11 @@ interface Wedding {
 export default function WeddingPlanner() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [weddingInfo, setWeddingInfo] = useState({
-    date: '2024-12-12',
-    venue: 'Grand Ballroom Hotel Magnolia',
-    budget: 'Rp 250.000.000',
-    spent: 'Rp 75.000.000',
-    guests: '250',
+    date: new Date().toISOString().split('T')[0],
+    venue: '',
+    budget: 'Rp 0',
+    spent: 'Rp 0',
+    guests: '0',
   });
   
   const [wedding, setWedding] = useState<Wedding | null>(null);
@@ -75,7 +75,7 @@ export default function WeddingPlanner() {
         // Update wedding info state with data from API
         setWeddingInfo({
           date: new Date(data.wedding.date).toISOString().split('T')[0],
-          venue: data.wedding.location || 'Grand Ballroom Hotel Magnolia',
+          venue: data.wedding.location || '',
           budget: `Rp ${data.wedding.budget.toLocaleString('id-ID')}`,
           spent: data.wedding.spentBudget ? `Rp ${data.wedding.spentBudget.toLocaleString('id-ID')}` : 'Rp 0',
           guests: data.wedding.expectedGuests.toString(),
@@ -87,7 +87,7 @@ export default function WeddingPlanner() {
         const weddingData = data.weddings[0];
         setWeddingInfo({
           date: new Date(weddingData.date).toISOString().split('T')[0],
-          venue: weddingData.location || 'Grand Ballroom Hotel Magnolia',
+          venue: weddingData.location || '',
           budget: `Rp ${weddingData.budget.toLocaleString('id-ID')}`,
           spent: weddingData.spentBudget ? `Rp ${weddingData.spentBudget.toLocaleString('id-ID')}` : 'Rp 0',
           guests: weddingData.expectedGuests.toString(),
@@ -266,6 +266,90 @@ export default function WeddingPlanner() {
   };
 
   // Show loading state
+  // Rendered in both the empty state and the main view (it used to exist only in
+  // the main view, so "Buat Wedding Planning" on the empty state did nothing).
+  const editModal = showEditModal && (
+
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-semibold mb-4">Edit Wedding Info</h3>
+            
+            <form onSubmit={handleEditSubmit}>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Wedding Date</label>
+                <input
+                  type="date"
+                  name="date"
+                  value={weddingInfo.date}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-lg"
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Venue</label>
+                <input
+                  type="text"
+                  name="venue"
+                  value={weddingInfo.venue}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-lg"
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Budget</label>
+                <input
+                  type="text"
+                  name="budget"
+                  value={weddingInfo.budget}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-lg"
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Spent</label>
+                <input
+                  type="text"
+                  name="spent"
+                  value={weddingInfo.spent}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-lg"
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">Guests</label>
+                <input
+                  type="text"
+                  name="guests"
+                  value={weddingInfo.guests}
+                  onChange={handleInputChange}
+                  className="w-full p-2 border rounded-lg"
+                />
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 border rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+  );
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -292,6 +376,7 @@ export default function WeddingPlanner() {
             <FiEdit /> Buat Wedding Planning
           </button>
         </div>
+        {editModal}
       </div>
     );
   }
@@ -516,87 +601,7 @@ export default function WeddingPlanner() {
         </Link>
       </div>
       
-      {/* Edit Wedding Info Modal */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="text-xl font-semibold mb-4">Edit Wedding Info</h3>
-            
-            <form onSubmit={handleEditSubmit}>
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Wedding Date</label>
-                <input
-                  type="date"
-                  name="date"
-                  value={weddingInfo.date}
-                  onChange={handleInputChange}
-                  className="w-full p-2 border rounded-lg"
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Venue</label>
-                <input
-                  type="text"
-                  name="venue"
-                  value={weddingInfo.venue}
-                  onChange={handleInputChange}
-                  className="w-full p-2 border rounded-lg"
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Budget</label>
-                <input
-                  type="text"
-                  name="budget"
-                  value={weddingInfo.budget}
-                  onChange={handleInputChange}
-                  className="w-full p-2 border rounded-lg"
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Spent</label>
-                <input
-                  type="text"
-                  name="spent"
-                  value={weddingInfo.spent}
-                  onChange={handleInputChange}
-                  className="w-full p-2 border rounded-lg"
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Guests</label>
-                <input
-                  type="text"
-                  name="guests"
-                  value={weddingInfo.guests}
-                  onChange={handleInputChange}
-                  className="w-full p-2 border rounded-lg"
-                />
-              </div>
-              
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 border rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {editModal}
       
       {/* Toast provider for notifications */}
       <Toaster position="bottom-right" />

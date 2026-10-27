@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id } = params;
     const prismaClient = prisma || prismaFallback;
 
@@ -33,6 +36,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id } = params;
     const body = await request.json();
     const prismaClient = prisma || prismaFallback;

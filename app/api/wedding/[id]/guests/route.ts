@@ -5,6 +5,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { z } from 'zod';
 import { updateWeddingGuestCount } from '../../utils';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 /**
  * ATTENTION DEVELOPERS: 
@@ -44,6 +45,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     console.log('Fetching guests for wedding ID:', weddingId);
     
@@ -134,6 +137,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     const session = await getServerSession(authOptions);
     
@@ -213,6 +218,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     const { searchParams } = new URL(request.url);
     const guestId = searchParams.get('guestId');
@@ -242,8 +249,8 @@ export async function DELETE(
     }
     
     // Get guest to check if it belongs to this wedding
-    const guest = await prismaClient.weddingGuest.findUnique({
-      where: { id: guestId }
+    const guest = await prismaClient.weddingGuest.findFirst({
+      where: { id: guestId, weddingId }
     });
     
     if (!guest || guest.weddingId !== weddingId) {
@@ -274,6 +281,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     const session = await getServerSession(authOptions);
     
@@ -318,8 +327,8 @@ export async function PUT(
     }
     
     // Get existing guest to check if it exists
-    const existingGuest = await prismaClient.weddingGuest.findUnique({
-      where: { id }
+    const existingGuest = await prismaClient.weddingGuest.findFirst({
+      where: { id, weddingId }
     });
     
     if (!existingGuest) {

@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { FinancialAdvice } from '@prisma/client';
+import { requireUserId } from '@/lib/route-auth';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const advice = await prisma.financialAdvice.findUnique({
-      where: { id: params.id }
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
+    const advice = await prisma.financialAdvice.findFirst({
+      where: { id: params.id, userId: auth.userId }
     }) as FinancialAdvice & {
       actionSteps?: string;
       resources?: string;

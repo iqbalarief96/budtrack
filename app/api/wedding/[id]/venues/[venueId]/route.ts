@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -11,12 +12,14 @@ export async function GET(
   { params }: { params: { id: string; venueId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, venueId } = params;
     if (!weddingId || !venueId) {
       return NextResponse.json({ error: 'Wedding ID and Venue ID are required' }, { status: 400 });
     }
 
-    const venue = await dbClient.venue.findUnique({
+    const venue = await dbClient.venue.findFirst({
       where: { id: venueId, weddingId: weddingId },
     });
 
@@ -40,6 +43,8 @@ export async function PUT(
   { params }: { params: { id: string; venueId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, venueId } = params;
     if (!weddingId || !venueId) {
       return NextResponse.json({ error: 'Wedding ID and Venue ID are required' }, { status: 400 });
@@ -72,7 +77,7 @@ export async function PUT(
     }
 
     // Check if venue exists first (optional but good practice)
-    const existingVenue = await dbClient.venue.findUnique({
+    const existingVenue = await dbClient.venue.findFirst({
       where: { id: venueId, weddingId: weddingId },
     });
 
@@ -113,13 +118,15 @@ export async function DELETE(
   { params }: { params: { id: string; venueId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, venueId } = params;
     if (!weddingId || !venueId) {
       return NextResponse.json({ error: 'Wedding ID and Venue ID are required' }, { status: 400 });
     }
 
     // Check if venue exists first (optional but good practice)
-    const existingVenue = await dbClient.venue.findUnique({
+    const existingVenue = await dbClient.venue.findFirst({
       where: { id: venueId, weddingId: weddingId },
     });
 

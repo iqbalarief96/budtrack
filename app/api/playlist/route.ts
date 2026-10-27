@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireUserId, requireWeddingOwner } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,12 @@ export async function GET(request: Request) {
     // Get URL parameters
     const url = new URL(request.url);
     const weddingId = url.searchParams.get('weddingId');
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
+    if (weddingId) {
+      const owner = await requireWeddingOwner(weddingId);
+      if (owner.response) return owner.response;
+    }
     
     // Get prisma client
     const prismaClient = prisma || prismaFallback;
@@ -20,7 +27,7 @@ export async function GET(request: Request) {
     // Fetch playlists with the filter
     // @ts-ignore - We're intentionally ignoring type checking here
     const playlists = await prismaClient.playlist.findMany({
-      where: filter,
+      where: { ...filter, wedding: { userId: auth.userId } },
       orderBy: { order: 'asc' }
     });
     
@@ -49,6 +56,8 @@ export async function POST(request: Request) {
       order,
       isApproved
     } = body;
+    const auth = await requireWeddingOwner(weddingId);
+    if (auth.response) return auth.response;
     
     // Validate required fields
     if (!weddingId || !title || !artist) {

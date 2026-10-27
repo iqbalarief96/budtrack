@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { updateWeddingGuestCount } from '../../utils';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // Fallback prisma client
 const prismaFallback = new PrismaClient();
@@ -14,6 +15,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     console.log('Syncing guest count for wedding ID:', weddingId);
     

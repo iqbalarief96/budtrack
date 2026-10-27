@@ -172,13 +172,17 @@ const ComparativeSummaryCard = ({ period = 'month' }: ComparativeSummaryCardProp
             <span className="text-sm text-gray-500">Total Pemasukan:</span>
             <div className="flex items-center">
               <span className="font-medium">{formatCurrency(data.currentPeriod.income)}</span>
-              <span className={`ml-2 text-xs flex items-center ${incomeChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {incomeChange >= 0 ? 
-                  <FiTrendingUp className="mr-1" /> : 
-                  <FiTrendingDown className="mr-1" />
-                }
-                {Math.abs(incomeChange).toFixed(1)}%
-              </span>
+              {data.previousPeriod.income !== 0 ? (
+                <span className={`ml-2 text-xs flex items-center ${incomeChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {incomeChange >= 0 ? 
+                    <FiTrendingUp className="mr-1" /> : 
+                    <FiTrendingDown className="mr-1" />
+                  }
+                  {Math.abs(incomeChange).toFixed(1)}%
+                </span>
+              ) : (
+                <span className="ml-2 text-xs text-gray-400" title="Belum ada data periode sebelumnya">—</span>
+              )}
             </div>
           </div>
           
@@ -186,13 +190,17 @@ const ComparativeSummaryCard = ({ period = 'month' }: ComparativeSummaryCardProp
             <span className="text-sm text-gray-500">Total Pengeluaran:</span>
             <div className="flex items-center">
               <span className="font-medium">{formatCurrency(data.currentPeriod.expense)}</span>
-              <span className={`ml-2 text-xs flex items-center ${expenseChange <= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {expenseChange <= 0 ? 
-                  <FiTrendingDown className="mr-1" /> : 
-                  <FiTrendingUp className="mr-1" />
-                }
-                {Math.abs(expenseChange).toFixed(1)}%
-              </span>
+              {data.previousPeriod.expense !== 0 ? (
+                <span className={`ml-2 text-xs flex items-center ${expenseChange <= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {expenseChange <= 0 ? 
+                    <FiTrendingDown className="mr-1" /> : 
+                    <FiTrendingUp className="mr-1" />
+                  }
+                  {Math.abs(expenseChange).toFixed(1)}%
+                </span>
+              ) : (
+                <span className="ml-2 text-xs text-gray-400" title="Belum ada data periode sebelumnya">—</span>
+              )}
             </div>
           </div>
           

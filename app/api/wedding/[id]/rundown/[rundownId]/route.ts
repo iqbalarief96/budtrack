@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma'; // Adjust path depth
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 const prismaFallback = new PrismaClient();
 const dbClient = prisma || prismaFallback;
@@ -11,8 +12,10 @@ export async function GET(
   { params }: { params: { id: string, rundownId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { rundownId } = params;
-    const item = await dbClient.rundown.findUnique({ where: { id: rundownId } });
+    const item = await dbClient.rundown.findFirst({ where: { id: rundownId, weddingId: params.id } });
     if (!item) return NextResponse.json({ error: 'Rundown item not found' }, { status: 404 });
     return NextResponse.json(item);
   } catch (error) {
@@ -27,6 +30,8 @@ export async function PUT(
   { params }: { params: { id: string, rundownId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, rundownId } = params; // Correctly destructure weddingId from id
     if (!weddingId || !rundownId) { // Check both IDs
       return NextResponse.json({ error: 'Wedding ID and Rundown Item ID are required' }, { status: 400 });
@@ -52,8 +57,8 @@ export async function PUT(
     );
 
      // Check if item exists
-     const existingItem = await dbClient.rundown.findUnique({
-       where: { id: rundownId },
+     const existingItem = await dbClient.rundown.findFirst({
+       where: { id: rundownId, weddingId: params.id },
      });
  
      if (!existingItem) {
@@ -94,14 +99,16 @@ export async function DELETE(
   { params }: { params: { id: string, rundownId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { rundownId } = params;
     if (!rundownId) {
       return NextResponse.json({ error: 'Rundown Item ID is required' }, { status: 400 });
     }
 
     // Check if item exists
-    const existingItem = await dbClient.rundown.findUnique({
-      where: { id: rundownId },
+    const existingItem = await dbClient.rundown.findFirst({
+      where: { id: rundownId, weddingId: params.id },
     });
 
     if (!existingItem) {

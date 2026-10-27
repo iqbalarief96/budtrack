@@ -21,7 +21,7 @@ import { calculateTrend, type TrendResult } from '@/lib/trend'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
-import { calculateGoalReserve, calculateMonthlySafeToSpend } from '@/lib/safeToSpendSummary'
+import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateRemainingBudget } from '@/lib/safeToSpendSummary'
 import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
 
 // Register ChartJS components
@@ -595,7 +595,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     ? Math.round(filteredBudgets.reduce((sum, budget) => sum + ((budget.spent || 0) / Math.max(budget.amount || 1, 1)), 0) / filteredBudgets.length * 100)
     : 0
   const dataQualityScore = Math.min(100, Math.round((Math.min(transactionCount, 20) / 20) * 70 + (filteredBudgets.length ? 15 : 0) + (selectedWallet ? 15 : 0)))
-  const healthScore = Math.max(0, Math.min(100, 70 + (netCashflow >= 0 ? 10 : -15) - (negativeWallets.length ? 20 : 0) - (budgetUsage > 90 ? 15 : 0) + (dataQualityScore >= 60 ? 5 : -5)))
+  // Don't score with too little data: a constant baseline (it used to show 75 "Good"
+  // for a brand-new empty account) is misleading in a finance app.
+  const MIN_TX_FOR_HEALTH_SCORE = 5
+  const hasEnoughDataForHealth = transactionCount >= MIN_TX_FOR_HEALTH_SCORE
+  const healthScore: number | null = hasEnoughDataForHealth
+    ? Math.max(0, Math.min(100, 70 + (netCashflow > 0 ? 10 : netCashflow < 0 ? -15 : 0) - (negativeWallets.length ? 20 : 0) - (budgetUsage > 90 ? 15 : 0) + (dataQualityScore >= 60 ? 5 : -5)))
+    : null
   const todayAction = negativeWallets.length
     ? { title: 'Beresin saldo negatif', description: `${negativeWallets[0].name} perlu dicek/reconcile.`, href: '/wallets' }
     : !filteredBudgets.length
@@ -617,9 +623,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const totalRemainingGoal = activeGoals.reduce((sum, g) => sum + Math.max((g.target || 0) - (g.current || 0), 0), 0)
   // ponytail: goalReserve pakai heuristik (10% saldo atau sisa goal/12). Upgrade: pakai /api/goals/projections kalau butuh akurasi.
   const goalReserve = calculateGoalReserve({ balance: displayBalance, remainingGoalAmount: totalRemainingGoal })
+  // displayBalance is the actual wallet balance (already net of expenses), so
+  // reserve only budget that is still unspent — not expenses that already happened.
+  const remainingBudget = calculateRemainingBudget(filteredBudgets)
   const safeToSpend = calculateMonthlySafeToSpend({
     balance: displayBalance,
-    monthlyExpense: summary.expense,
+    remainingBudget,
     outstandingBills: sharedBillsSummary.outstandingAmount,
     goalReserve,
   })
@@ -867,11 +876,11 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                 <h3 className="text-blue-100">Safe to spend</h3>
                 <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
                 <p className="mt-2 text-xs text-blue-100">
-                  Saldo - expense - bills - goal reserve
+                  Saldo - sisa budget - bills - goal reserve
                 </p>
                 <div className="mt-3 grid gap-1 text-xs text-blue-50 sm:grid-cols-4">
                   <span>Saldo {formatCurrency(displayBalance)}</span>
-                  <span>Expense -{formatCurrency(summary.expense)}</span>
+                  <span>Sisa budget -{formatCurrency(remainingBudget)}</span>
                   <span>Bills -{formatCurrency(sharedBillsSummary.outstandingAmount)}</span>
                   <span>Reserve -{formatCurrency(goalReserve)}</span>
                 </div>
@@ -911,12 +920,20 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <p className="text-sm text-gray-500">Financial Health</p>
           <div className="mt-1 flex items-baseline gap-2">
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore}</p>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-              {healthScore >= 70 ? 'Good' : healthScore >= 45 ? 'Watch' : 'Risk'}
-            </span>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore ?? '—'}</p>
+            {healthScore !== null ? (
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                {healthScore >= 70 ? 'Good' : healthScore >= 45 ? 'Watch' : 'Risk'}
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Belum cukup data</span>
+            )}
           </div>
-          <p className="mt-2 text-xs text-gray-500">Budget {budgetUsage}% • data quality {dataQualityLabel}</p>
+          <p className="mt-2 text-xs text-gray-500">
+            {healthScore !== null
+              ? <>Budget {budgetUsage}% • data quality {dataQualityLabel}</>
+              : <>Butuh minimal {MIN_TX_FOR_HEALTH_SCORE} transaksi (sekarang {transactionCount})</>}
+          </p>
           {negativeWallets.length > 0 && <p className="mt-1 text-xs text-red-600">• {negativeWallets.length} wallet negatif</p>}
         </div>
 

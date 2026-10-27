@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateTransactionBalance } from '@/lib/safeToSpendSummary';
+import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateRemainingBudget, calculateTransactionBalance } from '@/lib/safeToSpendSummary';
 import { listSharedBills } from '@/lib/shared-bills/shared-bill-service';
 
 export const dynamic = 'force-dynamic';
@@ -118,9 +118,11 @@ export async function GET(request: NextRequest) {
     const paidAmount = bill.participants.reduce((paid, participant) => paid + participant.paidAmount, 0);
     return sum + Math.max(0, bill.totalAmount - paidAmount);
   }, 0);
+  // calculatedBalance is already net of this month's expenses; only reserve
+  // what is still budgeted-but-unspent.
   const safeToSpend = calculateMonthlySafeToSpend({
     balance: calculatedBalance,
-    monthlyExpense: totalExpense,
+    remainingBudget: calculateRemainingBudget(budgets),
     outstandingBills,
     goalReserve,
   });

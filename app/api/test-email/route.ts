@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { testBrevoEmail } from "@/lib/test-brevo";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json();
-    
-    if (!email) {
+    // Must be logged in, and can only send to your own address — otherwise
+    // this endpoint is an open relay that burns the Brevo quota.
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+
+    if (!session?.user?.id || !email) {
       return NextResponse.json(
-        { success: false, message: "Missing email parameter" },
-        { status: 400 }
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
       );
     }
     
