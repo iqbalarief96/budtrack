@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const walletId = searchParams.get('walletId')
   const walletGroupId = searchParams.get('walletGroupId')
+  const walletIdsParam = searchParams.get('walletIds')
+  const walletIds = walletIdsParam ? walletIdsParam.split(',').filter(Boolean) : null
   const mode: SafeToSpendMode = searchParams.get('mode') === 'forward' ? 'forward' : 'conservative'
 
-  const scope = await resolveSafeToSpendScope(userId, { walletId, walletGroupId })
+  const scope = await resolveSafeToSpendScope(userId, { walletId, walletGroupId, walletIds })
   if (scope.walletIds.length === 0) {
     return NextResponse.json({ error: 'No wallets in scope' }, { status: 404 })
   }

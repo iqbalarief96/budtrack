@@ -73,7 +73,13 @@ interface Props {
 }
 
 const DashboardContent = ({ budgets = [] }: Props) => {
-  const { wallets, selectedWallet, refreshWallets, selectedGroup, isGroupSelected } = useWallet()
+  const { wallets, selectedWallet, refreshWallets, selectedGroup, isGroupSelected, dashboardScopeWalletIds, dashboardScopeLabel } = useWallet()
+
+  // Non-group dashboard scope: a set of wallet ids (one wallet, or all wallets
+  // of a type). `scopeKey` is a stable primitive for effect dependencies.
+  const scopeWalletIds = dashboardScopeWalletIds
+  const scopeKey = scopeWalletIds.join(',')
+  const scopeSet = React.useMemo(() => new Set(scopeWalletIds), [scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // React Query hooks for data fetching
   const [selectedPeriod, setSelectedPeriod] = useState('all')
@@ -195,7 +201,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       try {
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
-        if (!isGroupSelected && selectedWallet?.id) params.set('walletId', selectedWallet.id)
+        else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
         const response = await fetch(`/api/shared-bills?${params.toString()}`)
         if (!response.ok) return
@@ -210,7 +216,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
 
     fetchSharedBillsSummary()
-  }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
+  }, [isGroupSelected, selectedGroup?.id, scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Safe to spend is computed server-side (it needs bills/recurring/credit-card
   // data the dashboard doesn't load) so the number stays consistent everywhere.
@@ -219,7 +225,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       try {
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
-        if (!isGroupSelected && selectedWallet?.id) params.set('walletId', selectedWallet.id)
+        else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
         const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`)
         if (!response.ok) {
@@ -234,7 +240,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
 
     fetchSafeToSpend()
-  }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
+  }, [isGroupSelected, selectedGroup?.id, scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved widget state from localStorage on component initialization
   const getSavedWidgets = () => {
@@ -385,21 +391,21 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       const groupWalletIds = selectedGroup.wallets.map(w => w.walletId)
       return allBudgets?.filter(budget => groupWalletIds.includes(budget.walletId)) || []
     }
-    if (selectedWallet && allBudgets) {
-      return allBudgets.filter(budget => budget.walletId === selectedWallet.id)
+    if (scopeWalletIds.length > 0 && allBudgets) {
+      return allBudgets.filter(budget => scopeSet.has(budget.walletId))
     }
     return allBudgets || []
-  }, [isGroupSelected, selectedGroup, selectedWallet, allBudgets])
+  }, [isGroupSelected, selectedGroup, scopeKey, allBudgets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Calculate totals and filter transactions when wallet or transaction data changes
   useEffect(() => {
     // Skip if group is selected - we use group dashboard data instead
     if (isGroupSelected) return
 
-    if (selectedWallet && allTransactions.length > 0) {
-      // Filter transaksi untuk wallet yang dipilih
+    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
+      // Filter transaksi untuk wallet dalam scope (1 wallet atau gabungan 1 tipe)
       let filteredTx = allTransactions.filter(
-        (tx) => tx.walletId === selectedWallet.id
+        (tx) => scopeSet.has(tx.walletId)
       );
 
       // Filter transaksi berdasarkan periode waktu
@@ -476,7 +482,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         expense,
       });
     }
-  }, [selectedWallet, allTransactions, selectedPeriod, isGroupSelected]);
+  }, [scopeKey, allTransactions, selectedPeriod, isGroupSelected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Savings data is now fetched via React Query hook (useEmergencyFund)
 
@@ -488,10 +494,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       return
     }
 
-    if (selectedWallet && allTransactions.length > 0) {
-      console.log('[DashboardContent] Calculating spendingByCategory for individual wallet:', selectedWallet.id)
+    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
       const walletTxs = allTransactions.filter(tx =>
-        tx.walletId === selectedWallet.id &&
+        scopeSet.has(tx.walletId) &&
         tx.type === 'EXPENSE' &&
         tx.category !== null && tx.category !== undefined  // Filter out transactions without category
       )
@@ -520,14 +525,14 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
       setSpendingByCategory(result.sort((a, b) => b.amount - a.amount))
     }
-  }, [selectedWallet, allTransactions, isGroupSelected])
+  }, [scopeKey, allTransactions, isGroupSelected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get monthly transaction history data for the bar chart
   useEffect(() => {
     // Skip if group is selected - we use group dashboard data instead
     if (isGroupSelected) return
 
-    if (selectedWallet && allTransactions.length > 0) {
+    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
       const now = new Date()
       const sixMonthsAgo = new Date()
       sixMonthsAgo.setMonth(now.getMonth() - 5)
@@ -546,7 +551,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
       // Fill in transaction data
       allTransactions.forEach(tx => {
-        if (tx.walletId !== selectedWallet.id) return
+        if (!scopeSet.has(tx.walletId)) return
 
         const txDate = new Date(tx.date)
         if (txDate < sixMonthsAgo) return
@@ -567,7 +572,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
       setTransactionHistory(months)
     }
-  }, [selectedWallet, allTransactions, isGroupSelected])
+  }, [scopeKey, allTransactions, isGroupSelected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -594,7 +599,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
   // Calculate financial stats
   const calculateFinancialStats = () => {
-    if (!selectedWallet && !isGroupSelected) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
+    if (scopeWalletIds.length === 0 && !isGroupSelected) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
 
     // Calculate savings rate (income - expense) / income
     const savingsRate = summary.income > 0
@@ -614,10 +619,12 @@ const DashboardContent = ({ budgets = [] }: Props) => {
 
   const stats = calculateFinancialStats()
 
-  // Source-of-truth balance: actual wallet/group balance, not period cashflow
+  // Source-of-truth balance: actual wallet/group balance, not period cashflow.
+  // For a non-group scope, sum the balances of every wallet in scope (one
+  // wallet, or all wallets of a type).
   const displayBalance = isGroupSelected
     ? (groupDashboardData?.totalBalance ?? summary.total)
-    : (selectedWallet?.balance ?? 0)
+    : wallets.filter((w) => scopeSet.has(w.id)).reduce((s, w) => s + (w.balance ?? 0), 0)
   const netCashflow = summary.income - summary.expense
   const periodLabelMap: Record<string, string> = {
     all: 'Semua waktu', daily: 'Hari ini', weekly: '7 hari', monthly: 'Bulan ini', quarterly: '3 bulan', yearly: 'Tahun ini',
@@ -628,7 +635,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const budgetUsage = filteredBudgets.length
     ? Math.round(filteredBudgets.reduce((sum, budget) => sum + ((budget.spent || 0) / Math.max(budget.amount || 1, 1)), 0) / filteredBudgets.length * 100)
     : 0
-  const dataQualityScore = Math.min(100, Math.round((Math.min(transactionCount, 20) / 20) * 70 + (filteredBudgets.length ? 15 : 0) + (selectedWallet ? 15 : 0)))
+  const dataQualityScore = Math.min(100, Math.round((Math.min(transactionCount, 20) / 20) * 70 + (filteredBudgets.length ? 15 : 0) + (scopeWalletIds.length ? 15 : 0)))
   // Don't score with too little data: a constant baseline (it used to show 75 "Good"
   // for a brand-new empty account) is misleading in a finance app.
   const MIN_TX_FOR_HEALTH_SCORE = 5
@@ -811,14 +818,14 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   };
 
-  if (!selectedWallet && !isGroupSelected) {
+  if (scopeWalletIds.length === 0 && !isGroupSelected) {
     return <div>Loading...</div>
   }
 
   // Get display name for header
   const displayName = isGroupSelected && selectedGroup
     ? selectedGroup.name
-    : selectedWallet?.name || 'Personal'
+    : dashboardScopeLabel || selectedWallet?.name || 'Personal'
 
   return (
     <div className="space-y-6">
