@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { generateAIResponse } from '@/lib/ai'
+import { resolveAIConfig } from '@/lib/ai-settings'
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
       }
     })
 
-    if (!settings?.provider || !settings?.apiKey || !settings?.selectedModel) {
+    const aiConfig = resolveAIConfig(settings)
+    if (!aiConfig) {
       return NextResponse.json(
         { error: 'AI settings not configured. Please configure your AI settings first.' },
         { status: 400 }
@@ -34,17 +36,19 @@ export async function POST(request: Request) {
     // Generate summary using AI
     const summary = await generateAIResponse({
       prompt: summaryPrompt,
-      provider: settings.provider,
-      apiKey: settings.apiKey,
-      model: settings.selectedModel
+      provider: aiConfig.provider,
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint
     })
 
     // Generate detailed analysis using AI
     const analysis = await generateAIResponse({
       prompt: analysisPrompt,
-      provider: settings.provider,
-      apiKey: settings.apiKey,
-      model: settings.selectedModel
+      provider: aiConfig.provider,
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint
     })
 
     return NextResponse.json({

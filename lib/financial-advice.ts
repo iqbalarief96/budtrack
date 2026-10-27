@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma'
 import { generateAIResponse } from '@/lib/ai'
+import { resolveAIConfig } from '@/lib/ai-settings'
 
 interface SpendingPattern {
   categoryName: string
@@ -40,7 +41,8 @@ export async function generatePersonalizedAdvice(
       where: { userId }
     });
 
-    if (!userSettings?.apiKey || !userSettings?.provider || !userSettings?.selectedModel) {
+    const aiConfig = resolveAIConfig(userSettings);
+    if (!aiConfig) {
       throw new Error('AI settings not configured. Please configure AI settings in your profile.');
     }
 
@@ -53,9 +55,10 @@ export async function generatePersonalizedAdvice(
     // 3. Generate advice using AI
     const adviceText = await generateAIResponse({
       prompt,
-      provider: userSettings.provider,
-      apiKey: userSettings.apiKey,
-      model: userSettings.selectedModel
+      provider: aiConfig.provider,
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint
     });
     
     // 4. Parse the AI response into structured advice

@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { generateAIResponse } from '@/lib/ai';
+import { resolveAIConfig } from '@/lib/ai-settings';
 
 type AdvicePriority = 'high' | 'medium' | 'low';
 type AdviceType = 'saving' | 'budgeting' | 'investment' | 'general';
@@ -205,7 +206,8 @@ export async function POST(request: Request) {
     };
 
     const baseAdvices = await (async () => {
-      if (!userSettings?.provider || !userSettings.apiKey || !userSettings.selectedModel) {
+      const aiConfig = resolveAIConfig(userSettings);
+      if (!aiConfig) {
         return { source: 'fallback' as const, advices: buildFallbackAdvices(strongStats) };
       }
 
@@ -234,9 +236,10 @@ Return ONLY valid JSON array (no commentary).`;
       try {
         const aiResponseText = await generateAIResponse({
           prompt,
-          provider: userSettings.provider,
-          apiKey: userSettings.apiKey,
-          model: userSettings.selectedModel,
+          provider: aiConfig.provider,
+          apiKey: aiConfig.apiKey,
+          model: aiConfig.model,
+          customEndpoint: aiConfig.customEndpoint,
         });
 
         const parsed = JSON.parse(aiResponseText);

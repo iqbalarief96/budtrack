@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTransactions } from '../../hooks/useTransactions';
 import { processVoiceTransaction } from '@/lib/voice-recognition';
+import { resolveAIConfig } from '@/lib/ai-settings';
 import TransactionModal from './TransactionModal';
 
 type VoiceTransactionRecorderProps = {
@@ -27,6 +28,7 @@ export function VoiceTransactionRecorder({ onClose, onSuccess }: VoiceTransactio
     provider: string;
     apiKey: string;
     selectedModel: string;
+    customEndpoint: string | null;
   } | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
@@ -45,11 +47,13 @@ export function VoiceTransactionRecorder({ onClose, onSuccess }: VoiceTransactio
         const response = await fetch('/api/settings');
         if (response.ok) {
           const data = await response.json();
+          const aiConfig = resolveAIConfig(data, { provider: 'openrouter', model: 'openai/gpt-3.5-turbo' });
           setSettings({
             language: data.language || 'id-ID',
             provider: data.provider || 'openrouter',
-            apiKey: data.apiKey || '',
-            selectedModel: data.selectedModel || 'openai/gpt-3.5-turbo'
+            apiKey: aiConfig?.apiKey || '',
+            selectedModel: data.selectedModel || 'openai/gpt-3.5-turbo',
+            customEndpoint: aiConfig?.customEndpoint ?? null
           });
         }
       } catch (error) {

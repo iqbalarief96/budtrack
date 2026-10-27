@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { formatCurrency } from '@/lib/utils';
 import { generateAIResponse } from '@/lib/ai';
+import { resolveAIConfig } from '@/lib/ai-settings';
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,7 +88,10 @@ export async function POST(request: NextRequest) {
     let aiMultiplier = 0; // Add declaration here for wider scope
     
     // Check if user has AI settings configured
-    if (user.settings?.provider && user.settings?.apiKey) {
+    const aiConfig = resolveAIConfig(user.settings, {
+      model: user.settings?.provider === 'deepseek' ? 'deepseek-chat' : 'google/gemini-pro'
+    });
+    if (aiConfig) {
       try {
         // Format transaction data for the AI
         const transactionsSummary = essentialExpenses.slice(0, 20).map(tx => {
@@ -126,15 +130,16 @@ export async function POST(request: NextRequest) {
         
         // Call the AI with user's settings
         const aiResponse = await generateAIResponse({
-          provider: user.settings.provider,
-          model: user.settings.selectedModel || (user.settings.provider === 'deepseek' ? 'deepseek-chat' : 'google/gemini-pro'),
-          apiKey: user.settings.apiKey,
+          provider: aiConfig.provider,
+          model: aiConfig.model,
+          apiKey: aiConfig.apiKey,
+          customEndpoint: aiConfig.customEndpoint,
           prompt: prompt
         });
         
         console.log('AI response received:', aiResponse);
-        console.log('AI provider:', user.settings.provider);
-        console.log('AI model:', user.settings.selectedModel || (user.settings.provider === 'deepseek' ? 'deepseek-chat' : 'google/gemini-pro'));
+        console.log('AI provider:', aiConfig.provider);
+        console.log('AI model:', aiConfig.model);
         
         // Parse the AI response - try multiple patterns since AI might format responses differently
         let multiplierMatch = aiResponse.match(/[*]?Multiplier:?\s*([3-6](\.\d+)?)/i) || 

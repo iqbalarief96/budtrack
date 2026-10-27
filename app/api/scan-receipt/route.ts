@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { processReceipt } from '@/lib/receipt-scanner';
+import { resolveProviderApiKey } from '@/lib/ai-settings';
 
 export async function POST(request: NextRequest) {
     try {
@@ -97,7 +98,9 @@ export async function POST(request: NextRequest) {
             geminiApiKey: userSettings.geminiApiKey,
             defaultApiKey: userSettings.apiKey,
             defaultProvider: userSettings.provider,
-            googleVisionCredentials: userSettings.googleVisionCredentials
+            googleVisionCredentials: userSettings.googleVisionCredentials,
+            providerApiKey: resolveProviderApiKey(userSettings),
+            customEndpoint: userSettings.provider === 'custom' ? userSettings.customEndpoint : null
         };
 
         console.log('[SCAN-RECEIPT] Processing receipt with model:', model || 'google/gemini-2.0-flash-exp:free');
