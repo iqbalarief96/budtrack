@@ -123,16 +123,23 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Target tidak valid' }, { status: 400 })
   }
 
-  const wallet = await prisma.wallet.findFirst({ where: { id: walletId, userId }, select: { id: true } })
-  if (!wallet) return NextResponse.json({ error: 'Dompet tidak ditemukan' }, { status: 404 })
-
-  const [active, userFund] = await Promise.all([
+  const [wallets, active, userFund] = await Promise.all([
+    prisma.wallet.findMany({ where: { userId }, select: { id: true, type: true } }),
     prisma.walletEmergencyFund.findMany({ where: { userId, isActive: true, targetAmount: { gt: 0 } } }),
     prisma.emergencyFund.findUnique({ where: { userId } }),
   ])
-  const carriedTarget =
+  if (!wallets.some((w) => w.id === walletId)) return NextResponse.json({ error: 'Dompet tidak ditemukan' }, { status: 404 })
+
+  // Same order as GET: marked target, then the user-level target, then the
+  // suggested 3x monthly consumption shown on the card. Rp 5.000.000 only
+  // when there's no spending history to base a suggestion on.
+  let carriedTarget =
     newTarget ??
-    (active.reduce((s, m) => s + m.targetAmount, 0) || (userFund && userFund.targetAmount > 1 ? userFund.targetAmount : 0) || 5_000_000)
+    (active.reduce((s, m) => s + m.targetAmount, 0) || (userFund && userFund.targetAmount > 1 ? userFund.targetAmount : 0))
+  if (!carriedTarget) {
+    const spendingWalletIds = wallets.filter((w) => (w.type || 'MAIN').toUpperCase() === 'MAIN').map((w) => w.id)
+    carriedTarget = (await avgMonthlyConsumption(userId, spendingWalletIds)) * 3 || 5_000_000
+  }
 
   await prisma.$transaction([
     prisma.walletEmergencyFund.updateMany({ where: { userId, walletId: { not: walletId } }, data: { isActive: false } }),
@@ -141,6 +148,8 @@ export async function PUT(req: NextRequest) {
       create: { walletId, userId, targetAmount: carriedTarget, isActive: true },
       update: { targetAmount: carriedTarget, isActive: true },
     }),
+    // One canonical target: keep the user-level fund (read by other views) in sync.
+    ...(newTarget !== null ? [prisma.emergencyFund.updateMany({ where: { userId }, data: { targetAmount: newTarget } })] : []),
   ])
 
   return NextResponse.json({ success: true, walletId, targetAmount: carriedTarget })

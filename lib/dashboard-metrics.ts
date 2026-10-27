@@ -228,6 +228,8 @@ export type MonthlyFlow = {
   income: number
   expense: number
   saved: number
+  /** Change of the scope's balance (savings leaving the scope subtracted). */
+  net: number
   /** True for the current, still-running month. */
   partial: boolean
 }
@@ -250,6 +252,7 @@ export function monthlyFlows(
       income: t.income,
       expense: t.expense,
       saved: t.saved,
+      net: t.net,
       partial: i === 0,
     })
   }
@@ -257,13 +260,15 @@ export function monthlyFlows(
 }
 
 /**
- * Average monthly (income - consumption) over the last `n` COMPLETE months that
- * have activity: what the user can realistically put toward goals per month.
+ * Average monthly scope net over the last `n` COMPLETE months that have
+ * activity: what's actually left over per month. Money already moved out of
+ * the scope into savings is allocated, so it doesn't count again (within an
+ * "all wallets" scope those transfers are internal and stay included).
  */
 export function averageMonthlySurplus(history: MonthlyFlow[], n = 3): number | null {
-  const complete = history.filter((m) => !m.partial && (m.income > 0 || m.expense > 0)).slice(-n)
+  const complete = history.filter((m) => !m.partial && (m.income > 0 || m.expense > 0 || m.saved > 0)).slice(-n)
   if (!complete.length) return null
-  return complete.reduce((s, m) => s + (m.income - m.expense), 0) / complete.length
+  return complete.reduce((s, m) => s + m.net, 0) / complete.length
 }
 
 // ---------------------------------------------------------------------------
