@@ -34,8 +34,12 @@ export default function EmergencyFundOverviewCard() {
   const [editingTarget, setEditingTarget] = useState(false)
   const [targetInput, setTargetInput] = useState('')
 
+  // Balances change on every transaction; keying on them keeps the card fresh
+  // even for writes that don't go through the react-query mutation hooks.
+  const balanceKey = wallets.map((w) => `${w.id}:${w.balance ?? 0}`).join('|')
   const { data, isLoading, error } = useQuery<Overview>({
-    queryKey: QUERY_KEY,
+    queryKey: [...QUERY_KEY, balanceKey],
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const res = await fetch('/api/emergency-fund/overview')
       if (!res.ok) throw new Error('Gagal memuat dana darurat')
