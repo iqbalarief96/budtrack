@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
             defaultProvider: userSettings.provider,
             googleVisionCredentials: userSettings.googleVisionCredentials,
             providerApiKey: resolveProviderApiKey(userSettings),
-            customEndpoint: userSettings.provider === 'custom' ? userSettings.customEndpoint : null
+            customEndpoint: userSettings.provider === 'custom' ? userSettings.customEndpoint : null,
+            selectedModel: userSettings.selectedModel
         };
 
         console.log('[SCAN-RECEIPT] Processing receipt with model:', model || 'google/gemini-2.0-flash-exp:free');

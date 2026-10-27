@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { generateAIResponse } from "@/lib/ai";
+import { resolveAIConfig } from "@/lib/ai-settings";
 
 // POST /api/ai/explain-risk-profile
 export async function POST(request: NextRequest) {
@@ -30,11 +32,17 @@ export async function POST(request: NextRequest) {
       select: {
         provider: true,
         apiKey: true,
+        deepseekApiKey: true,
+        openrouterApiKey: true,
+        zaiApiKey: true,
+        customApiKey: true,
+        customEndpoint: true,
         selectedModel: true
       }
     });
 
-    if (!userSettings?.provider || !userSettings?.apiKey || !userSettings?.selectedModel) {
+    const aiConfig = resolveAIConfig(userSettings);
+    if (!aiConfig) {
       return NextResponse.json({ 
         error: "Pengaturan AI belum dikonfigurasi. Silakan atur di halaman Pengaturan." 
       }, { status: 400 });
@@ -49,19 +57,23 @@ dan pertimbangan utama bagi mereka. Gunakan bahasa yang mudah dipahami.
 Jawaban:`;
 
     let aiResponse;
-    const { provider, apiKey, selectedModel } = userSettings;
 
-    // Panggil API AI yang sesuai berdasarkan provider
-    if (provider === 'openai') {
-      aiResponse = await callOpenAI(prompt, apiKey, selectedModel);
-    } else if (provider === 'deepseek') {
-      aiResponse = await callDeepSeek(prompt, apiKey, selectedModel);
-    } else if (provider === 'openrouter') {
-      aiResponse = await callOpenRouter(prompt, apiKey, selectedModel);
+    // 'openai' isn't a provider the shared client supports (legacy settings
+    // only), so keep the direct call for it. Every other provider — deepseek,
+    // openrouter, zai and the Custom Endpoint — goes through the shared client,
+    // which handles per-provider URLs/keys and the user's custom endpoint.
+    if (aiConfig.provider === 'openai') {
+      aiResponse = await callOpenAI(prompt, aiConfig.apiKey, aiConfig.model);
     } else {
-      return NextResponse.json({ 
-        error: `Provider AI '${provider}' tidak didukung.` 
-      }, { status: 400 });
+      aiResponse = await generateAIResponse({
+        prompt,
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        customEndpoint: aiConfig.customEndpoint,
+        temperature: 0.7,
+        maxTokens: 500,
+      });
     }
 
     if (!aiResponse) {
@@ -74,8 +86,10 @@ Jawaban:`;
     });
   } catch (error: any) {
     console.error("Error getting AI explanation:", error);
+    // Don't echo provider error bodies to the browser (may contain secrets);
+    // the full error is in the server log above.
     return NextResponse.json(
-      { error: `Terjadi kesalahan saat mendapatkan penjelasan AI: ${error.message}` }, 
+      { error: "Terjadi kesalahan saat mendapatkan penjelasan AI. Coba lagi atau cek pengaturan AI." }, 
       { status: 500 }
     );
   }
@@ -110,65 +124,3 @@ async function callOpenAI(prompt: string, apiKey: string, model: string): Promis
     throw error;
   }
 }
-
-// Fungsi untuk memanggil DeepSeek API
-async function callDeepSeek(prompt: string, apiKey: string, model: string): Promise<string> {
-  try {
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 500
-      })
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
-    }
-    
-    return data.choices[0]?.message?.content || 'No content generated';
-  } catch (error) {
-    console.error('DeepSeek API error:', error);
-    throw error;
-  }
-}
-
-// Fungsi untuk memanggil OpenRouter API
-async function callOpenRouter(prompt: string, apiKey: string, model: string): Promise<string> {
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://budtrack.app',
-        'X-Title': 'BudTrack'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 500
-      })
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'OpenRouter API error');
-    }
-    
-    return data.choices[0]?.message?.content || 'No content generated';
-  } catch (error) {
-    console.error('OpenRouter API error:', error);
-    throw error;
-  }
-} 

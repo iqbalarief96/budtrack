@@ -1,4 +1,5 @@
 import { generateVisionResponse } from './ai'
+import { resolveAIConfig } from './ai-settings'
 import path from 'path'
 import os from 'os'
 
@@ -145,7 +146,21 @@ export async function parseScaleReportImage(
     }
   }
 
-  // 2. Fallback ke konfigurasi API userSettings BudTrack jika lokal tidak berhasil
+  // 2a. Custom Endpoint dari Settings: kirim gambar ke endpoint user sendiri
+  // (sebelumnya provider 'custom' jatuh ke OpenRouter dan selalu gagal).
+  const aiConfig = resolveAIConfig(userSettings)
+  if (!responseText && aiConfig?.provider === 'custom') {
+    responseText = await generateVisionResponse({
+      prompt: SCALE_OCR_PROMPT,
+      imageBase64,
+      provider: 'custom',
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint,
+    })
+  }
+
+  // 2b. Fallback ke konfigurasi API userSettings BudTrack jika lokal tidak berhasil
   if (!responseText) {
     const provider = userSettings?.provider || 'openai'
     const apiKey =

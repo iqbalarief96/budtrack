@@ -491,6 +491,26 @@ export async function generateVisionResponse(params: AIRequestParams & { imageBa
       throw new Error('No API key provided. Please configure your API key in Settings.');
     }
 
+    // Custom (OpenAI-compatible) endpoint: send a multimodal chat completion to
+    // the user's own endpoint. Previously 'custom' fell through to the
+    // OpenRouter branch below, which sent the custom endpoint's key to
+    // openrouter.ai (always failing, and leaking the key to a third party).
+    if (provider === 'custom') {
+      const dataUrl = imageBase64.startsWith('data:image')
+        ? imageBase64
+        : `data:image/jpeg;base64,${imageBase64}`;
+      return await postChatCompletion(
+        { ...params, temperature: 0.1, maxTokens: params.maxTokens ?? 2000, timeoutMs: params.timeoutMs ?? 60000 },
+        [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        }]
+      );
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for images
 

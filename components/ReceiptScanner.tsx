@@ -13,7 +13,8 @@ interface ReceiptScannerProps {
 
 const MODELS = [
     { id: 'openai/gpt-4o', name: '✨ GPT-4o (Best Quality - Recommended)', provider: 'openai' },
-    { id: 'google-vision-ai', name: '🚀 Google Vision + DeepSeek (Cepat & Akurat!)', provider: 'hybrid' },
+    { id: 'google-vision-ai', name: '🚀 Google Vision + AI Pengaturan (Cepat & Akurat!)', provider: 'hybrid' },
+    { id: 'custom-endpoint', name: '🔌 Custom Endpoint (model dari Pengaturan)', provider: 'custom' },
     { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (Lebih murah)', provider: 'openai' },
     { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Gratis)', provider: 'openrouter' },
     { id: 'google/gemini-flash-1.5', name: 'Gemini 1.5 Flash (Butuh Gemini API key)', provider: 'google' },
@@ -22,7 +23,8 @@ const MODELS = [
 
 const MODEL_DESCRIPTIONS: Record<string, string> = {
     'openai/gpt-4o': 'AI vision terbaik! Sangat akurat untuk semua jenis struk. Recommended untuk hasil terbaik.',
-    'google-vision-ai': 'Hybrid: Google Vision (OCR cepat) + DeepSeek (parsing pintar). Best of both worlds! Butuh Google Vision credentials + DeepSeek API key.',
+    'google-vision-ai': 'Hybrid: Google Vision (OCR cepat) + AI dari Pengaturan (DeepSeek / Custom Endpoint / dll) buat parsing. Butuh Google Vision credentials + AI yang udah diatur.',
+    'custom-endpoint': 'Kirim foto struk ke Custom Endpoint lo pakai model yang dipilih di Pengaturan. Model-nya harus bisa baca gambar (vision).',
     'openai/gpt-4o-mini': 'Versi lebih murah dari GPT-4o, masih sangat akurat.',
     'google/gemini-2.0-flash-exp:free': 'Model gratis dari Google. Akurat dan cepat, bisa rate-limited saat ramai.',
     'google/gemini-flash-1.5': 'Model Gemini yang cepat dan akurat. Butuh Gemini API key.',
