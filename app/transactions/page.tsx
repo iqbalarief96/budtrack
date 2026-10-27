@@ -63,6 +63,10 @@ const AI_MODE_KEY = 'budtrack_insights_ai_mode';
 const PERIOD_KEY = 'budtrack_insights_period';
 const INSIGHTS_CACHE_KEY = 'budtrack_insights_cache';
 const WALLET_INSIGHTS_TIMESTAMP_KEY = 'budtrack_insights_timestamp';
+// Cache per wallet AND per AI mode, so non-AI insights never get served while
+// AI Mode is on (and vice versa).
+const insightsCacheKey = (walletId: string, ai: boolean) => `${INSIGHTS_CACHE_KEY}_${walletId}_${ai ? 'ai' : 'base'}`;
+const insightsTimestampKey = (walletId: string, ai: boolean) => `${WALLET_INSIGHTS_TIMESTAMP_KEY}_${walletId}_${ai ? 'ai' : 'base'}`;
 
 const TransactionsPage = () => {
   const router = useRouter()
@@ -90,6 +94,11 @@ const TransactionsPage = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' })
   const [insights, setInsights] = useState<Insight[]>([])
   const [insightsLoading, setInsightsLoading] = useState(false)
+  // Result of the last AI insights request (null when AI Mode is off).
+  const [aiStatus, setAiStatus] = useState<{ status: 'ok' | 'failed' | 'not_configured'; message?: string; error?: string } | null>(null)
+  // Drops out-of-order insight responses (e.g. a slow AI call finishing after
+  // the user toggled AI Mode off).
+  const insightsRequestIdRef = useRef(0)
   const [totalIncome, setTotalIncome] = useState(0)
   const [totalExpense, setTotalExpense] = useState(0)
   const [useAI, setUseAI] = useState(false)
@@ -142,19 +151,23 @@ const TransactionsPage = () => {
       try {
         localStorage.setItem(AI_MODE_KEY, checked.toString());
 
-        // Clear cached insights to force a refresh
+        // Clear cached insights (both modes) to force a refresh
         if (selectedWallet) {
-          localStorage.removeItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`);
-          localStorage.removeItem(`${WALLET_INSIGHTS_TIMESTAMP_KEY}_${selectedWallet.id}`);
+          for (const mode of [true, false]) {
+            localStorage.removeItem(insightsCacheKey(selectedWallet.id, mode));
+            localStorage.removeItem(insightsTimestampKey(selectedWallet.id, mode));
+          }
         }
       } catch (error) {
         console.error('Error saving to localStorage:', error);
       }
     }
 
-    // Always fetch new insights when toggling AI mode
+    // Don't call fetchInsights() here: it would still see the OLD `useAI`
+    // (stale closure). The [selectedWallet, useAI] effect refetches with the
+    // new mode right after this state update.
     setInsightsLoading(true);
-    fetchInsights();
+    setAiStatus(null);
   };
 
   // Handle period change with localStorage persistence
@@ -387,28 +400,30 @@ const TransactionsPage = () => {
   const fetchInsights = async () => {
     if (!selectedWallet) return;
 
-    // Check if we have cached insights for this wallet
+    const walletId = selectedWallet.id;
+    const aiMode = useAI;
+    const requestId = ++insightsRequestIdRef.current;
+
+    // Check if we have cached insights for this wallet + mode
     let shouldFetchFromAPI = true;
 
     if (isClientSide) {
       try {
-        // Get the cached insights and timestamp
-        const cachedInsightsData = localStorage.getItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`);
-        const cachedTimestamp = localStorage.getItem(`${WALLET_INSIGHTS_TIMESTAMP_KEY}_${selectedWallet.id}`);
+        // Only successful AI results are cached in AI mode (see below), so a
+        // cache hit there means AI worked.
+        const cachedInsightsData = localStorage.getItem(insightsCacheKey(walletId, aiMode));
+        const cachedTimestamp = localStorage.getItem(insightsTimestampKey(walletId, aiMode));
 
         if (cachedInsightsData && cachedTimestamp) {
           // Check if cache is less than 1 hour old
           const timestamp = parseInt(cachedTimestamp, 10);
-          const now = Date.now();
-          const cacheAge = now - timestamp;
+          const cacheAge = Date.now() - timestamp;
           const ONE_HOUR = 60 * 60 * 1000;
 
           if (cacheAge < ONE_HOUR) {
-            // Use the cached insights
-            const parsedInsights = JSON.parse(cachedInsightsData);
-            setInsights(parsedInsights);
+            setInsights(JSON.parse(cachedInsightsData));
+            setAiStatus(aiMode ? { status: 'ok' } : null);
             setInsightsLoading(false);
-            console.log('Using cached insights');
             shouldFetchFromAPI = false;
           }
         }
@@ -422,12 +437,10 @@ const TransactionsPage = () => {
       setInsightsLoading(true);
       try {
         const queryParams = new URLSearchParams();
-        if (selectedWallet) {
-          queryParams.append('walletId', selectedWallet.id);
-        }
+        queryParams.append('walletId', walletId);
 
         // Add AI parameter
-        if (useAI) {
+        if (aiMode) {
           queryParams.append('useAI', 'true');
         }
 
@@ -435,22 +448,33 @@ const TransactionsPage = () => {
         if (!response.ok) throw new Error('Failed to fetch insights');
 
         const data = await response.json();
+        // A newer request (other wallet / toggled mode) superseded this one.
+        if (requestId !== insightsRequestIdRef.current) return;
+
         const newInsights = data.insights || [];
         setInsights(newInsights);
 
-        // Cache the insights and timestamp
-        if (isClientSide && selectedWallet) {
+        const status: 'ok' | 'failed' | 'not_configured' | undefined = data.aiStatus;
+        setAiStatus(aiMode ? { status: status ?? 'failed', message: data.message, error: data.aiError } : null);
+
+        // Cache, but never cache a failed AI attempt under the AI key: otherwise
+        // the fallback (non-AI) insights would be served as "AI" for an hour.
+        const cacheable = !aiMode || status === 'ok';
+        if (isClientSide && cacheable) {
           try {
-            localStorage.setItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`, JSON.stringify(newInsights));
-            localStorage.setItem(`${WALLET_INSIGHTS_TIMESTAMP_KEY}_${selectedWallet.id}`, Date.now().toString());
+            localStorage.setItem(insightsCacheKey(walletId, aiMode), JSON.stringify(newInsights));
+            localStorage.setItem(insightsTimestampKey(walletId, aiMode), Date.now().toString());
           } catch (error) {
             console.error('Error caching insights:', error);
           }
         }
       } catch (error) {
         console.error('Error fetching insights:', error);
+        if (requestId === insightsRequestIdRef.current && aiMode) {
+          setAiStatus({ status: 'failed', message: 'Gagal memuat insight.' });
+        }
       } finally {
-        setInsightsLoading(false);
+        if (requestId === insightsRequestIdRef.current) setInsightsLoading(false);
       }
     }
   };
@@ -1018,11 +1042,11 @@ const TransactionsPage = () => {
 
   // Add a refresh button for insights
   const handleRefreshInsights = () => {
-    // Clear the cache for this wallet
+    // Clear the cache for this wallet + current mode
     if (isClientSide && selectedWallet) {
       try {
-        localStorage.removeItem(`${INSIGHTS_CACHE_KEY}_${selectedWallet.id}`);
-        localStorage.removeItem(`${WALLET_INSIGHTS_TIMESTAMP_KEY}_${selectedWallet.id}`);
+        localStorage.removeItem(insightsCacheKey(selectedWallet.id, useAI));
+        localStorage.removeItem(insightsTimestampKey(selectedWallet.id, useAI));
       } catch (error) {
         console.error('Error clearing cached insights:', error);
       }
@@ -1305,6 +1329,24 @@ const TransactionsPage = () => {
               <Label htmlFor="ai-mode" className="text-xs text-gray-500 hidden sm:inline">AI Mode</Label>
             </div>
           </div>
+
+          {/* AI status: make a failed / unconfigured AI call visible instead of
+              silently showing the non-AI insights under the AI toggle. */}
+          {useAI && !insightsLoading && aiStatus && aiStatus.status !== 'ok' && (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {aiStatus.status === 'not_configured' ? (
+                <>
+                  AI belum dikonfigurasi, jadi yang tampil insight dasar.{' '}
+                  <a href="/settings" className="font-medium underline underline-offset-2">Atur AI di Pengaturan</a>
+                </>
+              ) : (
+                <>
+                  AI gagal merespons, jadi yang tampil insight dasar.
+                  {aiStatus.error && <span className="mt-0.5 block text-[11px] text-amber-700/80 break-words">Detail: {aiStatus.error}</span>}
+                </>
+              )}
+            </div>
+          )}
 
           {insightsLoading ? (
             <div className="flex items-center justify-center h-24 sm:h-32">

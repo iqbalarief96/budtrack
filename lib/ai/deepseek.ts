@@ -20,6 +20,7 @@ export async function generateEmergencyFundRecommendation(
     provider: string
     apiKey: string
     model: string
+    customEndpoint?: string | null
   }
 ): Promise<EmergencyFundRecommendation> {
   try {
@@ -74,7 +75,7 @@ export async function generateEmergencyFundRecommendation(
  */
 async function getAIRecommendation(
   expenseData: any,
-  aiSettings: { provider: string; apiKey: string; model: string },
+  aiSettings: { provider: string; apiKey: string; model: string; customEndpoint?: string | null },
   volatility: 'high' | 'medium' | 'low'
 ): Promise<Omit<EmergencyFundRecommendation, 'usedAI' | 'monthlyExpenses' | 'volatility'>> {
   // Build comprehensive prompt for DeepSeek
@@ -118,6 +119,7 @@ Generate the recommendation now:`
       provider: aiSettings.provider,
       apiKey: aiSettings.apiKey,
       model: aiSettings.model,
+      customEndpoint: aiSettings.customEndpoint,
     })
 
     // Parse AI response

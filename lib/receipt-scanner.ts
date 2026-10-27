@@ -31,6 +31,8 @@ export async function processReceipt(
         defaultApiKey?: string | null;
         defaultProvider?: string | null;
         googleVisionCredentials?: string | null;
+        providerApiKey?: string | null;
+        customEndpoint?: string | null;
     }
 ): Promise<ReceiptData> {
     // Check if Google Cloud Vision + AI hybrid is requested
@@ -41,7 +43,8 @@ export async function processReceipt(
             throw new Error('Google Vision credentials belum diupload. Silakan upload di Settings.');
         }
         
-        if (!keys.defaultApiKey) {
+        const hybridApiKey = keys.providerApiKey || keys.defaultApiKey;
+        if (!hybridApiKey) {
             throw new Error('DeepSeek API key belum disetup. Silakan setup di Settings.');
         }
         
@@ -50,8 +53,9 @@ export async function processReceipt(
                 imageBase64,
                 keys.googleVisionCredentials,
                 keys.defaultProvider || 'deepseek',
-                keys.defaultApiKey,
-                'deepseek-chat'
+                hybridApiKey,
+                'deepseek-chat',
+                keys.customEndpoint
             );
             
             console.log('[RECEIPT-SCANNER] Hybrid processing successful');

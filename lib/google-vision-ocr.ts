@@ -239,7 +239,8 @@ export async function processReceiptWithGoogleVisionAI(
     credentialsPath: string | undefined,
     aiProvider: string,
     aiApiKey: string,
-    aiModel: string
+    aiModel: string,
+    aiCustomEndpoint?: string | null
 ): Promise<ReceiptData> {
     try {
         console.log('[GOOGLE-VISION-AI] Starting hybrid OCR + AI parsing...');
@@ -323,7 +324,8 @@ Balas HANYA dengan JSON yang valid, tanpa backticks atau penjelasan.
             prompt,
             provider: aiProvider,
             apiKey: aiApiKey,
-            model: aiModel
+            model: aiModel,
+            customEndpoint: aiCustomEndpoint
         });
 
         // Parse AI response

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { generateAIResponse } from '@/lib/ai'
+import { resolveAIConfig } from '@/lib/ai-settings'
 
 function getPeriodContext(period?: string) {
   switch (period) {
@@ -209,7 +210,8 @@ export async function POST(req: Request) {
         where: { userId: session.user.id }
       })
 
-      if (userSettings?.provider && userSettings?.apiKey && userSettings?.selectedModel) {
+      const aiConfig = resolveAIConfig(userSettings)
+      if (aiConfig) {
         const periodContext = getPeriodContext(period)
         const miniPrompt = generateMiniSummaryPrompt(
           {
@@ -226,9 +228,10 @@ export async function POST(req: Request) {
 
         const aiResponse = await generateAIResponse({
           prompt: miniPrompt,
-          provider: userSettings.provider,
-          apiKey: userSettings.apiKey,
-          model: userSettings.selectedModel
+          provider: aiConfig.provider,
+          apiKey: aiConfig.apiKey,
+          model: aiConfig.model,
+          customEndpoint: aiConfig.customEndpoint
         })
 
         const trimmed = aiResponse.trim().replace(/^[\s"'`]+|[\s"'`]+$/g, '')

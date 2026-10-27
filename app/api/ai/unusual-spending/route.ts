@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { detectUnusualSpending } from '@/lib/ai';
+import { resolveAIConfig } from '@/lib/ai-settings';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,8 @@ export async function GET(request: NextRequest) {
       where: { userId: session.user.id }
     });
 
-    if (!userSettings?.apiKey || !userSettings?.provider || !userSettings?.selectedModel) {
+    const aiConfig = resolveAIConfig(userSettings);
+    if (!aiConfig) {
       return NextResponse.json(
         { error: 'AI settings not configured. Please configure AI settings in your profile.' }, 
         { status: 400 }
@@ -84,9 +86,10 @@ export async function GET(request: NextRequest) {
     const unusualSpendingResult = await detectUnusualSpending({
       recentTransactions: formattedTransactions,
       historicalData,
-      provider: userSettings.provider,
-      apiKey: userSettings.apiKey,
-      model: userSettings.selectedModel,
+      provider: aiConfig.provider,
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint,
       prompt: '' // Not used directly, but required by the type
     });
     

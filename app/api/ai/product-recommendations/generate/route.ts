@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { generateAIResponse } from '@/lib/ai';
+import { resolveAIConfig } from '@/lib/ai-settings';
 
 export async function POST() {
   try {
@@ -36,7 +37,8 @@ export async function POST() {
     }
 
     // Check if AI settings are configured
-    if (!user.settings?.provider || !user.settings?.apiKey || !user.settings?.selectedModel) {
+    const aiConfig = resolveAIConfig(user.settings);
+    if (!aiConfig) {
       return new NextResponse(
         JSON.stringify({ error: 'AI settings not configured. Please set up your AI provider in settings.' }),
         { status: 400 }
@@ -93,9 +95,10 @@ export async function POST() {
       // Use AI to generate personalized recommendations
       const aiResponse = await generateAIResponse({
         prompt,
-        provider: user.settings.provider,
-        apiKey: user.settings.apiKey,
-        model: user.settings.selectedModel
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        customEndpoint: aiConfig.customEndpoint
       });
       
       // Log the raw AI response for debugging

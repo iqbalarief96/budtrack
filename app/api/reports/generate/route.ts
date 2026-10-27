@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateAIResponse } from '@/lib/ai'
+import { resolveAIConfig } from '@/lib/ai-settings'
 
 export async function GET(request: NextRequest) {
   try {
@@ -295,7 +296,8 @@ async function generateReportAnalysis(userId: string, data: any, startDate: stri
       where: { userId }
     });
     
-    if (!settings?.provider || !settings?.apiKey || !settings?.selectedModel) {
+    const aiConfig = resolveAIConfig(settings);
+    if (!aiConfig) {
       console.warn('AI settings not configured for user');
       return null;
     }
@@ -352,9 +354,10 @@ async function generateReportAnalysis(userId: string, data: any, startDate: stri
     // Call the AI service to generate analysis
     const analysis = await generateAIResponse({
       prompt,
-      provider: settings.provider,
-      apiKey: settings.apiKey,
-      model: settings.selectedModel
+      provider: aiConfig.provider,
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model,
+      customEndpoint: aiConfig.customEndpoint
     });
     
     return analysis;

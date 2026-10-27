@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateEmergencyFundRecommendation } from '@/lib/ai/deepseek'
+import { resolveAIConfig } from '@/lib/ai-settings'
 import prisma from '@/lib/prisma'
 
 /**
@@ -46,30 +47,15 @@ export async function POST(
         openrouterApiKey: true,
         zaiApiKey: true,
         customApiKey: true,
+        customEndpoint: true,
         selectedModel: true,
       },
     })
 
-    const provider = userSettings?.provider || 'deepseek'
-    const providerApiKey =
-      provider === 'deepseek'
-        ? userSettings?.deepseekApiKey || userSettings?.apiKey
-        : provider === 'openrouter'
-          ? userSettings?.openrouterApiKey || userSettings?.apiKey
-          : provider === 'zai'
-            ? userSettings?.zaiApiKey || userSettings?.apiKey
-            : provider === 'custom'
-              ? userSettings?.customApiKey || userSettings?.apiKey
-              : userSettings?.apiKey
-
-    const aiSettings = {
-      provider,
-      apiKey: providerApiKey || '',
-      model: userSettings?.selectedModel || 'deepseek-chat',
-    }
+    const aiSettings = resolveAIConfig(userSettings, { provider: 'deepseek', model: 'deepseek-chat' })
 
     // Check if AI is configured
-    if (!aiSettings.apiKey) {
+    if (!aiSettings) {
       return NextResponse.json(
         {
           error: 'AI settings not configured',

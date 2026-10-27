@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { generateAIResponse } from '@/lib/ai';
+import { resolveAIConfig } from '@/lib/ai-settings';
 
 export async function GET() {
   try {
@@ -36,7 +37,8 @@ export async function GET() {
     }
 
     // Check if AI settings are configured
-    if (!user.settings?.provider || !user.settings?.apiKey || !user.settings?.selectedModel) {
+    const aiConfig = resolveAIConfig(user.settings);
+    if (!aiConfig) {
       // Fallback to sample recommendations if AI is not configured
       return NextResponse.json({ 
         recommendations: generateSampleRecommendations(user),
@@ -87,9 +89,10 @@ export async function GET() {
       // Use AI to generate personalized recommendations
       const aiResponse = await generateAIResponse({
         prompt,
-        provider: user.settings.provider,
-        apiKey: user.settings.apiKey,
-        model: user.settings.selectedModel
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        customEndpoint: aiConfig.customEndpoint
       });
       
       // Parse AI response as JSON

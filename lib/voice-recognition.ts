@@ -30,6 +30,7 @@ export async function processVoiceTransaction(
     language: string;
     provider: string;
     selectedModel: string;
+    customEndpoint?: string | null;
   },
   categories: Array<{id: string, name: string, type: 'INCOME' | 'EXPENSE' | 'BOTH'}>,
   wallets: Array<{id: string, name: string}>
@@ -52,7 +53,8 @@ export async function processVoiceTransaction(
       apiKey,
       userSettings.selectedModel,
       categories,
-      wallets
+      wallets,
+      userSettings.customEndpoint
     );
     
     return {
@@ -265,7 +267,8 @@ async function extractTransactionDetails(
   apiKey: string,
   model: string,
   categories: Array<{id: string, name: string, type: 'INCOME' | 'EXPENSE' | 'BOTH'}>,
-  wallets: Array<{id: string, name: string}>
+  wallets: Array<{id: string, name: string}>,
+  customEndpoint?: string | null
 ): Promise<{
   type: 'INCOME' | 'EXPENSE';
   amount: number;
@@ -317,7 +320,8 @@ async function extractTransactionDetails(
       prompt,
       provider,
       apiKey,
-      model
+      model,
+      customEndpoint
     });
     
     // Extract JSON from response (in case AI adds extra text)
