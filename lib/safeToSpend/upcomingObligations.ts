@@ -39,11 +39,15 @@ export async function resolveSafeToSpendScope(
   opts: { walletId?: string | null; walletGroupId?: string | null; walletIds?: string[] | null }
 ): Promise<SafeToSpendScope> {
   if (opts.walletIds && opts.walletIds.length > 0) {
-    const owned = await prisma.wallet.findMany({
-      where: { id: { in: opts.walletIds }, userId },
-      select: { id: true },
-    })
-    return { userId, walletIds: owned.map((w) => w.id), isAllWallets: false }
+    const [owned, all] = await Promise.all([
+      prisma.wallet.findMany({ where: { id: { in: opts.walletIds }, userId }, select: { id: true } }),
+      prisma.wallet.findMany({ where: { userId }, select: { id: true } }),
+    ])
+    const ownedIds = owned.map((w) => w.id)
+    // If the set covers every wallet the user has, treat it as the all-wallets
+    // scope so wallet-less obligations (subscriptions/cards/shared bills) count.
+    const isAllWallets = ownedIds.length > 0 && ownedIds.length === all.length
+    return { userId, walletIds: ownedIds, isAllWallets }
   }
 
   if (opts.walletId) {

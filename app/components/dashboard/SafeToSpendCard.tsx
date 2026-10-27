@@ -28,11 +28,16 @@ type SafeToSpendResult = {
 };
 
 export default function SafeToSpendCard() {
-  const { selectedWallet } = useWallet();
+  // Mirror the dashboard's active scope so this widget never disagrees with the
+  // hero Safe-to-Spend card (type aggregate, single wallet, or group).
+  const { dashboardScope, dashboardScopeWalletIds, isGroupSelected, selectedGroup } = useWallet();
   const [data, setData] = useState<SafeToSpendResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+
+  const isAllWalletsScope = dashboardScope?.kind === 'type' && dashboardScope.type === 'ALL';
+  const scopeKey = dashboardScopeWalletIds.join(',');
 
   useEffect(() => {
     const fetchSafeToSpend = async () => {
@@ -41,7 +46,9 @@ export default function SafeToSpendCard() {
         setError(null);
 
         const params = new URLSearchParams();
-        if (selectedWallet?.id) params.set('walletId', selectedWallet.id);
+        if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id);
+        else if (isAllWalletsScope) { /* no param → all wallets */ }
+        else if (dashboardScopeWalletIds.length > 0) params.set('walletIds', dashboardScopeWalletIds.join(','));
 
         const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`);
         if (!response.ok) {
@@ -63,7 +70,7 @@ export default function SafeToSpendCard() {
     };
 
     fetchSafeToSpend();
-  }, [selectedWallet?.id]);
+  }, [scopeKey, isAllWalletsScope, isGroupSelected, selectedGroup?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
     return (

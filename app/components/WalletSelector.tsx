@@ -32,13 +32,17 @@ interface WalletSelectorProps {
 }
 
 const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance, className }) => {
-  const { 
-    filteredWallets, 
-    selectedWallet, 
+  const {
+    wallets,
+    selectedWallet,
     setSelectedWalletAndPersist,
     selectedGroup,
     setSelectedGroup,
+    dashboardScope,
   } = useWallet()
+  // Always list every wallet in the picker (the type tabs drive the dashboard
+  // scope now, not which wallets are pickable). Highlight the active one.
+  const activeWalletId = dashboardScope?.kind === 'wallet' ? dashboardScope.walletId : null
   const [isOpen, setIsOpen] = useState(false)
   const [walletGroups, setWalletGroups] = useState<WalletGroup[]>([])
 
@@ -237,8 +241,10 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({ displayBalance, classNa
             </p>
           </div>
           <div className="py-1">
-            {filteredWallets.map((wallet) => {
-              const isSelected = !isGroupSelected && wallet.id === selectedWallet?.id
+            {wallets.map((wallet) => {
+              const isSelected = !isGroupSelected && (activeWalletId
+                ? wallet.id === activeWalletId
+                : wallet.id === selectedWallet?.id)
               return (
                 <button
                   key={wallet.id}

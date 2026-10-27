@@ -7,7 +7,6 @@ import {
   resolveSafeToSpendScope,
   type SafeToSpendMode,
 } from '@/lib/safeToSpend/upcomingObligations'
-import { calculateTransactionBalance } from '@/lib/safeToSpendSummary'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,10 +71,9 @@ export async function GET(request: NextRequest) {
     }),
   ])
 
-  const balance = calculateTransactionBalance({
-    totalIncome: incomeAgg._sum.amount || 0,
-    totalExpense: expenseAgg._sum.amount || 0,
-  })
+  // Subtract raw aggregates (don't round each side first) so this matches
+  // /api/wallets exactly; computeSafeToSpend rounds the final displayed value.
+  const balance = (incomeAgg._sum.amount || 0) - (expenseAgg._sum.amount || 0)
   // Buffer = roughly one week of recent spending, so safe-to-spend keeps a
   // small cushion instead of draining to zero.
   const buffer = Math.round((recentExpenses._sum.amount || 0) / 4)
