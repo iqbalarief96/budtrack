@@ -21,7 +21,7 @@ import { calculateTrend, type TrendResult } from '@/lib/trend'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
-import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateRemainingBudget } from '@/lib/safeToSpendSummary'
+
 import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
 
 // Register ChartJS components
@@ -111,6 +111,16 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const [subscriptionAlerts, setSubscriptionAlerts] = useState<SubscriptionAlert[]>([])
   const [isLoadingSubscriptionAlerts, setIsLoadingSubscriptionAlerts] = useState(false)
   const [sharedBillsSummary, setSharedBillsSummary] = useState({ outstandingAmount: 0, openCount: 0 })
+  type SafeToSpendData = {
+    safeToSpend: number
+    balance: number
+    expectedIncome: number
+    goalReserve: number
+    buffer: number
+    obligations: { bills: number; recurring: number; subscriptions: number; creditCards: number; sharedBills: number; total: number }
+    confidence: 'low' | 'medium' | 'high'
+  }
+  const [safeToSpendData, setSafeToSpendData] = useState<SafeToSpendData | null>(null)
 
   const router = useRouter()
 
@@ -200,6 +210,30 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
 
     fetchSharedBillsSummary()
+  }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
+
+  // Safe to spend is computed server-side (it needs bills/recurring/credit-card
+  // data the dashboard doesn't load) so the number stays consistent everywhere.
+  useEffect(() => {
+    const fetchSafeToSpend = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        if (!isGroupSelected && selectedWallet?.id) params.set('walletId', selectedWallet.id)
+
+        const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`)
+        if (!response.ok) {
+          setSafeToSpendData(null)
+          return
+        }
+        setSafeToSpendData(await response.json())
+      } catch (error) {
+        console.error('Error loading safe-to-spend:', error)
+        setSafeToSpendData(null)
+      }
+    }
+
+    fetchSafeToSpend()
   }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
 
   // Load saved widget state from localStorage on component initialization
@@ -618,26 +652,18 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       ? 'Belum ada budget'
       : 'Data cukup'
 
-  // Safe-to-spend breakdown
+  // Safe-to-spend is computed server-side (see the fetchSafeToSpend effect): it
+  // needs bills/recurring/credit-card data the dashboard doesn't load, and we
+  // want one authoritative number shared with the chatbot.
   const activeGoals = goals.filter((g) => !g.isArchived && g.status !== 'COMPLETED')
-  const totalRemainingGoal = activeGoals.reduce((sum, g) => sum + Math.max((g.target || 0) - (g.current || 0), 0), 0)
-  // ponytail: goalReserve pakai heuristik (10% saldo atau sisa goal/12). Upgrade: pakai /api/goals/projections kalau butuh akurasi.
-  const goalReserve = calculateGoalReserve({ balance: displayBalance, remainingGoalAmount: totalRemainingGoal })
-  // displayBalance is the actual wallet balance (already net of expenses), so
-  // reserve only budget that is still unspent — not expenses that already happened.
-  // Only budgets whose period covers today; expired/future budgets must not
-  // reserve money. (`spent` here is computed live by /api/budgets.)
-  const nowForBudgets = new Date()
-  const remainingBudget = calculateRemainingBudget(
-    filteredBudgets.filter((b) => new Date(b.startDate) <= nowForBudgets && nowForBudgets <= new Date(b.endDate))
-  )
-  const safeToSpend = calculateMonthlySafeToSpend({
-    balance: displayBalance,
-    remainingBudget,
-    outstandingBills: sharedBillsSummary.outstandingAmount,
-    goalReserve,
-  })
-  const safeConfidence = dataQualityLabel
+  const safeToSpend = safeToSpendData?.safeToSpend ?? 0
+  const obligationsTotal = safeToSpendData?.obligations.total ?? 0
+  const goalReserve = safeToSpendData?.goalReserve ?? 0
+  const safeBuffer = safeToSpendData?.buffer ?? 0
+  const safeBalance = safeToSpendData?.balance ?? displayBalance
+  const safeConfidence = safeToSpendData
+    ? (safeToSpendData.confidence === 'high' ? 'High' : safeToSpendData.confidence === 'medium' ? 'Medium' : 'Low')
+    : dataQualityLabel
 
   // Month-over-month trend (last COMPLETE month vs previous month from transaction history)
   // Skip the current in-progress month so a 2-day-old month doesn't show -100% as "trend"
@@ -881,13 +907,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                 <h3 className="text-blue-100">Safe to spend</h3>
                 <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
                 <p className="mt-2 text-xs text-blue-100">
-                  Saldo - sisa budget - bills - goal reserve
+                  Saldo - kewajiban bulan ini - reserve - buffer
                 </p>
                 <div className="mt-3 grid gap-1 text-xs text-blue-50 sm:grid-cols-4">
-                  <span>Saldo {formatCurrency(displayBalance)}</span>
-                  <span>Sisa budget -{formatCurrency(remainingBudget)}</span>
-                  <span>Bills -{formatCurrency(sharedBillsSummary.outstandingAmount)}</span>
+                  <span>Saldo {formatCurrency(safeBalance)}</span>
+                  <span>Kewajiban -{formatCurrency(obligationsTotal)}</span>
                   <span>Reserve -{formatCurrency(goalReserve)}</span>
+                  <span>Buffer -{formatCurrency(safeBuffer)}</span>
                 </div>
               </div>
               <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">Confidence: {safeConfidence}</span>
