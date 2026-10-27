@@ -7,6 +7,7 @@ import {
   resolveSafeToSpendScope,
   type SafeToSpendMode,
 } from '@/lib/safeToSpend/upcomingObligations'
+import { calculateTransactionBalance } from '@/lib/safeToSpendSummary'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,12 +39,18 @@ export async function GET(request: NextRequest) {
 
   const now = new Date()
 
-  // Balance = summed actual wallet balance (what the UI shows), and recent
-  // spending for the buffer + a confidence hint, in one pass.
-  const [wallets, recentExpenses, txThisMonth] = await Promise.all([
-    prisma.wallet.findMany({
-      where: { id: { in: scope.walletIds }, userId },
-      select: { balance: true },
+  // Balance is derived from transactions (income − expense), NOT the stored
+  // wallet.balance column. The column can drift (imports, float rounding) while
+  // /api/wallets and the dashboard's "Total Saldo" show the transaction-derived
+  // value; safe-to-spend must match that, or the two cards disagree.
+  const [incomeAgg, expenseAgg, recentExpenses, txThisMonth] = await Promise.all([
+    prisma.transaction.aggregate({
+      where: { userId, walletId: { in: scope.walletIds }, type: { in: ['income', 'INCOME'] } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { userId, walletId: { in: scope.walletIds }, type: { in: ['expense', 'EXPENSE'] } },
+      _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
       where: {
@@ -63,7 +70,10 @@ export async function GET(request: NextRequest) {
     }),
   ])
 
-  const balance = wallets.reduce((s, w) => s + (w.balance || 0), 0)
+  const balance = calculateTransactionBalance({
+    totalIncome: incomeAgg._sum.amount || 0,
+    totalExpense: expenseAgg._sum.amount || 0,
+  })
   // Buffer = roughly one week of recent spending, so safe-to-spend keeps a
   // small cushion instead of draining to zero.
   const buffer = Math.round((recentExpenses._sum.amount || 0) / 4)
