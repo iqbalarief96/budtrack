@@ -119,6 +119,33 @@ describe('Property 9: Spending Increase Insight Generation', () => {
     expect(result).toBe(true)
   })
 
+  /**
+   * Regression: floating point noise at the exact boundary.
+   *
+   * Values such as 107 * 1.2 = 128.4 produce a ratio of 0.20000000000000007,
+   * which used to be treated as "greater than 20%" and generate an insight.
+   * These cases must be deterministic and never generate.
+   */
+  it('should NOT generate at exactly 20% for values that hit float error', () => {
+    const boundaryCases: Array<[number, number]> = [
+      [107, 128.4],
+      [112, 134.4],
+      [999999, 1199998.8],
+      [137, 164.4],
+    ]
+
+    for (const [previousAmount, currentAmount] of boundaryCases) {
+      expect(
+        shouldGenerateSpendingIncreaseInsight(currentAmount, previousAmount)
+      ).toBe(false)
+    }
+  })
+
+  it('should still generate for a clear increase despite float noise', () => {
+    // 107 -> 128.41 is genuinely > 20%
+    expect(shouldGenerateSpendingIncreaseInsight(128.41, 107)).toBe(true)
+  })
+
 
   it('should calculate correct percentage increase', () => {
     fc.assert(

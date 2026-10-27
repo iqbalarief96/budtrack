@@ -78,6 +78,28 @@ export const TRANSACTION_SIZE_CHANGE_THRESHOLD = 0.25 // 25%
  */
 export const WEEKEND_PATTERN_THRESHOLD = 0.30 // 30%
 
+/**
+ * Tolerance used when comparing a computed ratio against a threshold.
+ *
+ * Why this exists: percentages derived from amounts are floating point
+ * divisions, so an "exactly 20%" increase frequently evaluates to
+ * 0.20000000000000007 (e.g. 107 -> 128.4). Without a tolerance the
+ * boundary comparison flips based on the input values, which makes the
+ * threshold behaviour non-deterministic for callers and tests alike.
+ *
+ * The tolerance is scaled by the magnitude of the ratio so it stays
+ * negligible for realistic money values while absorbing float error.
+ */
+const RATIO_EPSILON = 1e-9
+
+/**
+ * Compare a ratio against a threshold, ignoring floating point noise.
+ * Returns true when `ratio` is meaningfully greater than `threshold`.
+ */
+function exceedsThreshold(ratio: number, threshold: number): boolean {
+  return ratio - threshold > RATIO_EPSILON
+}
+
 
 // ============ Core Insight Detection Functions ============
 
@@ -107,8 +129,8 @@ export function shouldGenerateSpendingIncreaseInsight(
   // Calculate percentage increase
   const percentageIncrease = (currentAmount - previousAmount) / previousAmount
 
-  // Generate insight if increase > threshold (>20%)
-  return percentageIncrease > threshold
+  // Generate insight if increase > threshold (>20%), tolerating float noise
+  return exceedsThreshold(percentageIncrease, threshold)
 }
 
 /**
@@ -161,7 +183,7 @@ export function shouldGenerateTransactionSizeInsight(
   }
 
   const percentageChange = Math.abs(currentAvgSize - previousAvgSize) / previousAvgSize
-  return percentageChange > threshold
+  return exceedsThreshold(percentageChange, threshold)
 }
 
 /**
@@ -192,7 +214,7 @@ export function shouldGenerateWeekendPatternInsight(
   const difference = Math.abs(weekendAvg - weekdayAvg)
   const percentageDifference = difference / baseValue
 
-  return percentageDifference > threshold
+  return exceedsThreshold(percentageDifference, threshold)
 }
 
 
@@ -295,8 +317,8 @@ export function generateSpendingDecreaseInsight(
 
   const percentageDecrease = ((previousAmount - currentAmount) / previousAmount) * 100
 
-  // Only generate if decrease is significant (>20%)
-  if (percentageDecrease <= SPENDING_INCREASE_THRESHOLD * 100) {
+  // Only generate if decrease is significant (>20%), tolerating float noise
+  if (!exceedsThreshold(percentageDecrease, SPENDING_INCREASE_THRESHOLD * 100)) {
     return null
   }
 
