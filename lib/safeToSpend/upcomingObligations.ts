@@ -43,6 +43,9 @@ export async function resolveSafeToSpendScope(
       where: { id: { in: opts.walletIds }, userId },
       select: { id: true },
     })
+    // Explicit subset (type aggregate or a single wallet): wallet-less
+    // obligations are NOT included. Only the all-wallets scope (no scope params
+    // at all, the "Semua" tab) includes them — never inferred from id counts.
     return { userId, walletIds: owned.map((w) => w.id), isAllWallets: false }
   }
 

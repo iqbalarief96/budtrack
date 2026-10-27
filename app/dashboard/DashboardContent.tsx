@@ -73,7 +73,11 @@ interface Props {
 }
 
 const DashboardContent = ({ budgets = [] }: Props) => {
-  const { wallets, selectedWallet, refreshWallets, selectedGroup, isGroupSelected, dashboardScopeWalletIds, dashboardScopeLabel } = useWallet()
+  const { wallets, selectedWallet, refreshWallets, selectedGroup, isGroupSelected, dashboardScope, dashboardScopeWalletIds, dashboardScopeLabel } = useWallet()
+
+  // "Semua" (all wallets) must use the endpoint's all-wallets path so wallet-less
+  // obligations are included; a proper subset passes explicit walletIds.
+  const isAllWalletsScope = dashboardScope?.kind === 'type' && dashboardScope.type === 'ALL'
 
   // Non-group dashboard scope: a set of wallet ids (one wallet, or all wallets
   // of a type). `scopeKey` is a stable primitive for effect dependencies.
@@ -199,8 +203,15 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   useEffect(() => {
     const fetchSharedBillsSummary = async () => {
       try {
+        // Empty resolved type scope: no outstanding bills, skip the all-wallets call.
+        if (!isGroupSelected && !isAllWalletsScope && dashboardScope?.kind === 'type' && scopeWalletIds.length === 0) {
+          setSharedBillsSummary({ outstandingAmount: 0, openCount: 0 })
+          return
+        }
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        else if (dashboardScope?.kind === 'wallet') params.set('walletId', dashboardScope.walletId)
+        else if (isAllWalletsScope) { /* no param → all wallets (includes wallet-less bills) */ }
         else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
         const response = await fetch(`/api/shared-bills?${params.toString()}`)
@@ -223,8 +234,16 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   useEffect(() => {
     const fetchSafeToSpend = async () => {
       try {
+        // Empty resolved type scope (e.g. "Investasi (0)"): no data, and do NOT
+        // fall through to the param-less all-wallets endpoint.
+        if (!isGroupSelected && !isAllWalletsScope && dashboardScope?.kind === 'type' && scopeWalletIds.length === 0) {
+          setSafeToSpendData(null)
+          return
+        }
         const params = new URLSearchParams()
         if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        else if (dashboardScope?.kind === 'wallet') params.set('walletId', dashboardScope.walletId)
+        else if (isAllWalletsScope) { /* no param → all wallets (includes wallet-less obligations) */ }
         else if (scopeWalletIds.length > 0) params.set('walletIds', scopeWalletIds.join(','))
 
         const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`)
@@ -391,10 +410,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       const groupWalletIds = selectedGroup.wallets.map(w => w.walletId)
       return allBudgets?.filter(budget => groupWalletIds.includes(budget.walletId)) || []
     }
-    if (scopeWalletIds.length > 0 && allBudgets) {
-      return allBudgets.filter(budget => scopeSet.has(budget.walletId))
-    }
-    return allBudgets || []
+    // Non-group: always scope to the active wallet set. An empty set (e.g. an
+    // empty type tab) returns no budgets instead of leaking every wallet's.
+    return (allBudgets || []).filter(budget => scopeSet.has(budget.walletId))
   }, [isGroupSelected, selectedGroup, scopeKey, allBudgets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Calculate totals and filter transactions when wallet or transaction data changes
@@ -402,7 +420,15 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     // Skip if group is selected - we use group dashboard data instead
     if (isGroupSelected) return
 
-    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
+    if (!dashboardScope) return;
+    if (scopeWalletIds.length === 0) {
+      // Empty type (e.g. "Investasi (0)"): show zeros, not the previous scope's data.
+      setFilteredTransactions([]);
+      setSummary({ total: 0, income: 0, expense: 0 });
+      setChartData({ income: 0, expense: 0 });
+      return;
+    }
+    if (allTransactions.length > 0) {
       // Filter transaksi untuk wallet dalam scope (1 wallet atau gabungan 1 tipe)
       let filteredTx = allTransactions.filter(
         (tx) => scopeSet.has(tx.walletId)
@@ -494,7 +520,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       return
     }
 
-    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
+    if (!dashboardScope) return
+    if (scopeWalletIds.length === 0) { setSpendingByCategory([]); return }
+    if (allTransactions.length > 0) {
       const walletTxs = allTransactions.filter(tx =>
         scopeSet.has(tx.walletId) &&
         tx.type === 'EXPENSE' &&
@@ -532,7 +560,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     // Skip if group is selected - we use group dashboard data instead
     if (isGroupSelected) return
 
-    if (scopeWalletIds.length > 0 && allTransactions.length > 0) {
+    if (!dashboardScope) return
+    if (scopeWalletIds.length === 0) { setTransactionHistory([]); return }
+    if (allTransactions.length > 0) {
       const now = new Date()
       const sixMonthsAgo = new Date()
       sixMonthsAgo.setMonth(now.getMonth() - 5)
@@ -818,7 +848,10 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
   };
 
-  if (scopeWalletIds.length === 0 && !isGroupSelected) {
+  // Only block on the genuine initial load (scope not resolved yet). An empty
+  // *resolved* type scope (e.g. "Investasi (0)") must still render the dashboard
+  // with its tabs so the user can switch back — see the empty-state below.
+  if (!isGroupSelected && !dashboardScope) {
     return <div>Loading...</div>
   }
 
