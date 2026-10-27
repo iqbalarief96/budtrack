@@ -49,12 +49,17 @@ export async function POST(req: NextRequest) {
     if (!layout) {
       return NextResponse.json({ error: 'Layout data is required' }, { status: 400 });
     }
+    const widgets = Array.isArray(layout) ? layout : layout?.widgets;
+    const serialized = JSON.stringify(layout);
+    if (!Array.isArray(widgets) || widgets.length > 60 || serialized.length > 50_000) {
+      return NextResponse.json({ error: 'Invalid layout' }, { status: 400 });
+    }
 
     // Update user's dashboard layout
     await prisma.user.update({
       where: { email: session.user.email },
       data: {
-        dashboardLayout: JSON.stringify(layout)
+        dashboardLayout: serialized
       }
     });
 

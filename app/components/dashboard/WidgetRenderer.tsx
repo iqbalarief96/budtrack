@@ -2,6 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import EmergencyFundOverviewCard from '@/app/components/dashboard/EmergencyFundOverviewCard';
+import { useDashboardMetrics } from '@/app/dashboard/DashboardMetricsContext';
+import { RatioWidget, CategoryBreakdownWidget, CashflowTrendWidget, RecentTransactionsWidget } from '@/app/components/dashboard/MetricWidgets';
+
+// Created once (calling React.lazy inside render remounts + refetches every time).
+const BudgetForecastWidget = React.lazy(() => import('@/components/dashboard/BudgetForecastWidget'));
+const UpcomingRecurringWidget = React.lazy(() => import('@/components/dashboard/UpcomingRecurringWidget'));
+const UpcomingBillsWidget = React.lazy(() => import('@/components/dashboard/UpcomingBillsWidget'));
 import { DashboardWidget } from './WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle, FiZap } from 'react-icons/fi';
@@ -217,10 +224,11 @@ interface WidgetRendererProps {
 
 // Dynamic widget renderer based on type
 export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRendererProps) {
-  const { selectedWallet, setSelectedWalletAndPersist, wallets } = useWallet();
+  const { selectedWallet } = useWallet();
   const walletId = selectedWalletId || (selectedWallet?.id || '');
-  console.log('[DEBUG] WidgetRenderer walletId:', walletId, 'selectedWallet:', selectedWallet);
   const router = useRouter();
+  // Shared dashboard numbers (null in wallet-group mode -> legacy widgets).
+  const metrics = useDashboardMetrics();
 
   // Data state for widgets
   const [isLoading, setIsLoading] = React.useState(true);
@@ -234,8 +242,11 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
   const { openTransactionModal } = useTransactionModal();
 
   // Fetch data for widgets
+  // Only the balance/income/expense widgets need this (it used to run for
+  // every widget instance: N identical full-history fetches).
+  const needsTotals = ['balance', 'income', 'expense'].includes(widget.type);
   React.useEffect(() => {
-    if (!walletId) return;
+    if (!walletId || !needsTotals) return;
 
     const fetchData = async () => {
       setIsLoading(true);
@@ -277,24 +288,12 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
     };
 
     fetchData();
-  }, [walletId, selectedWallet]);
-
-  // If selectedWalletId is provided and different from current selectedWallet,
-  // we update the context (this will cascade to child components)
-  React.useEffect(() => {
-    if (selectedWalletId && selectedWallet?.id !== selectedWalletId && wallets.length > 0) {
-      // Find wallet by ID and set it
-      const wallet = wallets.find(w => w.id === selectedWalletId);
-      if (wallet) {
-        setSelectedWalletAndPersist(wallet);
-      }
-    }
-  }, [selectedWalletId, selectedWallet?.id, wallets, setSelectedWalletAndPersist]);
+  }, [walletId, selectedWallet, needsTotals]);
 
   // Render widget based on type
   switch (widget.type) {
     case 'summary':
-      return <SummaryWidget walletId={walletId} />;
+      return metrics ? <RatioWidget m={metrics} /> : <SummaryWidget walletId={walletId} />;
 
     case 'balance':
       return (
@@ -359,12 +358,13 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return <EmergencyFundOverviewCard />;
 
     case 'expense-chart':
-      return <ExpenseChart />;
+      return metrics ? <CategoryBreakdownWidget m={metrics} maxItems={widget.size === 'small' ? 4 : 6} /> : <ExpenseChart />;
 
     case 'income-expense-chart':
-      return <IncomeExpenseChart />;
+      return metrics ? <CashflowTrendWidget m={metrics} /> : <IncomeExpenseChart />;
 
     case 'transaction-list':
+      if (metrics) return <RecentTransactionsWidget m={metrics} limit={widget.config?.limit || 5} />;
       // Extract limit from widget config if available
       const limit = widget.config?.limit || 5;
       return <TransactionList limit={limit} />;
@@ -399,12 +399,11 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return <InvestmentPerformance />;
 
     case 'summary-stats':
-      return <SummaryStatsWidget walletId={selectedWalletId} />;
+      return metrics ? <RatioWidget m={metrics} /> : <SummaryStatsWidget walletId={selectedWalletId} />;
 
     case 'quick-actions':
       return (
         <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-          <h3 className="font-medium text-gray-700 mb-2 text-sm">Aksi Cepat</h3>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => openTransactionModal({ quick: true })}
@@ -448,7 +447,6 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       return <DebtPayoffPlannerCard />;
 
     case 'budget-forecast':
-      const BudgetForecastWidget = React.lazy(() => import('@/components/dashboard/BudgetForecastWidget'));
       return (
         <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
           <BudgetForecastWidget />
@@ -456,7 +454,6 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
 
     case 'upcoming-recurring':
-      const UpcomingRecurringWidget = React.lazy(() => import('@/components/dashboard/UpcomingRecurringWidget'));
       return (
         <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
           <UpcomingRecurringWidget />
@@ -464,7 +461,6 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
 
     case 'upcoming-bills':
-      const UpcomingBillsWidget = React.lazy(() => import('@/components/dashboard/UpcomingBillsWidget'));
       return (
         <React.Suspense fallback={<div className="animate-pulse h-32 bg-gray-200 rounded"></div>}>
           <UpcomingBillsWidget />
