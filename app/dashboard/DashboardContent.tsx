@@ -18,11 +18,28 @@ import WalletContributionChart from '@/app/components/dashboard/WalletContributi
 import { WalletTypeTabs } from '@/components/WalletTypeTabs'
 import { useTransactions, type Transaction } from '@/lib/hooks/useTransactions'
 import { calculateTrend, type TrendResult } from '@/lib/trend'
+import {
+  averageMonthlySurplus,
+  buildTransferIndex,
+  computeFlowTotals,
+  computeHealthScore,
+  monthlyFlows,
+  PERIOD_LABEL,
+  PERIOD_OPTIONS,
+  periodRange,
+  previousPeriodLabel,
+  previousPeriodRange,
+  type DashboardPeriod,
+  type FlowTx,
+} from '@/lib/dashboard-metrics'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
 
 import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
+
+const CATEGORY_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#8AC926', '#1982C4', '#6A4C93', '#FF595E']
+const PERIOD_STORAGE_KEY = 'dashboardPeriod'
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
@@ -86,7 +103,16 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const scopeSet = React.useMemo(() => new Set(scopeWalletIds), [scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // React Query hooks for data fetching
-  const [selectedPeriod, setSelectedPeriod] = useState('all')
+  // Default "Bulan Ini"; the user's last choice is remembered.
+  const [selectedPeriod, setSelectedPeriodState] = useState<DashboardPeriod>('monthly')
+  useEffect(() => {
+    const saved = localStorage.getItem(PERIOD_STORAGE_KEY) as DashboardPeriod | null
+    if (saved && PERIOD_OPTIONS.some((o) => o.value === saved)) setSelectedPeriodState(saved)
+  }, [])
+  const setSelectedPeriod = (p: DashboardPeriod) => {
+    setSelectedPeriodState(p)
+    localStorage.setItem(PERIOD_STORAGE_KEY, p)
+  }
   const { data: allTransactions = [], isLoading: isLoadingTransactions } = useTransactions()
   const { data: allBudgets = [], isLoading: isLoadingBudgets } = useBudgets()
   const { data: goals = [] } = useGoals(isGroupSelected ? undefined : selectedWallet?.id)
@@ -129,6 +155,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     buffer: number
     obligations: { bills: number; recurring: number; subscriptions: number; creditCards: number; sharedBills: number; total: number }
     confidence: 'low' | 'medium' | 'high'
+    perDay?: number
+    daysLeft?: number
   }
   const [safeToSpendData, setSafeToSpendData] = useState<SafeToSpendData | null>(null)
 
@@ -415,194 +443,41 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     return (allBudgets || []).filter(budget => scopeSet.has(budget.walletId))
   }, [isGroupSelected, selectedGroup, scopeKey, allBudgets]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Calculate totals and filter transactions when wallet or transaction data changes
+  // ---- Money flows (non-group scope) ---------------------------------------
+  // Moving money into savings is NOT spending; see lib/dashboard-metrics.ts.
+  const transferIndex = React.useMemo(() => buildTransferIndex(allTransactions as FlowTx[]), [allTransactions])
+  const currentRange = React.useMemo(() => periodRange(selectedPeriod), [selectedPeriod])
+  const flows = React.useMemo(
+    () => computeFlowTotals(allTransactions as FlowTx[], scopeSet, transferIndex, currentRange),
+    [allTransactions, scopeSet, transferIndex, currentRange]
+  )
+  const previousFlows = React.useMemo(() => {
+    const range = previousPeriodRange(selectedPeriod)
+    return range ? computeFlowTotals(allTransactions as FlowTx[], scopeSet, transferIndex, range) : null
+  }, [allTransactions, scopeSet, transferIndex, selectedPeriod])
+  const monthlyHistory = React.useMemo(
+    () => monthlyFlows(allTransactions as FlowTx[], scopeSet, transferIndex, 6),
+    [allTransactions, scopeSet, transferIndex]
+  )
+
+  // Push the non-group flows into the state the JSX (and group mode) share.
   useEffect(() => {
-    // Skip if group is selected - we use group dashboard data instead
-    if (isGroupSelected) return
-
-    if (!dashboardScope) return;
-    if (scopeWalletIds.length === 0) {
-      // Empty type (e.g. "Investasi (0)"): show zeros, not the previous scope's data.
-      setFilteredTransactions([]);
-      setSummary({ total: 0, income: 0, expense: 0 });
-      setChartData({ income: 0, expense: 0 });
-      return;
-    }
-    if (allTransactions.length > 0) {
-      // Filter transaksi untuk wallet dalam scope (1 wallet atau gabungan 1 tipe)
-      let filteredTx = allTransactions.filter(
-        (tx) => scopeSet.has(tx.walletId)
-      );
-
-      // Filter transaksi berdasarkan periode waktu
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      if (selectedPeriod !== 'all') {
-        filteredTx = filteredTx.filter((tx) => {
-          const txDate = new Date(tx.date);
-
-          switch (selectedPeriod) {
-            case 'daily':
-              // Hanya transaksi hari ini
-              return txDate.setHours(0, 0, 0, 0) === today.setHours(0, 0, 0, 0);
-
-            case 'weekly':
-              // Transaksi 7 hari terakhir
-              const weekAgo = new Date(today);
-              weekAgo.setDate(today.getDate() - 7);
-              return txDate >= weekAgo;
-
-            case 'monthly':
-              // Transaksi bulan ini
-              const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-              return txDate >= startOfMonth;
-
-            case 'quarterly':
-              // Transaksi 3 bulan terakhir
-              const threeMonthsAgo = new Date(today);
-              threeMonthsAgo.setMonth(today.getMonth() - 3);
-              return txDate >= threeMonthsAgo;
-
-            case 'yearly':
-              // Transaksi tahun ini
-              const startOfYear = new Date(today.getFullYear(), 0, 1);
-              return txDate >= startOfYear;
-
-            default:
-              return true;
-          }
-        });
-      }
-
-      setFilteredTransactions(filteredTx);
-
-      // Calculate income and expenses for the selected wallet
-      let income = 0;
-      let expense = 0;
-
-      filteredTx.forEach((tx) => {
-        if (tx.type === 'INCOME') {
-          income += tx.amount;
-        } else if (tx.type === 'EXPENSE') {
-          // Count ALL expense transactions including savings
-          expense += tx.amount;
-        }
-      });
-
-      // Calculate total balance as income - expense
-      const total = income - expense;
-
-      // Set summary values
-      setSummary({
-        total,
-        income,
-        expense,
-      });
-
-      console.log('Summary updated:', { total, income, expense });
-
-      // Set chart data
-      setChartData({
-        income,
-        expense,
-      });
-    }
-  }, [scopeKey, allTransactions, selectedPeriod, isGroupSelected]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Savings data is now fetched via React Query hook (useEmergencyFund)
-
-  // Get transactions grouped by category for pie chart
-  useEffect(() => {
-    // Skip if group is selected - we use group dashboard data instead
-    if (isGroupSelected) {
-      console.log('[DashboardContent] Skipping individual wallet spendingByCategory - group is selected')
-      return
-    }
-
-    if (!dashboardScope) return
-    if (scopeWalletIds.length === 0) { setSpendingByCategory([]); return }
-    if (allTransactions.length > 0) {
-      const walletTxs = allTransactions.filter(tx =>
-        scopeSet.has(tx.walletId) &&
-        tx.type === 'EXPENSE' &&
-        tx.category !== null && tx.category !== undefined  // Filter out transactions without category
-      )
-
-      const categorySpending = walletTxs.reduce((acc, tx) => {
-        const categoryName = tx.category?.name
-        if (!categoryName) return acc
-        if (!acc[categoryName]) {
-          acc[categoryName] = 0
-        }
-        acc[categoryName] += tx.amount
-        return acc
-      }, {} as Record<string, number>)
-
-      // Generate colors
-      const colors = [
-        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-        '#FF9F40', '#8AC926', '#1982C4', '#6A4C93', '#FF595E'
-      ]
-
-      const result = Object.entries(categorySpending).map(([name, amount], index) => ({
-        name,
-        amount,
-        color: colors[index % colors.length]
-      }))
-
-      setSpendingByCategory(result.sort((a, b) => b.amount - a.amount))
-    }
-  }, [scopeKey, allTransactions, isGroupSelected]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Get monthly transaction history data for the bar chart
-  useEffect(() => {
-    // Skip if group is selected - we use group dashboard data instead
-    if (isGroupSelected) return
-
-    if (!dashboardScope) return
-    if (scopeWalletIds.length === 0) { setTransactionHistory([]); return }
-    if (allTransactions.length > 0) {
-      const now = new Date()
-      const sixMonthsAgo = new Date()
-      sixMonthsAgo.setMonth(now.getMonth() - 5)
-
-      // Create an array of last 6 months
-      const months = Array.from({ length: 6 }, (_, i) => {
-        const date = new Date()
-        date.setMonth(now.getMonth() - 5 + i)
-        return {
-          month: date.toLocaleString('id-ID', { month: 'short' }),
-          year: date.getFullYear(),
-          income: 0,
-          expense: 0
-        }
+    if (isGroupSelected || !dashboardScope) return
+    setFilteredTransactions(
+      allTransactions.filter((tx) => {
+        if (!scopeSet.has(tx.walletId)) return false
+        if (!currentRange) return true
+        const d = new Date(tx.date)
+        return d >= currentRange.start && d <= currentRange.end
       })
-
-      // Fill in transaction data
-      allTransactions.forEach(tx => {
-        if (!scopeSet.has(tx.walletId)) return
-
-        const txDate = new Date(tx.date)
-        if (txDate < sixMonthsAgo) return
-
-        const monthName = txDate.toLocaleString('id-ID', { month: 'short' })
-        const monthIndex = months.findIndex(m =>
-          m.month === monthName && m.year === txDate.getFullYear()
-        )
-
-        if (monthIndex !== -1) {
-          if (tx.type === 'INCOME') {
-            months[monthIndex].income += tx.amount
-          } else {
-            months[monthIndex].expense += tx.amount
-          }
-        }
-      })
-
-      setTransactionHistory(months)
-    }
-  }, [scopeKey, allTransactions, isGroupSelected]) // eslint-disable-line react-hooks/exhaustive-deps
+    )
+    setSummary({ total: flows.net, income: flows.income, expense: flows.expense })
+    setChartData({ income: flows.income, expense: flows.expense })
+    setSpendingByCategory(flows.byCategory.map((c, i) => ({ ...c, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] })))
+    setTransactionHistory(
+      monthlyHistory.map((m) => ({ month: m.label, year: Number(m.key.slice(0, 4)), income: m.income, expense: m.expense }))
+    )
+  }, [isGroupSelected, dashboardScope, allTransactions, scopeSet, currentRange, flows, monthlyHistory])
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -627,59 +502,56 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     // No manual fetch needed
   };
 
-  // Calculate financial stats
+  // ---- Derived numbers -----------------------------------------------------
+  // Group mode still uses the server aggregate (not transfer-aware yet).
+  const groupSavingsRate = summary.income > 0 ? ((summary.income - summary.expense) / summary.income) * 100 : null
+  const savingsRate: number | null = isGroupSelected ? groupSavingsRate : flows.savingsRate
+  const savedThisPeriod: number | null = isGroupSelected ? null : flows.saved
+
   const calculateFinancialStats = () => {
     if (scopeWalletIds.length === 0 && !isGroupSelected) return { savingsRate: 0, expenseRatio: 0, topCategory: null }
-
-    // Calculate savings rate (income - expense) / income
-    const savingsRate = summary.income > 0
-      ? ((summary.income - summary.expense) / summary.income) * 100
-      : 0
-
-    // Calculate expense to income ratio
-    const expenseRatio = summary.income > 0
-      ? (summary.expense / summary.income) * 100
-      : 0
-
-    // Get top spending category
+    const expenseRatio = summary.income > 0 ? (summary.expense / summary.income) * 100 : 0
     const topCategory = spendingByCategory.length > 0 ? spendingByCategory[0] : null
-
-    return { savingsRate, expenseRatio, topCategory }
+    return { savingsRate: savingsRate ?? 0, expenseRatio, topCategory }
   }
-
   const stats = calculateFinancialStats()
 
   // Source-of-truth balance: actual wallet/group balance, not period cashflow.
-  // For a non-group scope, sum the balances of every wallet in scope (one
-  // wallet, or all wallets of a type).
   const displayBalance = isGroupSelected
     ? (groupDashboardData?.totalBalance ?? summary.total)
     : wallets.filter((w) => scopeSet.has(w.id)).reduce((s, w) => s + (w.balance ?? 0), 0)
-  const netCashflow = summary.income - summary.expense
-  const periodLabelMap: Record<string, string> = {
-    all: 'Semua waktu', daily: 'Hari ini', weekly: '7 hari', monthly: 'Bulan ini', quarterly: '3 bulan', yearly: 'Tahun ini',
-  }
-  const periodLabel = periodLabelMap[selectedPeriod] || 'Semua waktu'
-  const negativeWallets = wallets.filter((wallet) => wallet.balance < 0)
+  // Change of the scope's balance over the period: savings moved within the
+  // scope don't count, savings moved out of it do.
+  const netCashflow = isGroupSelected ? summary.income - summary.expense : flows.net
+  const periodLabel = PERIOD_LABEL[selectedPeriod] || 'Semua Waktu'
+  const groupWalletIdSet = new Set((selectedGroup?.wallets || []).map((m) => m.walletId))
+  const negativeWallets = wallets.filter(
+    (wallet) => wallet.balance < 0 && (isGroupSelected ? groupWalletIdSet.has(wallet.id) : scopeSet.has(wallet.id))
+  )
   const transactionCount = filteredTransactions.length
   const budgetUsage = filteredBudgets.length
     ? Math.round(filteredBudgets.reduce((sum, budget) => sum + ((budget.spent || 0) / Math.max(budget.amount || 1, 1)), 0) / filteredBudgets.length * 100)
     : 0
   const dataQualityScore = Math.min(100, Math.round((Math.min(transactionCount, 20) / 20) * 70 + (filteredBudgets.length ? 15 : 0) + (scopeWalletIds.length ? 15 : 0)))
-  // Don't score with too little data: a constant baseline (it used to show 75 "Good"
-  // for a brand-new empty account) is misleading in a finance app.
-  const MIN_TX_FOR_HEALTH_SCORE = 5
-  const hasEnoughDataForHealth = transactionCount >= MIN_TX_FOR_HEALTH_SCORE
-  const healthScore: number | null = hasEnoughDataForHealth
-    ? Math.max(0, Math.min(100, 70 + (netCashflow > 0 ? 10 : netCashflow < 0 ? -15 : 0) - (negativeWallets.length ? 20 : 0) - (budgetUsage > 90 ? 15 : 0) + (dataQualityScore >= 60 ? 5 : -5)))
-    : null
+  const health = computeHealthScore({
+    savingsRate,
+    net: netCashflow,
+    negativeWallets: negativeWallets.length,
+    budgetUsage: filteredBudgets.length ? budgetUsage : null,
+    txCount: transactionCount,
+  })
+  const healthScore = health.score
   const todayAction = negativeWallets.length
     ? { title: 'Beresin saldo negatif', description: `${negativeWallets[0].name} perlu dicek/reconcile.`, href: '/wallets' }
     : !filteredBudgets.length
       ? { title: 'Buat budget pertama', description: 'Budget bikin dashboard lebih akurat.', href: '/budgets' }
       : transactionCount < 5
         ? { title: 'Tambah data transaksi', description: `Baru ${transactionCount} transaksi. Butuh 5+ buat insight.`, href: '/transactions' }
-        : { title: 'Review budget bulan ini', description: `Rata-rata pemakaian budget ${budgetUsage}%.`, href: '/budgets' }
+        : budgetUsage > 90
+          ? { title: 'Rem pengeluaran', description: `Rata-rata budget udah kepakai ${budgetUsage}%.`, href: '/budgets' }
+          : budgetUsage === 0
+            ? { title: 'Cek kategori budget', description: 'Belum ada pengeluaran yang masuk ke budget. Kategorinya udah cocok?', href: '/budgets' }
+            : { title: 'Review budget', description: `Rata-rata pemakaian budget ${budgetUsage}%.`, href: '/budgets' }
 
   // Data quality label
   const dataQualityLabel = dataQualityScore >= 70 ? 'High' : dataQualityScore >= 40 ? 'Medium' : 'Low'
@@ -702,45 +574,40 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     ? (safeToSpendData.confidence === 'high' ? 'High' : safeToSpendData.confidence === 'medium' ? 'Medium' : 'Low')
     : dataQualityLabel
 
-  // Month-over-month trend (last COMPLETE month vs previous month from transaction history)
-  // Skip the current in-progress month so a 2-day-old month doesn't show -100% as "trend"
-  const nowForTrend = new Date()
-  const currentMonthLabel = nowForTrend.toLocaleString('id-ID', { month: 'short' })
-  const fullMonths = transactionHistory.filter((m) => m.month !== currentMonthLabel)
-  const trendCurrentMonth = fullMonths.length >= 1 ? fullMonths[fullMonths.length - 1] : null
-  const trendPrevMonth = fullMonths.length >= 2 ? fullMonths[fullMonths.length - 2] : null
-  const incomeTrend: TrendResult = trendCurrentMonth && trendPrevMonth
-    ? calculateTrend(trendCurrentMonth.income, trendPrevMonth.income)
-    : { pct: null, direction: 'none' }
-  const expenseTrend: TrendResult = trendCurrentMonth && trendPrevMonth
-    ? calculateTrend(trendCurrentMonth.expense, trendPrevMonth.expense)
-    : { pct: null, direction: 'none' }
-  const trendPrevLabel = trendPrevMonth?.month ?? ''
+  // Trend = this period vs the same elapsed span of the previous one
+  // (e.g. 1–27 Okt vs 1–27 Sep), so a month in progress compares fairly.
+  const noTrend: TrendResult = { pct: null, direction: 'none' }
+  const incomeTrend: TrendResult = !isGroupSelected && previousFlows ? calculateTrend(flows.income, previousFlows.income) : noTrend
+  const expenseTrend: TrendResult = !isGroupSelected && previousFlows ? calculateTrend(flows.expense, previousFlows.expense) : noTrend
+  const trendPrevLabel = previousPeriodLabel(selectedPeriod)
 
-  // Goal projection (nearest active goal)
+  // Goal projection (nearest active goal). Pace = average monthly surplus of
+  // the last 3 complete months, independent of the selected period.
   const projectionGoal = activeGoals
     .map((g) => ({ g, remaining: Math.max((g.target || 0) - (g.current || 0), 0) }))
     .filter((x) => x.remaining > 0)
     .sort((a, b) => a.remaining - b.remaining)[0]
-  const monthlyNet = netCashflow
+  const monthlySurplus = isGroupSelected ? null : averageMonthlySurplus(monthlyHistory, 3)
   const goalProjection = !activeGoals.length
     ? { label: 'Belum ada goal aktif', detail: 'Bikin goal biar bisa diproyeksiin.' }
     : !projectionGoal
       ? { label: 'Semua goal tercapai 🎉', detail: 'Mantap, target kebeli.' }
-      : monthlyNet > 0
-        ? { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • ~${Math.ceil(projectionGoal.remaining / monthlyNet)} bulan lagi (pace sekarang)` }
-        : { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • butuh cashflow positif buat proyeksi` }
+      : monthlySurplus && monthlySurplus > 0
+        ? { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • ~${Math.ceil(projectionGoal.remaining / monthlySurplus)} bulan lagi (rata-rata sisa ${formatCurrency(monthlySurplus)}/bulan)` }
+        : { label: projectionGoal.g.name, detail: `Sisa ${formatCurrency(projectionGoal.remaining)} • belum ada sisa bulanan buat proyeksi` }
 
-  // Smart Insight (data-driven, replaces generic tip)
+  // Smart Insight. Savings transfers are excluded from spendingByCategory, so
+  // "Savings" can no longer show up as the top spending category.
   const topSpendingCategory = spendingByCategory.length > 0 ? spendingByCategory[0] : null
+  const topShare = topSpendingCategory && summary.expense > 0 ? `, ${Math.round((topSpendingCategory.amount / summary.expense) * 100)}% dari pengeluaran` : ''
   const smartInsight = transactionCount < 5
-    ? `Baru ${transactionCount} transaksi ${periodLabel.toLowerCase()}. Tambah ${Math.max(5 - transactionCount, 0)} lagi biar trend, anomaly & forecast akurat.`
+    ? `Baru ${transactionCount} transaksi (${periodLabel.toLowerCase()}). Tambah ${Math.max(5 - transactionCount, 0)} lagi biar trend & insight akurat.`
     : negativeWallets.length
       ? `${negativeWallets[0].name} saldo negatif. Beresin dulu biar cashflow sehat.`
       : budgetUsage > 90
         ? `Budget kepakai ${budgetUsage}%. Rem pengeluaran kategori utama biar gak jebol.`
         : topSpendingCategory
-          ? `Pengeluaran terbesar: ${topSpendingCategory.name} (${formatCurrency(topSpendingCategory.amount)}). Cek apakah masih wajar.`
+          ? `${savingsRate !== null ? `Saving rate ${savingsRate.toFixed(0)}%. ` : ''}Pengeluaran terbesar (${periodLabel.toLowerCase()}): ${topSpendingCategory.name} ${formatCurrency(topSpendingCategory.amount)}${topShare}.`
           : 'Cashflow stabil. Pertahankan dan mulai alokasi ke goal.'
 
   // Monthly close checklist with computed emphasis
@@ -882,7 +749,8 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </div>
 
           <div className="mt-4 md:mt-0">
-            <WalletSelector displayBalance={summary.total} />
+            {/* Only a single-wallet scope has one wallet balance to show here. */}
+            <WalletSelector displayBalance={dashboardScope?.kind === 'wallet' ? displayBalance : undefined} />
           </div>
         </div>
 
@@ -913,14 +781,11 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           <select
             className="bg-white/20 text-white border border-white/40 rounded-md p-2 text-sm [&>option]:text-black"
             value={selectedPeriod}
-            onChange={(e) => setSelectedPeriod(e.target.value)}
+            onChange={(e) => setSelectedPeriod(e.target.value as DashboardPeriod)}
           >
-            <option value="all">Semua Waktu</option>
-            <option value="daily">Hari Ini</option>
-            <option value="weekly">7 Hari Terakhir</option>
-            <option value="monthly">Bulan Ini</option>
-            <option value="quarterly">3 Bulan Terakhir</option>
-            <option value="yearly">Tahun Ini</option>
+            {PERIOD_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
         </div>
 
@@ -946,6 +811,11 @@ const DashboardContent = ({ budgets = [] }: Props) => {
               <div>
                 <h3 className="text-blue-100">Safe to spend</h3>
                 <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
+                {safeToSpendData?.perDay !== undefined && safeToSpendData.daysLeft ? (
+                  <p className="mt-1 text-sm text-blue-50">
+                    ≈ {formatCurrency(safeToSpendData.perDay)}/hari · {safeToSpendData.daysLeft} hari lagi sampai akhir bulan
+                  </p>
+                ) : null}
                 <p className="mt-2 text-xs text-blue-100">
                   Saldo - kewajiban bulan ini - reserve - buffer
                 </p>
@@ -973,9 +843,11 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </div>
 
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 lg:col-span-1">
-            <h3 className="text-blue-100">Data Quality</h3>
-            <p className="mt-1 text-2xl font-bold">{dataQualityLabel}</p>
-            <p className="text-xs text-blue-100">{dataQualityReason}</p>
+            <h3 className="text-blue-100">Ditabung <span className="text-[10px] opacity-80">({periodLabel})</span></h3>
+            <p className="mt-1 text-2xl font-bold text-sky-200">{savedThisPeriod === null ? '—' : formatCurrency(savedThisPeriod)}</p>
+            <p className="mt-2 text-[11px] text-blue-100">
+              Saving rate {savingsRate === null ? '—' : `${savingsRate.toFixed(1)}%`}
+            </p>
           </div>
 
           <button type="button" onClick={() => router.push(todayAction.href)} className="rounded-xl bg-white p-4 text-left text-blue-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md lg:col-span-3">
@@ -994,7 +866,7 @@ const DashboardContent = ({ budgets = [] }: Props) => {
             <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore ?? '—'}</p>
             {healthScore !== null ? (
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                {healthScore >= 70 ? 'Good' : healthScore >= 45 ? 'Watch' : 'Risk'}
+                {health.label}
               </span>
             ) : (
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Belum cukup data</span>
@@ -1002,10 +874,9 @@ const DashboardContent = ({ budgets = [] }: Props) => {
           </div>
           <p className="mt-2 text-xs text-gray-500">
             {healthScore !== null
-              ? <>Budget {budgetUsage}% • data quality {dataQualityLabel}</>
-              : <>Butuh minimal {MIN_TX_FOR_HEALTH_SCORE} transaksi (sekarang {transactionCount})</>}
+              ? health.reasons.join(' • ')
+              : <>Butuh minimal 5 transaksi di periode ini (sekarang {transactionCount})</>}
           </p>
-          {negativeWallets.length > 0 && <p className="mt-1 text-xs text-red-600">• {negativeWallets.length} wallet negatif</p>}
         </div>
 
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-5 shadow-sm lg:col-span-2">

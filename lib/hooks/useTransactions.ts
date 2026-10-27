@@ -19,7 +19,12 @@ export interface Transaction {
   wallet?: {
     id: string
     name: string
+    type?: string
   }
+  /** Set on both legs of an auto-routed savings transfer. */
+  transferPairId?: string | null
+  /** Set on the savings-wallet (income) leg; points to the source expense. */
+  migrationSourceTransactionId?: string | null
 }
 
 export function useTransactions(filters?: {
@@ -74,6 +79,7 @@ export function useCreateTransaction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['wallets'] })
+      queryClient.invalidateQueries({ queryKey: ['emergency-fund-overview'] })
     },
   })
 }
@@ -94,6 +100,7 @@ export function useUpdateTransaction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['wallets'] })
+      queryClient.invalidateQueries({ queryKey: ['emergency-fund-overview'] })
     },
   })
 }
@@ -112,6 +119,7 @@ export function useDeleteTransaction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['wallets'] })
+      queryClient.invalidateQueries({ queryKey: ['emergency-fund-overview'] })
     },
   })
 }

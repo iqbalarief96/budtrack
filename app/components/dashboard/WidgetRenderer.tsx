@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import EmergencyFundOverviewCard from '@/app/components/dashboard/EmergencyFundOverviewCard';
 import { DashboardWidget } from './WidgetTypes';
 import { useWallet } from '@/app/providers/WalletProvider';
 import { FiDollarSign, FiArrowDownLeft, FiArrowUpRight, FiAlertCircle, FiZap } from 'react-icons/fi';
@@ -8,7 +9,6 @@ import { useRouter } from 'next/navigation';
 import { useTransactionModal } from '@/app/providers/TransactionModalProvider';
 
 // Import widget components
-import { EmergencyFundCard } from '@/components/dashboard/EmergencyFundCard';
 import BudgetOverview from '@/components/budget/BudgetOverview';
 import ExpenseChart from '@/components/charts/ExpenseChart';
 import IncomeExpenseChart from '@/components/charts/IncomeExpenseChart';
@@ -354,8 +354,9 @@ export default function WidgetRenderer({ widget, selectedWalletId }: WidgetRende
       );
 
     case 'emergency-fund':
-      console.log('[DEBUG] WidgetRenderer passing walletId to EmergencyFundCard:', walletId, 'selectedWallet:', selectedWallet);
-      return <EmergencyFundCard walletId={walletId} />;
+      // User-level emergency fund + savings wallets (not tied to the selected
+      // wallet: it used to show the MAIN wallet's balance as the fund).
+      return <EmergencyFundOverviewCard />;
 
     case 'expense-chart':
       return <ExpenseChart />;
