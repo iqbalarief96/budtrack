@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireUserId } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Vendor ID is required' },
@@ -22,8 +25,8 @@ export async function GET(
     
     // Fetch the vendor by ID
     // @ts-ignore - We're intentionally ignoring type checking here
-    const vendor = await prismaClient.vendor.findUnique({
-      where: { id: params.id }
+    const vendor = await prismaClient.vendor.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!vendor) {
@@ -48,6 +51,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Vendor ID is required' },
@@ -71,8 +76,8 @@ export async function PUT(
     
     // Check if the vendor exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingVendor = await prismaClient.vendor.findUnique({
-      where: { id: params.id }
+    const existingVendor = await prismaClient.vendor.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingVendor) {
@@ -118,6 +123,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Vendor ID is required' },
@@ -130,8 +137,8 @@ export async function DELETE(
     
     // Check if the vendor exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingVendor = await prismaClient.vendor.findUnique({
-      where: { id: params.id }
+    const existingVendor = await prismaClient.vendor.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingVendor) {

@@ -1,9 +1,5 @@
 // Wedding planner app constants
 
-// Demo wedding ID - in a real app, you'd get this from user context or session
-// Diperbarui dengan ID yang benar berdasarkan hasil pengecekan database
-export const DEMO_WEDDING_ID = "cm9pysel20025j8m4cmakn4pv";
-
 // Status options
 export const VENUE_STATUS_OPTIONS = {
   CONFIRMED: 'confirmed',

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiPlus, FiChevronLeft, FiEdit2, FiTrash2, FiCheck, FiX, FiFile, FiFileText, FiCalendar, FiCheckCircle, FiClock, FiAlertCircle } from 'react-icons/fi';
 import Link from 'next/link';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 import toast from 'react-hot-toast';
 
 // Type definitions
@@ -53,7 +53,7 @@ const getStatusProps = (status: AdminDocument['status']) => {
 const demoDocuments: AdminDocument[] = [
   {
     id: 'demo-1',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Form N1 (Surat Keterangan Nikah) (Demo)',
     description: 'Surat keterangan untuk nikah yang dikeluarkan oleh kepala desa/lurah',
     deadline: new Date('2024-10-15'),
@@ -67,7 +67,7 @@ const demoDocuments: AdminDocument[] = [
   },
   {
     id: 'demo-2',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Form N3 (Surat Persetujuan Mempelai) (Demo)',
     description: 'Surat persetujuan mempelai',
     deadline: new Date('2024-10-20'),
@@ -81,7 +81,7 @@ const demoDocuments: AdminDocument[] = [
   },
    {
     id: 'demo-3',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Fotokopi KTP (Demo)',
     description: 'Fotokopi KTP kedua mempelai',
     deadline: new Date('2024-11-15'),
@@ -116,10 +116,11 @@ export default function AdminPage() {
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [currentDocument, setCurrentDocument] = useState(emptyDocument);
 
-  const weddingId = DEMO_WEDDING_ID; // Use constant for now
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
 
   // Fetch Documents Function
   const fetchDocuments = async () => {
+    if (!weddingId) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -160,6 +161,7 @@ export default function AdminPage() {
 
   // Fetch documents on initial mount
   useEffect(() => {
+    if (!weddingId) return;
     fetchDocuments();
   }, [weddingId]);
 
@@ -187,6 +189,10 @@ export default function AdminPage() {
   // --- CRUD Operations ---
   const handleSaveDocument = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     setIsSaving(true);
     setError(null);
 
@@ -262,6 +268,7 @@ export default function AdminPage() {
   };
 
   const handleDeleteDocument = async (docId: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus dokumen ini?')) return;
 
     // Optimistic UI update (optional)
@@ -308,6 +315,19 @@ export default function AdminPage() {
   const completionPercentage = totalDocuments > 0 ? Math.round((completedCount / totalDocuments) * 100) : 0;
 
   // --- Render ---
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -444,7 +464,7 @@ export default function AdminPage() {
          )}
 
         {/* Loading State */}
-        {isLoading && (
+        {(isLoading || weddingLoading) && (
           <div className="text-center py-10 text-gray-500">
             <p>Memuat dokumen...</p>
           </div>

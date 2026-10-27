@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { FinancialAdvice } from '@prisma/client';
+import { requireUserId } from '@/lib/route-auth';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -8,8 +9,11 @@ export async function GET(request: Request) {
   const walletId = searchParams.get('walletId');
 
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     const advice = await prisma.financialAdvice.findMany({
       where: {
+        userId: auth.userId,
         timeframe: timeframe as any,
         ...(walletId ? { walletId } : {})
       },
@@ -41,6 +45,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUserId();
+  if (auth.response) return auth.response;
   const { timeframe, walletId } = await request.json();
 
   try {
@@ -55,7 +61,7 @@ export async function POST(request: Request) {
         priority: 'medium',
         timeframe: timeframe || 'month',
         walletId: walletId || null,
-        userId: 'user-id-placeholder' // Should be replaced with actual user ID
+        userId: auth.userId
       }
     });
 

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiChevronLeft, FiPlus, FiTrash2, FiEdit2, FiX, FiImage, FiSearch, FiFilter, FiExternalLink, FiCheck, FiLink, FiHeart } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from "../constants";
+import { useWeddingId } from "../useWeddingId";
 
 // Define mood board item interface
 interface Moodboard {
@@ -103,7 +103,7 @@ export default function MoodboardPage() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
   
   const [newItem, setNewItem] = useState<Partial<Moodboard>>({
     title: '',
@@ -125,6 +125,7 @@ export default function MoodboardPage() {
   
   // Fetch moodboards from API
   useEffect(() => {
+    if (!weddingId) return;
     const fetchMoodboards = async () => {
       try {
         setIsLoading(true);
@@ -160,6 +161,10 @@ export default function MoodboardPage() {
   }, [weddingId]);
   
   const handleSaveItem = async () => {
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     if (newItem.title && newItem.imageUrl) {
       try {
         setIsLoading(true);
@@ -240,6 +245,7 @@ export default function MoodboardPage() {
   };
   
   const handleDeleteItem = async (id: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus item ini?')) return;
     
     try {
@@ -265,6 +271,7 @@ export default function MoodboardPage() {
   };
   
   const handleApproveToggle = async (id: string) => {
+    if (!weddingId) return;
     try {
       setIsLoading(true);
       
@@ -346,6 +353,19 @@ export default function MoodboardPage() {
     }
   }, [activeTag, filteredItems.length]);
   
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -675,7 +695,7 @@ export default function MoodboardPage() {
         )}
         
         {/* Moodboard Grid */}
-        {isLoading ? (
+        {isLoading || weddingLoading ? (
           <div className="text-center py-8">
             <p className="text-gray-500">Memuat moodboard...</p>
           </div>

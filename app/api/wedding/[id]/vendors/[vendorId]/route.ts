@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,8 @@ export async function GET(
   { params }: { params: { id: string; vendorId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id, vendorId } = params;
     const prismaClient = prisma || prismaFallback;
 
@@ -26,7 +29,7 @@ export async function GET(
     }
 
     // @ts-ignore - We're intentionally ignoring type checking here
-    const vendor = await prismaClient.vendor.findUnique({
+    const vendor = await prismaClient.vendor.findFirst({
       where: { 
         id: vendorId,
         weddingId: id 
@@ -55,6 +58,8 @@ export async function PUT(
   { params }: { params: { id: string; vendorId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id, vendorId } = params;
     const body = await request.json();
     const prismaClient = prisma || prismaFallback;
@@ -131,6 +136,8 @@ export async function DELETE(
   { params }: { params: { id: string; vendorId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id, vendorId } = params;
     const prismaClient = prisma || prismaFallback;
 

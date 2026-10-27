@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiChevronLeft, FiPlus, FiTrash2, FiEdit2, FiX, FiMusic, FiYoutube, FiSearch, FiFilter, FiPlay, FiLink } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from "../constants";
+import { useWeddingId } from "../useWeddingId";
 
 // Define song segment type
 type SongSegment = 'prelude' | 'processional' | 'ceremony' | 'recessional' | 'cocktail' | 'dinner' | 'first-dance' | 'father-daughter' | 'mother-son' | 'cake-cutting' | 'bouquet-toss' | 'general-dancing' | 'last-dance';
@@ -50,7 +50,7 @@ export default function PlaylistPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
   
   const [newSong, setNewSong] = useState<Partial<Playlist>>({
     title: '',
@@ -65,6 +65,7 @@ export default function PlaylistPage() {
   
   // Fetch playlists from API
   useEffect(() => {
+    if (!weddingId) return;
     const fetchPlaylists = async () => {
       try {
         setIsLoading(true);
@@ -99,6 +100,10 @@ export default function PlaylistPage() {
   }, [weddingId]);
   
   const handleSaveSong = async () => {
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     if (newSong.title && newSong.artist) {
       try {
         setIsLoading(true);
@@ -178,6 +183,7 @@ export default function PlaylistPage() {
   };
   
   const handleDeleteSong = async (id: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus lagu ini?')) return;
     
     try {
@@ -203,6 +209,7 @@ export default function PlaylistPage() {
   };
   
   const handleApproveToggle = async (id: string) => {
+    if (!weddingId) return;
     try {
       setIsLoading(true);
       
@@ -270,6 +277,19 @@ export default function PlaylistPage() {
     return videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : '';
   };
   
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -454,7 +474,7 @@ export default function PlaylistPage() {
         )}
         
         {/* Song List */}
-        {isLoading ? (
+        {isLoading || weddingLoading ? (
           <div className="text-center py-8">
             <p className="text-gray-500">Memuat daftar lagu...</p>
           </div>

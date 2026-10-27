@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireUserId } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Venue ID is required' },
@@ -22,8 +25,8 @@ export async function GET(
     
     // Fetch the venue by ID
     // @ts-ignore - We're intentionally ignoring type checking here
-    const venue = await prismaClient.venue.findUnique({
-      where: { id: params.id }
+    const venue = await prismaClient.venue.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!venue) {
@@ -48,6 +51,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Venue ID is required' },
@@ -71,8 +76,8 @@ export async function PUT(
     
     // Check if the venue exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingVenue = await prismaClient.venue.findUnique({
-      where: { id: params.id }
+    const existingVenue = await prismaClient.venue.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingVenue) {
@@ -121,6 +126,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Venue ID is required' },
@@ -133,8 +140,8 @@ export async function DELETE(
     
     // Check if the venue exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingVenue = await prismaClient.venue.findUnique({
-      where: { id: params.id }
+    const existingVenue = await prismaClient.venue.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingVenue) {

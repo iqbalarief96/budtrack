@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma'; // Adjust path depth
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 const prismaFallback = new PrismaClient();
 const dbClient = prisma || prismaFallback;
@@ -11,8 +12,10 @@ export async function GET(
   { params }: { params: { id: string, souvenirId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { souvenirId } = params;
-    const item = await dbClient.souvenir.findUnique({ where: { id: souvenirId } });
+    const item = await dbClient.souvenir.findFirst({ where: { id: souvenirId, weddingId: params.id } });
     if (!item) return NextResponse.json({ error: 'Souvenir not found' }, { status: 404 });
     return NextResponse.json(item);
   } catch (error) {
@@ -27,6 +30,8 @@ export async function PUT(
   { params }: { params: { id: string, souvenirId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, souvenirId } = params; // Get both IDs
     if (!souvenirId || !weddingId) {
       return NextResponse.json({ error: 'Wedding ID and Souvenir ID are required' }, { status: 400 });
@@ -63,8 +68,8 @@ export async function PUT(
      }
 
     // Check if item exists and belongs to the wedding
-    const existingItem = await dbClient.souvenir.findUnique({ 
-      where: { id: souvenirId }
+    const existingItem = await dbClient.souvenir.findFirst({ 
+      where: { id: souvenirId, weddingId: weddingId }
     });
     if (!existingItem) {
       return NextResponse.json({ error: 'Souvenir not found' }, { status: 404 });
@@ -106,14 +111,16 @@ export async function DELETE(
   { params }: { params: { id: string, souvenirId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, souvenirId } = params;
     if (!souvenirId || !weddingId) {
       return NextResponse.json({ error: 'Wedding ID and Souvenir ID are required' }, { status: 400 });
     }
 
     // Check if item exists and belongs to the wedding
-    const existingItem = await dbClient.souvenir.findUnique({ 
-      where: { id: souvenirId } 
+    const existingItem = await dbClient.souvenir.findFirst({ 
+      where: { id: souvenirId, weddingId: weddingId } 
     });
     if (!existingItem) {
       return NextResponse.json({ error: 'Souvenir not found' }, { status: 404 });

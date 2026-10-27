@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { PrismaClient } from '@prisma/client';
+import { requireUserId } from '@/lib/route-auth';
 
 // Fallback if prisma client is not properly initialized
 const prismaFallback = new PrismaClient();
@@ -10,6 +11,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Playlist ID is required' },
@@ -22,8 +25,8 @@ export async function GET(
     
     // Fetch the playlist item by ID
     // @ts-ignore - We're intentionally ignoring type checking here
-    const playlist = await prismaClient.playlist.findUnique({
-      where: { id: params.id }
+    const playlist = await prismaClient.playlist.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!playlist) {
@@ -48,6 +51,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Playlist ID is required' },
@@ -71,8 +76,8 @@ export async function PUT(
     
     // Check if the playlist exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingPlaylist = await prismaClient.playlist.findUnique({
-      where: { id: params.id }
+    const existingPlaylist = await prismaClient.playlist.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingPlaylist) {
@@ -113,6 +118,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
     if (!params.id) {
       return NextResponse.json(
         { error: 'Playlist ID is required' },
@@ -125,8 +132,8 @@ export async function DELETE(
     
     // Check if the playlist exists
     // @ts-ignore - We're intentionally ignoring type checking here
-    const existingPlaylist = await prismaClient.playlist.findUnique({
-      where: { id: params.id }
+    const existingPlaylist = await prismaClient.playlist.findFirst({
+      where: { id: params.id, wedding: { userId: auth.userId } }
     });
     
     if (!existingPlaylist) {

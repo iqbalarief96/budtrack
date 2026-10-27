@@ -6,13 +6,32 @@
 import { z } from 'zod'
 
 /**
+ * Money amount: accepts numbers or numeric strings, rejects NaN/Infinity,
+ * zero/negative values and absurd magnitudes. Amounts are stored as Float,
+ * so stay far below 2^53 to avoid silent precision loss.
+ */
+export const MAX_MONEY_AMOUNT = 1_000_000_000_000 // Rp 1 triliun
+
+const moneyAmount = (label: string) =>
+  z
+    // Only numbers and non-blank numeric strings may be coerced. Plain
+    // z.coerce.number() would also accept booleans (true -> 1), null, arrays...
+    .union([z.number(), z.string().trim().min(1, `${label} is required`)], {
+      errorMap: () => ({ message: `${label} must be a number` }),
+    })
+    .pipe(
+      z.coerce
+        .number({ invalid_type_error: `${label} must be a number` })
+        .finite(`${label} must be a finite number`)
+        .positive(`${label} must be positive`)
+        .max(MAX_MONEY_AMOUNT, `${label} is too large`)
+    )
+
+/**
  * Transaction validation schema
  */
 export const TransactionSchema = z.object({
-  amount: z.union([
-    z.number().positive('Amount must be positive'),
-    z.string().transform((val) => parseFloat(val))
-  ]),
+  amount: moneyAmount('Amount'),
   type: z.enum(['INCOME', 'EXPENSE'], {
     errorMap: () => ({ message: 'Type must be INCOME or EXPENSE' })
   }),
@@ -40,14 +59,8 @@ export type TransactionInput = z.infer<typeof TransactionSchema>
  * Budget validation schema
  */
 export const BudgetSchema = z.object({
-  amount: z.union([
-    z.number().positive('Budget amount must be positive'),
-    z.string().transform((val) => parseFloat(val))
-  ]),
-  target: z.union([
-    z.number().positive('Target amount must be positive'),
-    z.string().transform((val) => parseFloat(val))
-  ]).optional(),
+  amount: moneyAmount('Budget amount'),
+  target: moneyAmount('Target amount').optional(),
   periodType: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'], {
     errorMap: () => ({ message: 'Invalid budget period' })
   }).optional(),

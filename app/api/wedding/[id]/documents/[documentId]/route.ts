@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma'; // Adjust path depth
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 const prismaFallback = new PrismaClient();
 const dbClient = prisma || prismaFallback;
@@ -11,12 +12,14 @@ export async function GET(
   { params }: { params: { id: string, documentId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, documentId } = params;
     if (!weddingId || !documentId) {
       return NextResponse.json({ error: 'Wedding ID and Document ID are required' }, { status: 400 });
     }
 
-    const document = await dbClient.document.findUnique({
+    const document = await dbClient.document.findFirst({
       where: { id: documentId, weddingId: weddingId },
     });
 
@@ -41,6 +44,8 @@ export async function PUT(
   { params }: { params: { id: string, documentId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, documentId } = params;
     if (!weddingId || !documentId) {
       return NextResponse.json({ error: 'Wedding ID and Document ID are required' }, { status: 400 });
@@ -77,7 +82,7 @@ export async function PUT(
      }
 
     // Check if document exists first
-    const existingDocument = await dbClient.document.findUnique({
+    const existingDocument = await dbClient.document.findFirst({
       where: { id: documentId, weddingId: weddingId },
     });
 
@@ -117,13 +122,15 @@ export async function DELETE(
   { params }: { params: { id: string, documentId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, documentId } = params;
     if (!weddingId || !documentId) {
       return NextResponse.json({ error: 'Wedding ID and Document ID are required' }, { status: 400 });
     }
 
     // Check if document exists first
-    const existingDocument = await dbClient.document.findUnique({
+    const existingDocument = await dbClient.document.findFirst({
       where: { id: documentId, weddingId: weddingId },
     });
 

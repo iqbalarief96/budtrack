@@ -1,32 +1,60 @@
 import { describe, expect, it } from 'vitest'
-import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateTransactionBalance } from '../safeToSpendSummary'
+import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateRemainingBudget, calculateTransactionBalance } from '../safeToSpendSummary'
 
 describe('calculateMonthlySafeToSpend', () => {
-  it('does not treat wallet balance as safe to spend when current expenses already exceed balance', () => {
-    expect(calculateMonthlySafeToSpend({
-      balance: 12_414_037,
-      monthlyExpense: 169_355_648,
-      outstandingBills: 0,
-      goalReserve: 0,
-    })).toBe(0)
+  it('does not double-count expenses that are already out of the balance', () => {
+    // Regression: Rp 5.000.000 income, Rp 75.000 spent -> balance Rp 4.925.000.
+    // Safe to spend used to subtract the 75k again and show Rp 4.850.000.
+    expect(calculateMonthlySafeToSpend({ balance: 4_925_000 })).toBe(4_925_000)
   })
 
-  it('deducts monthly expenses, bills, and goal reserve from balance', () => {
+  it('deducts upcoming obligations, goal reserve, and buffer from balance', () => {
     expect(calculateMonthlySafeToSpend({
       balance: 20_000_000,
-      monthlyExpense: 5_000_000,
-      outstandingBills: 2_000_000,
+      upcomingObligations: 5_000_000,
       goalReserve: 1_000_000,
+      buffer: 2_000_000,
     })).toBe(12_000_000)
+  })
+
+  it('adds expected income only in forward mode', () => {
+    expect(calculateMonthlySafeToSpend({
+      balance: 1_000_000,
+      expectedIncome: 8_000_000,
+      upcomingObligations: 3_000_000,
+    })).toBe(6_000_000)
+  })
+
+  it('does NOT subtract budgets — only obligations count', () => {
+    // A budget is permission to spend, not an obligation; passing no
+    // obligations means the full balance is safe to spend.
+    expect(calculateMonthlySafeToSpend({ balance: 3_000_000 })).toBe(3_000_000)
+  })
+
+  it('never goes below zero when commitments exceed balance', () => {
+    expect(calculateMonthlySafeToSpend({
+      balance: 1_000_000,
+      upcomingObligations: 3_000_000,
+    })).toBe(0)
   })
 
   it('clamps impossible negative inputs to zero before calculation', () => {
     expect(calculateMonthlySafeToSpend({
       balance: -100,
-      monthlyExpense: -200,
-      outstandingBills: -300,
+      upcomingObligations: -300,
       goalReserve: -400,
+      buffer: -500,
     })).toBe(0)
+  })
+})
+
+describe('calculateRemainingBudget', () => {
+  it('sums unspent budget and treats overspent budgets as zero', () => {
+    expect(calculateRemainingBudget([
+      { amount: 2_000_000, spent: 500_000 },
+      { amount: 1_000_000, spent: 1_500_000 },
+      { amount: 300_000, spent: null },
+    ])).toBe(1_800_000)
   })
 })
 

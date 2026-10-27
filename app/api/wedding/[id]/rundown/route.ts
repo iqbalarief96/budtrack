@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 const prismaFallback = new PrismaClient();
 const dbClient = prisma || prismaFallback;
@@ -11,6 +12,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     if (!weddingId) {
       return NextResponse.json({ error: 'Wedding ID is required' }, { status: 400 });
@@ -38,6 +41,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId } = params;
     if (!weddingId) {
       return NextResponse.json({ error: 'Wedding ID is required' }, { status: 400 });

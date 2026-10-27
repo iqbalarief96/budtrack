@@ -21,7 +21,7 @@ import { calculateTrend, type TrendResult } from '@/lib/trend'
 import { useBudgets, type Budget as BudgetType } from '@/lib/hooks/useBudgets'
 import { useGoals } from '@/lib/hooks/useGoals'
 import { useEmergencyFund } from '@/lib/hooks/useEmergencyFund'
-import { calculateGoalReserve, calculateMonthlySafeToSpend } from '@/lib/safeToSpendSummary'
+
 import SpendingAnomalyBanner from '@/app/components/dashboard/SpendingAnomalyBanner'
 
 // Register ChartJS components
@@ -111,6 +111,16 @@ const DashboardContent = ({ budgets = [] }: Props) => {
   const [subscriptionAlerts, setSubscriptionAlerts] = useState<SubscriptionAlert[]>([])
   const [isLoadingSubscriptionAlerts, setIsLoadingSubscriptionAlerts] = useState(false)
   const [sharedBillsSummary, setSharedBillsSummary] = useState({ outstandingAmount: 0, openCount: 0 })
+  type SafeToSpendData = {
+    safeToSpend: number
+    balance: number
+    expectedIncome: number
+    goalReserve: number
+    buffer: number
+    obligations: { bills: number; recurring: number; subscriptions: number; creditCards: number; sharedBills: number; total: number }
+    confidence: 'low' | 'medium' | 'high'
+  }
+  const [safeToSpendData, setSafeToSpendData] = useState<SafeToSpendData | null>(null)
 
   const router = useRouter()
 
@@ -200,6 +210,30 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     }
 
     fetchSharedBillsSummary()
+  }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
+
+  // Safe to spend is computed server-side (it needs bills/recurring/credit-card
+  // data the dashboard doesn't load) so the number stays consistent everywhere.
+  useEffect(() => {
+    const fetchSafeToSpend = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (isGroupSelected && selectedGroup?.id) params.set('walletGroupId', selectedGroup.id)
+        if (!isGroupSelected && selectedWallet?.id) params.set('walletId', selectedWallet.id)
+
+        const response = await fetch(`/api/safe-to-spend/breakdown?${params.toString()}`)
+        if (!response.ok) {
+          setSafeToSpendData(null)
+          return
+        }
+        setSafeToSpendData(await response.json())
+      } catch (error) {
+        console.error('Error loading safe-to-spend:', error)
+        setSafeToSpendData(null)
+      }
+    }
+
+    fetchSafeToSpend()
   }, [isGroupSelected, selectedGroup?.id, selectedWallet?.id])
 
   // Load saved widget state from localStorage on component initialization
@@ -595,7 +629,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
     ? Math.round(filteredBudgets.reduce((sum, budget) => sum + ((budget.spent || 0) / Math.max(budget.amount || 1, 1)), 0) / filteredBudgets.length * 100)
     : 0
   const dataQualityScore = Math.min(100, Math.round((Math.min(transactionCount, 20) / 20) * 70 + (filteredBudgets.length ? 15 : 0) + (selectedWallet ? 15 : 0)))
-  const healthScore = Math.max(0, Math.min(100, 70 + (netCashflow >= 0 ? 10 : -15) - (negativeWallets.length ? 20 : 0) - (budgetUsage > 90 ? 15 : 0) + (dataQualityScore >= 60 ? 5 : -5)))
+  // Don't score with too little data: a constant baseline (it used to show 75 "Good"
+  // for a brand-new empty account) is misleading in a finance app.
+  const MIN_TX_FOR_HEALTH_SCORE = 5
+  const hasEnoughDataForHealth = transactionCount >= MIN_TX_FOR_HEALTH_SCORE
+  const healthScore: number | null = hasEnoughDataForHealth
+    ? Math.max(0, Math.min(100, 70 + (netCashflow > 0 ? 10 : netCashflow < 0 ? -15 : 0) - (negativeWallets.length ? 20 : 0) - (budgetUsage > 90 ? 15 : 0) + (dataQualityScore >= 60 ? 5 : -5)))
+    : null
   const todayAction = negativeWallets.length
     ? { title: 'Beresin saldo negatif', description: `${negativeWallets[0].name} perlu dicek/reconcile.`, href: '/wallets' }
     : !filteredBudgets.length
@@ -612,18 +652,18 @@ const DashboardContent = ({ budgets = [] }: Props) => {
       ? 'Belum ada budget'
       : 'Data cukup'
 
-  // Safe-to-spend breakdown
+  // Safe-to-spend is computed server-side (see the fetchSafeToSpend effect): it
+  // needs bills/recurring/credit-card data the dashboard doesn't load, and we
+  // want one authoritative number shared with the chatbot.
   const activeGoals = goals.filter((g) => !g.isArchived && g.status !== 'COMPLETED')
-  const totalRemainingGoal = activeGoals.reduce((sum, g) => sum + Math.max((g.target || 0) - (g.current || 0), 0), 0)
-  // ponytail: goalReserve pakai heuristik (10% saldo atau sisa goal/12). Upgrade: pakai /api/goals/projections kalau butuh akurasi.
-  const goalReserve = calculateGoalReserve({ balance: displayBalance, remainingGoalAmount: totalRemainingGoal })
-  const safeToSpend = calculateMonthlySafeToSpend({
-    balance: displayBalance,
-    monthlyExpense: summary.expense,
-    outstandingBills: sharedBillsSummary.outstandingAmount,
-    goalReserve,
-  })
-  const safeConfidence = dataQualityLabel
+  const safeToSpend = safeToSpendData?.safeToSpend ?? 0
+  const obligationsTotal = safeToSpendData?.obligations.total ?? 0
+  const goalReserve = safeToSpendData?.goalReserve ?? 0
+  const safeBuffer = safeToSpendData?.buffer ?? 0
+  const safeBalance = safeToSpendData?.balance ?? displayBalance
+  const safeConfidence = safeToSpendData
+    ? (safeToSpendData.confidence === 'high' ? 'High' : safeToSpendData.confidence === 'medium' ? 'Medium' : 'Low')
+    : dataQualityLabel
 
   // Month-over-month trend (last COMPLETE month vs previous month from transaction history)
   // Skip the current in-progress month so a 2-day-old month doesn't show -100% as "trend"
@@ -867,13 +907,13 @@ const DashboardContent = ({ budgets = [] }: Props) => {
                 <h3 className="text-blue-100">Safe to spend</h3>
                 <p className="mt-1 text-3xl font-bold">{formatCurrency(safeToSpend)}</p>
                 <p className="mt-2 text-xs text-blue-100">
-                  Saldo - expense - bills - goal reserve
+                  Saldo - kewajiban bulan ini - reserve - buffer
                 </p>
                 <div className="mt-3 grid gap-1 text-xs text-blue-50 sm:grid-cols-4">
-                  <span>Saldo {formatCurrency(displayBalance)}</span>
-                  <span>Expense -{formatCurrency(summary.expense)}</span>
-                  <span>Bills -{formatCurrency(sharedBillsSummary.outstandingAmount)}</span>
+                  <span>Saldo {formatCurrency(safeBalance)}</span>
+                  <span>Kewajiban -{formatCurrency(obligationsTotal)}</span>
                   <span>Reserve -{formatCurrency(goalReserve)}</span>
+                  <span>Buffer -{formatCurrency(safeBuffer)}</span>
                 </div>
               </div>
               <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">Confidence: {safeConfidence}</span>
@@ -911,12 +951,20 @@ const DashboardContent = ({ budgets = [] }: Props) => {
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <p className="text-sm text-gray-500">Financial Health</p>
           <div className="mt-1 flex items-baseline gap-2">
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore}</p>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-              {healthScore >= 70 ? 'Good' : healthScore >= 45 ? 'Watch' : 'Risk'}
-            </span>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">{healthScore ?? '—'}</p>
+            {healthScore !== null ? (
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthScore >= 70 ? 'bg-green-100 text-green-700' : healthScore >= 45 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                {healthScore >= 70 ? 'Good' : healthScore >= 45 ? 'Watch' : 'Risk'}
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Belum cukup data</span>
+            )}
           </div>
-          <p className="mt-2 text-xs text-gray-500">Budget {budgetUsage}% • data quality {dataQualityLabel}</p>
+          <p className="mt-2 text-xs text-gray-500">
+            {healthScore !== null
+              ? <>Budget {budgetUsage}% • data quality {dataQualityLabel}</>
+              : <>Butuh minimal {MIN_TX_FOR_HEALTH_SCORE} transaksi (sekarang {transactionCount})</>}
+          </p>
           {negativeWallets.length > 0 && <p className="mt-1 text-xs text-red-600">• {negativeWallets.length} wallet negatif</p>}
         </div>
 

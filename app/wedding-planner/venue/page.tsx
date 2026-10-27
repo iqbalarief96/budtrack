@@ -112,8 +112,8 @@ export default function VenuePage() {
             title: 'My Wedding',
             date: new Date().toISOString(),
             status: 'PLANNING',
-            budget: 250000000,
-            expectedGuests: 250
+            budget: 0,
+            expectedGuests: 0
           }),
         });
         

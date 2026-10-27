@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../../../lib/prisma'; // Adjust path depth
 import { PrismaClient, Prisma } from '@prisma/client';
+import { requireWeddingOwner } from '@/lib/route-auth';
 
 const prismaFallback = new PrismaClient();
 const dbClient = prisma || prismaFallback;
@@ -11,8 +12,10 @@ export async function GET(
   { params }: { params: { id: string, giftId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { giftId } = params;
-    const item = await dbClient.gift.findUnique({ where: { id: giftId } });
+    const item = await dbClient.gift.findFirst({ where: { id: giftId, weddingId: params.id } });
     if (!item) return NextResponse.json({ error: 'Gift item not found' }, { status: 404 });
     return NextResponse.json(item);
   } catch (error) {
@@ -27,6 +30,8 @@ export async function PUT(
   { params }: { params: { id: string, giftId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, giftId } = params;
     if (!giftId || !weddingId) {
       return NextResponse.json({ error: 'Wedding ID and Gift ID are required' }, { status: 400 });
@@ -63,8 +68,8 @@ export async function PUT(
     );
 
     // Check if item exists and belongs to the wedding
-    const existingItem = await dbClient.gift.findUnique({ 
-      where: { id: giftId }
+    const existingItem = await dbClient.gift.findFirst({ 
+      where: { id: giftId, weddingId: weddingId }
     });
     
     if (!existingItem) {
@@ -108,14 +113,16 @@ export async function DELETE(
   { params }: { params: { id: string, giftId: string } }
 ) {
   try {
+    const auth = await requireWeddingOwner(params.id);
+    if (auth.response) return auth.response;
     const { id: weddingId, giftId } = params;
     if (!giftId || !weddingId) {
       return NextResponse.json({ error: 'Wedding ID and Gift ID are required' }, { status: 400 });
     }
 
     // Check if item exists and belongs to the wedding
-    const existingItem = await dbClient.gift.findUnique({ 
-      where: { id: giftId } 
+    const existingItem = await dbClient.gift.findFirst({ 
+      where: { id: giftId, weddingId: weddingId }
     });
     
     if (!existingItem) {

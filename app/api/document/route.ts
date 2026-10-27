@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
+import { requireUserId, requireWeddingOwner } from '@/lib/route-auth';
 
 export async function GET() {
   try {
-    const documents = await prisma.document.findMany();
+    const auth = await requireUserId();
+    if (auth.response) return auth.response;
+    const documents = await prisma.document.findMany({
+      where: { wedding: { userId: auth.userId } },
+    });
     return NextResponse.json({ documents }, { status: 200 });
   } catch (error) {
     console.error('Error fetching documents:', error);
@@ -25,6 +30,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const auth = await requireWeddingOwner(body.weddingId);
+    if (auth.response) return auth.response;
 
     // Parse deadline jika ada
     const deadline = body.deadline ? new Date(body.deadline) : null;

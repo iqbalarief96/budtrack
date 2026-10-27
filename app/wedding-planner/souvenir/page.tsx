@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { FiGift, FiPlus, FiEdit2, FiTrash2, FiDollarSign, FiBox, FiTag, FiUser, FiCalendar, FiTruck, FiInfo, FiX, FiChevronLeft, FiCheck } from 'react-icons/fi';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 
 // Interface aligned with Prisma Souvenir Schema
 interface Souvenir {
@@ -58,7 +58,7 @@ const getStatusProps = (status: Souvenir['status']) => {
 const demoSouvenirs: Souvenir[] = [
   {
     id: 'demo-s1',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Gantungan Kunci Kayu (Demo)',
     type: 'Kerajinan Tangan',
     quantity: 200,
@@ -74,7 +74,7 @@ const demoSouvenirs: Souvenir[] = [
   },
   {
     id: 'demo-s2',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Kipas Batik Mini (Demo)',
     type: 'Aksesoris',
     quantity: 200,
@@ -115,10 +115,11 @@ export default function SouvenirPage() {
   const [editingSouvenirId, setEditingSouvenirId] = useState<string | null>(null);
   const [currentSouvenir, setCurrentSouvenir] = useState(emptySouvenir);
 
-  const weddingId = DEMO_WEDDING_ID;
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
 
   // Fetch Souvenirs Function
   const fetchSouvenirs = async () => {
+    if (!weddingId) return;
     setIsLoading(true);
     setError(null);
     // Clear existing non-demo data before fetching
@@ -160,6 +161,7 @@ export default function SouvenirPage() {
   };
 
   useEffect(() => {
+    if (!weddingId) return;
     fetchSouvenirs();
   }, [weddingId]);
 
@@ -195,6 +197,10 @@ export default function SouvenirPage() {
   // --- CRUD Operations ---
   const handleSaveSouvenir = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!weddingId) {
+      toast.error('Wedding belum tersedia.');
+      return;
+    }
     setIsSaving(true);
     setError(null);
 
@@ -296,6 +302,7 @@ export default function SouvenirPage() {
   };
 
   const handleDeleteSouvenir = async (souvenirId: string) => {
+    if (!weddingId) return;
     if (!confirm('Apakah Anda yakin ingin menghapus souvenir ini?')) return;
 
     setIsLoading(true);
@@ -324,6 +331,19 @@ export default function SouvenirPage() {
   const totalQuantity = souvenirs.reduce((sum, s) => sum + s.quantity, 0);
 
   // --- Render ---
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
@@ -460,7 +480,7 @@ export default function SouvenirPage() {
          )}
 
          {/* Loading State */}
-         {isLoading && (
+         {(isLoading || weddingLoading) && (
            <div className="text-center py-10 text-gray-500">Memuat data souvenir...</div>
          )}
 

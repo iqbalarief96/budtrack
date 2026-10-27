@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { calculateGoalReserve, calculateMonthlySafeToSpend, calculateTransactionBalance } from '@/lib/safeToSpendSummary';
-import { listSharedBills } from '@/lib/shared-bills/shared-bill-service';
+import { calculateTransactionBalance } from '@/lib/safeToSpendSummary';
+import { computeSafeToSpend } from '@/lib/safeToSpend/upcomingObligations';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
   // Mode "Semua Dompet": walletId kosong = agregasi seluruh wallet user.
   let wallet: { id: string | null; name: string; balance: number };
   let walletFilter: { walletId?: string | { in: string[] } };
+  let scopeWalletIds: string[];
+  let isAllWallets: boolean;
 
   if (walletId) {
     const found = await prisma.wallet.findFirst({
@@ -30,6 +32,8 @@ export async function GET(request: NextRequest) {
     if (!found) return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
     wallet = found;
     walletFilter = { walletId };
+    scopeWalletIds = [found.id];
+    isAllWallets = false;
   } else {
     const wallets = await prisma.wallet.findMany({
       where: { userId: user.id },
@@ -44,13 +48,15 @@ export async function GET(request: NextRequest) {
       balance: wallets.reduce((sum, w) => sum + w.balance, 0),
     };
     walletFilter = { walletId: { in: wallets.map((w) => w.id) } };
+    scopeWalletIds = wallets.map((w) => w.id);
+    isAllWallets = true;
   }
 
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const [transactions, budgets, goals, sharedBills, incomeSum, expenseSum] = await Promise.all([
+  const [transactions, budgets, incomeSum, expenseSum] = await Promise.all([
     prisma.transaction.findMany({
       where: { userId: user.id, ...walletFilter, date: { gte: start, lt: end } },
       include: { category: { select: { name: true } } },
@@ -65,11 +71,6 @@ export async function GET(request: NextRequest) {
       },
       select: { amount: true, spent: true },
     }),
-    prisma.goal.findMany({
-      where: { userId: user.id, isArchived: false, status: { not: 'COMPLETED' } },
-      select: { target: true, current: true },
-    }),
-    listSharedBills(user.id, walletId ? { walletId } : {}),
     prisma.transaction.aggregate({
       where: { userId: user.id, ...walletFilter, type: { in: ['income', 'INCOME'] } },
       _sum: { amount: true },
@@ -112,18 +113,13 @@ export async function GET(request: NextRequest) {
     .reduce((sum, [, amount]) => sum + amount, 0);
   const debtRatio = totalExpense > 0 ? (debtExpense / totalExpense) * 100 : 0;
   const debtRisk = debtRatio >= 50 ? 'critical' : debtRatio >= 25 ? 'warning' : 'none';
-  const remainingGoalAmount = goals.reduce((sum, goal) => sum + Math.max((goal.target || 0) - (goal.current || 0), 0), 0);
-  const goalReserve = calculateGoalReserve({ balance: calculatedBalance, remainingGoalAmount });
-  const outstandingBills = sharedBills.reduce((sum, bill) => {
-    const paidAmount = bill.participants.reduce((paid, participant) => paid + participant.paidAmount, 0);
-    return sum + Math.max(0, bill.totalAmount - paidAmount);
-  }, 0);
-  const safeToSpend = calculateMonthlySafeToSpend({
-    balance: calculatedBalance,
-    monthlyExpense: totalExpense,
-    outstandingBills,
-    goalReserve,
-  });
+  // Safe to spend = balance − real upcoming obligations (bills, recurring,
+  // subscriptions, CC minimums, shared bills) − goal reserve. Budgets are NOT
+  // subtracted: they are a discretionary spending plan, not an obligation.
+  const { safeToSpend } = await computeSafeToSpend(
+    { userId: user.id, walletIds: scopeWalletIds, isAllWallets },
+    { balance: calculatedBalance, now, mode: 'conservative' }
+  );
 
   return NextResponse.json({
     walletId: wallet.id,

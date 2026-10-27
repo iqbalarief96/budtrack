@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiChevronLeft, FiPlus, FiTrash2, FiEdit2, FiPhone, FiMail, FiLink, FiX, FiImage, FiDollarSign, FiStar, FiInfo, FiUsers } from 'react-icons/fi';
 import Link from 'next/link';
-import { DEMO_WEDDING_ID } from '../constants';
+import { useWeddingId } from '../useWeddingId';
 
 // Define vendor category type
 type VendorCategory = 'venue' | 'catering' | 'photography' | 'videography' | 'decor' | 'makeup' | 'attire' | 'music' | 'cake' | 'invitation' | 'transportation' | 'lighting' | 'florist' | 'other';
@@ -35,7 +35,7 @@ interface Vendor {
 const demoVendors: Vendor[] = [
   {
     id: '1',
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: 'Budi Photography',
     category: 'photography',
     description: 'Professional wedding photographer with 10 years experience',
@@ -56,7 +56,7 @@ const demoVendors: Vendor[] = [
 
 // Initial empty vendor state
 const emptyVendor: Omit<Vendor, 'id'> = {
-  weddingId: DEMO_WEDDING_ID,
+  weddingId: '',
   name: '',
   category: '',
   description: '',
@@ -100,9 +100,10 @@ export default function VendorPage() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { weddingId, loading: weddingLoading, hasWedding } = useWeddingId();
   
   const [newVendor, setNewVendor] = useState<Omit<Vendor, 'id'>>({
-    weddingId: DEMO_WEDDING_ID,
+    weddingId: '',
     name: '',
     category: '',
     description: '',
@@ -122,10 +123,11 @@ export default function VendorPage() {
 
   // Fetch vendors on component mount
   useEffect(() => {
+    if (!weddingId) return;
     const fetchVendors = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/wedding/${DEMO_WEDDING_ID}/vendors`);
+        const response = await fetch(`/api/wedding/${weddingId}/vendors`);
         if (!response.ok) {
           throw new Error('Failed to fetch vendors');
         }
@@ -141,25 +143,29 @@ export default function VendorPage() {
     };
 
     fetchVendors();
-  }, []);
+  }, [weddingId]);
   
   const handleSaveVendor = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!weddingId) {
+      setError('Wedding belum tersedia.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
     try {
       const vendorData = {
         ...newVendor,
-        weddingId: DEMO_WEDDING_ID,
+        weddingId,
         rating: newVendor.rating || 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
       const url = editVendorId 
-        ? `/api/wedding/${DEMO_WEDDING_ID}/vendors/${editVendorId}`
-        : `/api/wedding/${DEMO_WEDDING_ID}/vendors`;
+        ? `/api/wedding/${weddingId}/vendors/${editVendorId}`
+        : `/api/wedding/${weddingId}/vendors`;
       
       const response = await fetch(url, {
         method: editVendorId ? 'PUT' : 'POST',
@@ -208,11 +214,12 @@ export default function VendorPage() {
   };
   
   const handleDeleteVendor = async (id: string) => {
+    if (!weddingId) return;
     if (!confirm('Yakin mau hapus vendor ini?')) return;
     
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/wedding/${DEMO_WEDDING_ID}/vendors/${id}`, {
+      const response = await fetch(`/api/wedding/${weddingId}/vendors/${id}`, {
         method: 'DELETE',
       });
 
@@ -304,6 +311,19 @@ export default function VendorPage() {
     );
   };
   
+  if (hasWedding === false) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+          <p className="mb-4">Belum ada wedding planning.</p>
+          <Link href="/wedding-planner" className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600">
+            Buat wedding planning dulu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex items-center mb-6">
