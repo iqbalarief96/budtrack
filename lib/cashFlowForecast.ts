@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma'
+import { withComputedBalances } from '@/lib/walletBalance'
 
 export interface MonthlyForecast {
   month: string // "2025-02"
@@ -49,14 +50,15 @@ export async function calculateCashFlowForecast(
   userId: string,
   monthsToForecast: number = 6
 ): Promise<CashFlowForecast> {
-  // Get wallet
-  const wallet = await prisma.wallet.findFirst({
+  // Get wallet (balance from transactions, not the drifting column)
+  const found = await prisma.wallet.findFirst({
     where: { id: walletId, userId },
   })
 
-  if (!wallet) {
+  if (!found) {
     throw new Error('Wallet not found')
   }
+  const [wallet] = await withComputedBalances([found])
 
   // Get recurring transactions
   const recurringTransactions = await prisma.recurringTransaction.findMany({
@@ -489,10 +491,10 @@ export async function calculateAllWalletsForecast(
   userId: string,
   monthsToForecast: number = 6
 ) {
-  const wallets = await prisma.wallet.findMany({
+  const wallets = await withComputedBalances(await prisma.wallet.findMany({
     where: { userId },
     orderBy: { isDefault: 'desc' },
-  })
+  }))
 
   const forecasts = await Promise.all(
     wallets.map((wallet) =>

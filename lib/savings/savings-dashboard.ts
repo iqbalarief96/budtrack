@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma'
+import { calculateWalletBalances } from '@/lib/walletBalance'
 import { detectSavingsBucket } from './savings-detection'
 
 function monthKey(date: Date) {
@@ -9,8 +10,11 @@ export async function getSavingsDashboard(userId: string) {
   const wallets = await prisma.wallet.findMany({
     where: { userId, type: 'SAVINGS' },
     include: { transactions: { where: { type: 'INCOME' }, orderBy: { date: 'desc' } } },
-    orderBy: { balance: 'desc' },
   })
+  // Balances from transactions (the Wallet.balance column drifts).
+  const balances = await calculateWalletBalances(wallets.map((w) => w.id))
+  const balanceOf = (id: string) => balances.get(id) ?? 0
+  wallets.sort((a, b) => balanceOf(b.id) - balanceOf(a.id))
 
   const now = new Date()
   const thisMonth = now.toISOString().slice(0, 7)
@@ -37,7 +41,7 @@ export async function getSavingsDashboard(userId: string) {
       name: wallet.name,
       icon: wallet.icon,
       color: wallet.color,
-      balance: wallet.balance,
+      balance: balanceOf(wallet.id),
       contributedThisMonth,
       contributedAllTime,
       lastContributionDate: last?.date.toISOString() ?? null,

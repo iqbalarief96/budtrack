@@ -1,4 +1,12 @@
 import prisma from '@/lib/prisma'
+import { calculateWalletBalance, calculateWalletBalances } from '@/lib/walletBalance'
+
+/** Sum of transaction-derived balances (the Wallet.balance column drifts). */
+async function sumBalances(walletIds: string[]): Promise<number> {
+  let total = 0
+  ;(await calculateWalletBalances(walletIds)).forEach((v) => { total += v })
+  return total
+}
 
 /**
  * Build a Prisma where-fragment to scope a query by wallet.
@@ -102,7 +110,7 @@ async function calculateEmergencyFundScore(
   // Check wallet-level emergency funds first
   if (walletEmergencyFunds.length > 0) {
     totalTarget = walletEmergencyFunds.reduce((sum, ef) => sum + ef.targetAmount, 0)
-    totalCurrent = walletEmergencyFunds.reduce((sum, ef) => sum + ef.wallet.balance, 0)
+    totalCurrent = await sumBalances(walletEmergencyFunds.map((ef) => ef.walletId))
   } else {
     // If no wallet-level emergency fund, check for user-level emergency fund
     const userEmergencyFund = await prisma.emergencyFund.findFirst({
@@ -118,13 +126,13 @@ async function calculateEmergencyFundScore(
       let wallet
       if (walletId) {
         wallet = await prisma.wallet.findUnique({ where: { id: walletId } })
-        totalCurrent = wallet?.balance || 0
+        totalCurrent = wallet ? await calculateWalletBalance(wallet.id) : 0
       } else if (walletIds && walletIds.length > 0) {
         // Wallet Group: sum balances of the group's wallets
         const groupWallets = await prisma.wallet.findMany({
           where: { userId, id: { in: walletIds } },
         })
-        totalCurrent = groupWallets.reduce((sum, w) => sum + (w.balance || 0), 0)
+        totalCurrent = await sumBalances(groupWallets.map((w) => w.id))
       } else {
         const defaultWallet = await prisma.wallet.findFirst({
           where: {
@@ -137,7 +145,7 @@ async function calculateEmergencyFundScore(
           where: { userId },
           orderBy: { createdAt: 'asc' },
         })
-        totalCurrent = wallet?.balance || 0
+        totalCurrent = wallet ? await calculateWalletBalance(wallet.id) : 0
       }
     } else {
       // Auto-detect wallets with "emergency" or "darurat" in the name
@@ -154,7 +162,7 @@ async function calculateEmergencyFundScore(
                                    nameLower.includes('dana darurat')
           
           if (isEmergencyWallet) {
-            totalCurrent = wallet.balance
+            totalCurrent = await calculateWalletBalance(wallet.id)
             totalTarget = 0 // Will be calculated based on expenses later
           }
         }
@@ -175,7 +183,7 @@ async function calculateEmergencyFundScore(
 
         if (emergencyWallets.length > 0) {
           // Sum up all emergency wallets
-          totalCurrent = emergencyWallets.reduce((sum, w) => sum + w.balance, 0)
+          totalCurrent = await sumBalances(emergencyWallets.map((w) => w.id))
           totalTarget = 0 // Will be calculated based on expenses later
         }
       }

@@ -96,7 +96,8 @@ export async function getWalletEmergencyFund(walletId: string, userId: string) {
     return {
       id: emergencyFund.id,
       walletId: emergencyFund.walletId,
-      wallet: emergencyFund.wallet,
+      // progress.currentAmount is transaction-derived; the column can drift.
+      wallet: { ...emergencyFund.wallet, balance: progress.currentAmount },
       targetAmount: emergencyFund.targetAmount,
       currentAmount: progress.currentAmount,
       remaining: progress.remaining,

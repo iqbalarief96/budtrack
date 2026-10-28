@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { withComputedBalances } from '@/lib/walletBalance';
 
 // Definisikan alokasi target berdasarkan profil risiko
 const TARGET_ALLOCATIONS = {
@@ -72,10 +73,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Ambil wallet pengguna untuk mengetahui kas
-    const wallets = await prisma.wallet.findMany({
+    const wallets = await withComputedBalances(await prisma.wallet.findMany({
       where: { userId: user.id },
-      select: { id: true, name: true, balance: true }
-    });
+      select: { id: true, name: true }
+    }));
 
     // Hitung total nilai investasi dan kas
     const totalInvestmentValue = investments.reduce(

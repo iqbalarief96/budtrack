@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { withComputedBalances } from '@/lib/walletBalance';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { generateAIResponse } from '@/lib/ai';
@@ -135,12 +136,12 @@ export async function POST(request: Request) {
       },
     });
 
-    const wallets = await prisma.wallet.findMany({
+    const wallets = await withComputedBalances(await prisma.wallet.findMany({
       where: {
         userId: session.user.id,
         ...(walletId ? { id: walletId } : {}),
       },
-    });
+    }));
 
     const budgets = await prisma.budget.findMany({
       where: {
