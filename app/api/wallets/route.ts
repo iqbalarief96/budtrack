@@ -90,14 +90,29 @@ export async function POST(request: Request) {
       return conflictResponse('Wallet with this name already exists')
     }
 
+    // Balances are derived from transactions, so a starting balance must be a
+    // transaction too ("Saldo awal"); a column-only value would be invisible.
+    const parsedOpening = parseFloat(String(balance ?? 0))
+    const opening = Number.isFinite(parsedOpening) ? parsedOpening : 0
     const wallet = await prisma.wallet.create({
       data: {
         name,
-        balance: parseFloat(balance.toString()),
+        balance: opening,
         userId: session.user.id,
         color,
         icon,
-        type: type || 'MAIN'
+        type: type || 'MAIN',
+        ...(opening !== 0 && {
+          transactions: {
+            create: {
+              userId: session.user.id,
+              type: opening > 0 ? 'INCOME' : 'EXPENSE',
+              amount: Math.abs(opening),
+              description: 'Saldo awal',
+              date: new Date(),
+            },
+          },
+        }),
       }
     })
 
